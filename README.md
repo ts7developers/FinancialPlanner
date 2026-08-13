@@ -16,16 +16,9 @@ the full design (period model, AU tax engine, category defaults, data model).
 3. In the SQL Editor, run the migration at [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql).
    This creates all tables, RLS policies, the new-user bootstrap trigger (seeds default plan settings
    and budget categories on signup), and a private `payslips` storage bucket.
-4. In **Authentication → Email Templates → Magic Link**, change the confirmation URL to:
-
-   ```
-   {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/overview
-   ```
-
-   This is required — the app's `/auth/confirm` route expects `token_hash`/`type` params, not
-   Supabase's default confirmation link format.
-5. In **Authentication → URL Configuration**, add your local dev URL (`http://localhost:3000`) and your
-   eventual production URL to the allowed redirect URLs.
+4. In **Authentication → URL Configuration**, add `http://localhost:3000/auth/callback` (and later your
+   production `.../auth/callback` URL) to the allowed redirect URLs. The default Magic Link email
+   template works as-is — no template edit needed.
 
 ### 2. Environment variables
 
@@ -46,7 +39,11 @@ npm test    # Vitest — period/tax engine baseline figures
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Sign in with a magic link (no password).
+Open [http://localhost:3000](http://localhost:3000). First sign-in: enter your email, click the link that
+arrives, then set a 6-digit PIN. That PIN is remembered on this device (via localStorage) — returning
+visits skip straight to a PIN prompt, no email round trip. "Not you? Use email instead" on the PIN screen
+resets to the email flow (e.g. on a new device, or if you forget the PIN — verifying by email again lets
+you set a new one).
 
 ## Project structure
 
@@ -59,7 +56,8 @@ Open [http://localhost:3000](http://localhost:3000). Sign in with a magic link (
 - `lib/data/fetchAppData.ts` — the one server-side fetch that loads everything a signed-in user needs;
   `components/AppDataProvider.tsx` holds it in a client context so all tabs share the same state and
   derived math, matching the prototype's single-component architecture.
-- `app/(auth)/` — magic-link sign-in.
+- `app/(auth)/` — magic-link + PIN sign-in (`lib/pinAuth.ts` remembers the email on-device);
+  `app/auth/callback/` exchanges the link's code for a session (PKCE flow).
 - `app/(app)/` — the five tabs (Overview, Expenses, Reconcile, Accounts, Plan) behind auth.
 - `app/manifest.ts`, `app/icon.tsx`, `app/apple-icon.tsx`, `app/icons/` — PWA manifest and generated
   icons (via `next/og`'s `ImageResponse` — no image assets to maintain). `public/sw.js` is the service
@@ -69,8 +67,8 @@ Open [http://localhost:3000](http://localhost:3000). Sign in with a magic link (
 
 ## Deploying
 
-Verify locally against a real Supabase project first (magic-link sign-in round trip, data persists
-across a refresh) before deploying.
+Verify locally against a real Supabase project first (magic-link + PIN sign-in, data persists across a
+refresh) before deploying.
 
 1. Push this repo to GitHub (or another Vercel-supported git provider).
 2. In Vercel, **Add New → Project** and import the repo. Framework preset auto-detects Next.js — no
@@ -78,11 +76,10 @@ across a refresh) before deploying.
 3. Add the environment variables from `.env.local` to the Vercel project (**Settings → Environment
    Variables**), with one change: set `NEXT_PUBLIC_SITE_URL` to the production URL Vercel assigns (or
    your custom domain).
-4. In Supabase **Authentication → URL Configuration**, add the production URL to the allowed redirect
-   URLs (alongside `http://localhost:3000` for local dev).
-5. Deploy. Test the magic-link flow against the production URL — the email link must round-trip through
-   `/auth/confirm` on the *deployed* domain, so this only fully works once `NEXT_PUBLIC_SITE_URL` and the
-   Supabase redirect allowlist both point at it.
+4. In Supabase **Authentication → URL Configuration**, add `<production-url>/auth/callback` to the
+   allowed redirect URLs (alongside the localhost one from setup step 1.4).
+5. Deploy. Sign in on the production URL the same way as locally (email link once, then a PIN) —
+   localStorage is per-origin, so the PIN is set again the first time on a new domain/device.
 6. Test "Add to Home Screen" on a phone against the deployed HTTPS URL — PWA install prompts generally
    require a real HTTPS origin, not `localhost`.
 
