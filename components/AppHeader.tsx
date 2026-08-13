@@ -23,10 +23,10 @@ export default function AppHeader() {
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ fontSize: isMobile ? 10.5 : 12, letterSpacing: ".14em", textTransform: "uppercase", color: GOLD, fontWeight: 600 }}>
-              West Carr &amp; Harvey · Fortnightly
+              Fortnightly
             </div>
             <h1 style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontSize: isMobile ? 22 : 28, fontWeight: 700, margin: "4px 0 0" }}>
-              The Reconciliation
+              Financial Planner
             </h1>
             {!isMobile && (
               <div style={{ fontSize: 13, color: "#B9C2D6", marginTop: 2 }}>

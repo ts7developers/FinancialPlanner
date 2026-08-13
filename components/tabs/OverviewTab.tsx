@@ -16,11 +16,11 @@ import {
   Cell,
   type TooltipValueType,
 } from "recharts";
-import { Wallet, PiggyBank, Home, TrendingUp, Receipt, ScrollText, Camera } from "lucide-react";
+import { Wallet, PiggyBank, Home, TrendingUp, Receipt, ScrollText, Camera, Landmark } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { currentPeriod, isoFromDate } from "@/lib/period";
-import { buildPieData } from "@/lib/derive";
+import { currentPeriod, financialYearStart, isoFromDate } from "@/lib/period";
+import { buildPieData, sumYTD } from "@/lib/derive";
 import { AUD, num } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, FAV, PIE_COLORS } from "@/lib/theme";
 import { Metric, Progress } from "@/components/ui/atoms";
@@ -28,10 +28,12 @@ import Link from "next/link";
 
 export default function OverviewTab() {
   const isMobile = useIsMobile();
-  const { profile, categories, balances, planPath, snapshots, periods, D } = useAppData();
+  const { profile, categories, balances, planPath, snapshots, periods, payslips, D } = useAppData();
 
   const today = isoFromDate(new Date());
   const yr = currentPeriod(periods, today).year;
+  const ytd = sumYTD(payslips, financialYearStart(today));
+  const taxPaidYTD = ytd.paygwTax + (Number(profile.tax_paid_opening) || 0);
 
   const chartData = planPath.map((p) => {
     const s = snapshots.find((x) => x.period_key === p.key);
@@ -94,6 +96,16 @@ export default function OverviewTab() {
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Metric icon={Wallet} label="Net pay / fortnight" value={AUD(D.netFTfn)} sub="full-time, after tax & HECS" />
+        <Metric
+          icon={Landmark}
+          label="Tax paid (FY YTD)"
+          value={AUD(taxPaidYTD)}
+          sub={
+            profile.tax_paid_opening > 0
+              ? `incl. ${AUD(profile.tax_paid_opening)} opening balance`
+              : "from confirmed payslips"
+          }
+        />
         <Metric icon={TrendingUp} label="Planned surplus / fn" value={AUD(D.netFTfn - D.expFN(2027))} sub="2027+, all costs running" />
         <Metric icon={PiggyBank} label="Emergency fund" value={AUD(num(balances.emergency))} sub={`target ${AUD(profile.emergency_target)}`} accent={FAV} />
         <Metric icon={Home} label="Deposit saved" value={AUD(num(balances.anzplus))} sub={`5% goal ${AUD(D.dep5)}`} />

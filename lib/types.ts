@@ -14,6 +14,7 @@ export interface Profile {
   fhog: number;
   buying_costs: number;
   cc_opening: number;
+  tax_paid_opening: number;
 }
 
 export interface BudgetCategoryRow {

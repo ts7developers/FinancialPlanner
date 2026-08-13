@@ -100,8 +100,8 @@ export default function ReconcileTab() {
               <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(ytd.gross)}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: MUTE }}>PAYG tax</span>
-              <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(ytd.paygwTax)}</span>
+              <span style={{ color: MUTE }}>PAYG tax{profile.tax_paid_opening > 0 ? " (incl. opening)" : ""}</span>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(ytd.paygwTax + (Number(profile.tax_paid_opening) || 0))}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span style={{ color: MUTE }}>Super</span>

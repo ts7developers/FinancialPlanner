@@ -1,5 +1,6 @@
 // Baseline plan settings — spec §3/§5, mirrors the DB column defaults in
-// supabase/migrations/0001_init.sql. Used by the Plan tab's "Restore baseline" action.
+// supabase/migrations/0001_init.sql and 0002_tax_paid_opening.sql. Used by the Plan tab's
+// "Restore baseline" action.
 
 export const DEFAULT_PROFILE_SETTINGS = {
   package: 68000,
@@ -15,4 +16,5 @@ export const DEFAULT_PROFILE_SETTINGS = {
   fhog: 10000,
   buying_costs: 3000,
   cc_opening: 190.6,
+  tax_paid_opening: 0,
 };

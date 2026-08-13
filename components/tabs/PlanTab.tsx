@@ -21,6 +21,7 @@ type ProfileInputs = {
   costs: string;
   emergency: string;
   openDeposit: string;
+  taxPaidOpening: string;
 };
 
 function toInputs(profile: Profile): ProfileInputs {
@@ -35,6 +36,7 @@ function toInputs(profile: Profile): ProfileInputs {
     costs: String(profile.buying_costs),
     emergency: String(profile.emergency_target),
     openDeposit: String(profile.open_deposit),
+    taxPaidOpening: String(profile.tax_paid_opening),
   };
 }
 
@@ -71,7 +73,7 @@ export default function PlanTab() {
 
   const restoreDefaults = () => {
     if (
-      !window.confirm("Reset the plan assumptions to the original WCH baseline? Your reconciliations and balances stay.")
+      !window.confirm("Reset the plan assumptions to the original baseline? Your reconciliations and balances stay.")
     )
       return;
     updateProfile(DEFAULT_PROFILE_SETTINGS);
@@ -95,6 +97,7 @@ export default function PlanTab() {
       `Buying costs: $${profile.buying_costs}`,
       `Emergency target: $${profile.emergency_target}`,
       `Opening deposit: $${profile.open_deposit}`,
+      `Tax paid so far this FY: $${profile.tax_paid_opening}`,
       "Monthly expenses (2026 / 2027):",
       ...categories.map((c) => `  ${c.label}: $${c.amount_2026} / $${c.amount_2027}`),
     ].join("\n");
@@ -153,6 +156,13 @@ export default function PlanTab() {
             <PInput label="Super rate" suffix="%" value={inputs.sg} onChange={(v) => set("sg", v)} onBlur={() => commitNumber("super_rate", inputs.sg, 100)} />
             <PInput label="Part-time fraction" suffix="%" value={inputs.ptFrac} onChange={(v) => set("ptFrac", v)} onBlur={() => commitNumber("pt_fraction", inputs.ptFrac, 100)} />
             <PInput label="HECS repayment threshold" prefix="$" value={inputs.hecsThreshold} onChange={(v) => set("hecsThreshold", v)} onBlur={() => commitNumber("hecs_threshold", inputs.hecsThreshold)} />
+            <PInput
+              label="Tax paid so far this FY (opening balance)"
+              prefix="$"
+              value={inputs.taxPaidOpening}
+              onChange={(v) => set("taxPaidOpening", v)}
+              onBlur={() => commitNumber("tax_paid_opening", inputs.taxPaidOpening)}
+            />
             <Derived rows={[["Cash salary (FT, / yr)", AUD(D.cashFT)], ["Net pay / month (FT)", AUD(D.netFTmo)]]} />
           </Panel>
           <Panel title="Goals & house">

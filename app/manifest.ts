@@ -3,8 +3,8 @@ import { NAVY, PAPER } from "@/lib/theme";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "The Reconciliation — West Carr & Harvey",
-    short_name: "The Reconciliation",
+    name: "Financial Planner",
+    short_name: "Financial Planner",
     description: "Fortnightly plan-vs-actual finance reconciliation.",
     start_url: "/overview",
     display: "standalone",

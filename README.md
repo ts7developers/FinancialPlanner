@@ -1,4 +1,4 @@
-# The Reconciliation
+# Financial Planner
 
 Personal finance reconciliation app for a graduate accountant on a fortnightly pay cycle — a ledger:
 log expenses as a subledger, close each fortnight, reconcile actual vs plan. Next.js 16 + TypeScript +

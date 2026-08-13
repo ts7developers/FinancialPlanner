@@ -60,10 +60,10 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
       <div style={{ width: "100%", maxWidth: 380 }}>
         <div style={{ textAlign: "center", marginBottom: 22 }}>
           <div style={{ fontSize: 12, letterSpacing: ".14em", textTransform: "uppercase", color: GOLD, fontWeight: 600 }}>
-            West Carr &amp; Harvey · Fortnightly
+            Fortnightly
           </div>
           <h1 style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontSize: 28, fontWeight: 700, margin: "4px 0 0", color: "#fff" }}>
-            The Reconciliation
+            Financial Planner
           </h1>
         </div>
         <div style={{ background: CARD, borderRadius: 14, padding: 24, border: `1px solid ${LINE}` }}>{children}</div>

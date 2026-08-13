@@ -17,13 +17,13 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "The Reconciliation — West Carr & Harvey",
+  title: "Financial Planner",
   description: "Fortnightly plan-vs-actual finance reconciliation.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "The Reconciliation",
+    title: "Financial Planner",
   },
 };
 
