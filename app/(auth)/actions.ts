@@ -1,7 +1,6 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
 
 export interface RequestLinkState {
   error?: string;
@@ -45,6 +44,7 @@ export async function setPin(_prevState: SetPinState | undefined, formData: Form
 
 export interface PinSignInState {
   error?: string;
+  done?: boolean;
 }
 
 export async function signInWithPin(
@@ -53,10 +53,11 @@ export async function signInWithPin(
 ): Promise<PinSignInState> {
   const email = String(formData.get("email") || "").trim();
   const pin = String(formData.get("pin") || "").trim();
+  if (!email) return { error: "Enter your email address." };
   if (!/^\d{6}$/.test(pin)) return { error: "Enter your 6-digit PIN." };
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password: pin });
-  if (error) return { error: "Incorrect PIN." };
-  redirect("/overview");
+  if (error) return { error: "Incorrect email or PIN." };
+  return { done: true };
 }
