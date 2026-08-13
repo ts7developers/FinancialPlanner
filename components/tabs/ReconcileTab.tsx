@@ -4,15 +4,16 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { currentPeriod, isFT, isoFromDate, periodLabel } from "@/lib/period";
-import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation } from "@/lib/derive";
+import { currentPeriod, financialYearStart, isFT, isoFromDate, periodLabel } from "@/lib/period";
+import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation, sumYTD } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, INK, GOLD_SOFT, inputStyle } from "@/lib/theme";
 import { Row, Cell2, VarTag, Stat } from "@/components/ui/atoms";
+import PayslipPanel from "@/components/PayslipPanel";
 
 export default function ReconcileTab() {
   const isMobile = useIsMobile();
-  const { profile, categories, periods, D, loggedByCat, reconciliations, setReconciliation } = useAppData();
+  const { profile, categories, periods, D, loggedByCat, reconciliations, setReconciliation, payslips } = useAppData();
 
   const [period, setPeriod] = useState(() => currentPeriod(periods, isoFromDate(new Date())).key);
   const rec = reconciliations[period];
@@ -39,6 +40,7 @@ export default function ReconcileTab() {
   const perObj = periods.find((p) => p.key === period) || periods[0];
   const planInc = plannedIncomeFN(perObj, profile, D);
   const yr = perObj.year;
+  const ytd = sumYTD(payslips, financialYearStart(period));
 
   const catRows = reconcileCategoryRows(categories, D, yr, loggedByCat[period], overridesInput);
   const summary = summarizeReconciliation(
@@ -82,6 +84,36 @@ export default function ReconcileTab() {
           </span>
         )}
         {flashMsg && <span style={{ fontSize: 12, color: GOLD, fontWeight: 600 }}>{flashMsg}</span>}
+      </div>
+
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 320px" }}>
+          <PayslipPanel periodKey={period} />
+        </div>
+        <div style={{ flex: "1 1 260px", background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+          <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 8 }}>
+            Year to date
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: MUTE }}>Gross</span>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(ytd.gross)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: MUTE }}>PAYG tax</span>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(ytd.paygwTax)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: MUTE }}>Super</span>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(ytd.super)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600, borderTop: `1px solid ${LINE}`, paddingTop: 4, marginTop: 2 }}>
+              <span>Net</span>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(ytd.net)}</span>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: MUTE, marginTop: 8 }}>From confirmed payslips this financial year.</div>
+        </div>
       </div>
 
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>

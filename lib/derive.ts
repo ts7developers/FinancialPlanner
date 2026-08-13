@@ -4,7 +4,7 @@
 
 import { dayLabel, isFT, periodKeyOf, type Period } from "./period";
 import { netFromPackage, FN_PER_YEAR, FN_FROM_MO } from "./tax";
-import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances } from "./types";
+import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip } from "./types";
 
 export interface DerivedFinancials {
   netFTfn: number;
@@ -173,4 +173,26 @@ export interface PieSlice {
 
 export function buildPieData(categories: BudgetCategoryRow[], D: DerivedFinancials, year: number): PieSlice[] {
   return categories.map((c) => ({ name: c.label, value: D.catFN(c.key, year) })).filter((d) => d.value > 0);
+}
+
+export interface YtdTotals {
+  gross: number;
+  paygwTax: number;
+  super: number;
+  net: number;
+}
+
+/** Sums confirmed payslips whose period_start falls within the AU financial year starting fyStartISO. */
+export function sumYTD(payslips: Payslip[], fyStartISO: string): YtdTotals {
+  return payslips
+    .filter((p) => p.status === "confirmed" && p.period_start && p.period_start >= fyStartISO)
+    .reduce(
+      (acc, p) => ({
+        gross: acc.gross + (p.gross || 0),
+        paygwTax: acc.paygwTax + (p.paygw_tax || 0),
+        super: acc.super + (p.super || 0),
+        net: acc.net + (p.net || 0),
+      }),
+      { gross: 0, paygwTax: 0, super: 0, net: 0 }
+    );
 }

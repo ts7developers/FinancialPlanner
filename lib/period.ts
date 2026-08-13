@@ -77,6 +77,14 @@ export function currentPeriod(periods: Period[], todayISO: string): Period {
   return today < periods[0].start ? periods[0] : periods[periods.length - 1];
 }
 
+/** Start (Jul 1) of the AU financial year containing the given date. */
+export function financialYearStart(dateISO: string): string {
+  const d = dateFromISO(dateISO);
+  const year = d.getUTCFullYear();
+  const julyThisYear = new Date(Date.UTC(year, 6, 1));
+  return d >= julyThisYear ? isoFromDate(julyThisYear) : isoFromDate(new Date(Date.UTC(year - 1, 6, 1)));
+}
+
 export function isFT(periodKey: string, ftStartStr: string): boolean {
   return dateFromISO(periodKey) >= dateFromISO(ftStartStr);
 }

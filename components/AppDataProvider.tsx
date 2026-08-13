@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useMemo, useState } from "react
 import { createClient } from "@/lib/supabase/client";
 import { buildPeriods, isoFromDate, periodKeyOf, type Period } from "@/lib/period";
 import { deriveFinancials, buildPlanPath, loggedByCategory, type DerivedFinancials, type PlanPathPoint } from "@/lib/derive";
-import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances } from "@/lib/types";
+import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip } from "@/lib/types";
 
 interface NewTransaction {
   date: string;
@@ -21,6 +21,7 @@ interface AppDataContextValue {
   reconciliations: Record<string, Reconciliation>;
   snapshots: Snapshot[];
   balances: Balances;
+  payslips: Payslip[];
   periods: Period[];
   D: DerivedFinancials;
   planPath: PlanPathPoint[];
@@ -36,6 +37,9 @@ interface AppDataContextValue {
   ) => Promise<void>;
   updateBalances: (patch: Partial<Omit<Balances, "user_id">>) => Promise<void>;
   takeSnapshot: () => Promise<void>;
+  addPayslip: (payslip: Payslip) => void;
+  updatePayslip: (id: string, patch: Partial<Payslip>) => void;
+  confirmPayslip: (id: string, periodKey: string, net: number) => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -53,6 +57,7 @@ export function AppDataProvider({
   initialReconciliations,
   initialSnapshots,
   initialBalances,
+  initialPayslips,
   children,
 }: {
   initialProfile: Profile;
@@ -61,6 +66,7 @@ export function AppDataProvider({
   initialReconciliations: Reconciliation[];
   initialSnapshots: Snapshot[];
   initialBalances: Balances;
+  initialPayslips: Payslip[];
   children: React.ReactNode;
 }) {
   const supabase = useMemo(() => createClient(), []);
@@ -72,6 +78,7 @@ export function AppDataProvider({
   );
   const [snapshots, setSnapshots] = useState(initialSnapshots);
   const [balances, setBalances] = useState(initialBalances);
+  const [payslips, setPayslips] = useState(initialPayslips);
 
   const periods = useMemo(() => buildPeriods(profile.pay_anchor), [profile.pay_anchor]);
   const D = useMemo(() => deriveFinancials(profile, categories), [profile, categories]);
@@ -162,6 +169,25 @@ export function AppDataProvider({
     setSnapshots((ss) => [...ss.filter((s) => s.period_key !== key), data as Snapshot].sort((a, b) => a.period_key.localeCompare(b.period_key)));
   }, [supabase, profile.user_id, profile.pay_anchor, balances]);
 
+  const addPayslip = useCallback((payslip: Payslip) => {
+    setPayslips((ps) => [...ps.filter((p) => p.id !== payslip.id), payslip]);
+  }, []);
+
+  const updatePayslip = useCallback((id: string, patch: Partial<Payslip>) => {
+    setPayslips((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  }, []);
+
+  const confirmPayslip = useCallback(
+    async (id: string, periodKey: string, net: number) => {
+      const confirmedAt = new Date().toISOString();
+      setPayslips((ps) => ps.map((p) => (p.id === id ? { ...p, status: "confirmed", confirmed_at: confirmedAt } : p)));
+      const { error } = await supabase.from("payslips").update({ status: "confirmed", confirmed_at: confirmedAt }).eq("id", id);
+      if (error) throw error;
+      await setReconciliation(periodKey, { actual_income: net });
+    },
+    [supabase, setReconciliation]
+  );
+
   const value: AppDataContextValue = {
     profile,
     categories,
@@ -169,6 +195,7 @@ export function AppDataProvider({
     reconciliations,
     snapshots,
     balances,
+    payslips,
     periods,
     D,
     planPath,
@@ -180,6 +207,9 @@ export function AppDataProvider({
     setReconciliation,
     updateBalances,
     takeSnapshot,
+    addPayslip,
+    updatePayslip,
+    confirmPayslip,
   };
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
