@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, Inter } from "next/font/google";
 import { PAPER, NAVY } from "@/lib/theme";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -35,7 +36,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable}`}>
-      <body style={{ background: PAPER, margin: 0 }}>{children}</body>
+      <body style={{ background: PAPER, margin: 0 }}>
+        {children}
+        <ServiceWorkerRegister />
+      </body>
     </html>
   );
 }
