@@ -52,17 +52,41 @@ Open [http://localhost:3000](http://localhost:3000). Sign in with a magic link (
 
 - `lib/period.ts`, `lib/tax.ts`, `lib/categories.ts` — the fortnightly period engine, AU tax engine, and
   default expense categories. Pure functions, unit-tested against the build spec's baseline figures.
+- `lib/derive.ts` — cross-tab derived data (plan-vs-actual variances, deposit trajectory, logged-by-category
+  rollups), also pure functions ported from the prototype's memoized calculations.
 - `lib/supabase/` — browser client, server client, and the session-refresh helper used by `proxy.ts`
   (Next.js 16 renamed Middleware to Proxy — same mechanism, new filename).
+- `lib/data/fetchAppData.ts` — the one server-side fetch that loads everything a signed-in user needs;
+  `components/AppDataProvider.tsx` holds it in a client context so all tabs share the same state and
+  derived math, matching the prototype's single-component architecture.
 - `app/(auth)/` — magic-link sign-in.
 - `app/(app)/` — the five tabs (Overview, Expenses, Reconcile, Accounts, Plan) behind auth.
+- `app/manifest.ts`, `app/icon.tsx`, `app/apple-icon.tsx`, `app/icons/` — PWA manifest and generated
+  icons (via `next/og`'s `ImageResponse` — no image assets to maintain). `public/sw.js` is the service
+  worker, registered from the root layout.
 - `supabase/migrations/` — SQL migrations, run manually in the Supabase SQL editor (or via the Supabase
   CLI once linked to the project).
 
 ## Deploying
 
-Not yet wired up — see the build spec §9 step 7/8. Once the app is verified working locally against a
-real Supabase project, deploy to Vercel and set the same environment variables there (with
-`NEXT_PUBLIC_SITE_URL` set to the production URL, and the magic-link redirect URLs updated in Supabase).
+Verify locally against a real Supabase project first (magic-link sign-in round trip, data persists
+across a refresh) before deploying.
+
+1. Push this repo to GitHub (or another Vercel-supported git provider).
+2. In Vercel, **Add New → Project** and import the repo. Framework preset auto-detects Next.js — no
+   build command changes needed.
+3. Add the environment variables from `.env.local` to the Vercel project (**Settings → Environment
+   Variables**), with one change: set `NEXT_PUBLIC_SITE_URL` to the production URL Vercel assigns (or
+   your custom domain).
+4. In Supabase **Authentication → URL Configuration**, add the production URL to the allowed redirect
+   URLs (alongside `http://localhost:3000` for local dev).
+5. Deploy. Test the magic-link flow against the production URL — the email link must round-trip through
+   `/auth/confirm` on the *deployed* domain, so this only fully works once `NEXT_PUBLIC_SITE_URL` and the
+   Supabase redirect allowlist both point at it.
+6. Test "Add to Home Screen" on a phone against the deployed HTTPS URL — PWA install prompts generally
+   require a real HTTPS origin, not `localhost`.
+
+The `ANTHROPIC_API_KEY` env var only needs to exist on Vercel (server-side) — it's read inside the
+payslip-parsing Route Handler and never sent to the client.
 
 General information to help track finances — not financial, tax, or credit advice.
