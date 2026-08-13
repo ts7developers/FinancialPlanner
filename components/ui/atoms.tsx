@@ -128,6 +128,7 @@ export function PInput({
   label,
   value,
   onChange,
+  onBlur,
   prefix,
   suffix,
   type = "number",
@@ -135,6 +136,7 @@ export function PInput({
   label: string;
   value: string | number;
   onChange: (v: string) => void;
+  onBlur?: () => void;
   prefix?: string;
   suffix?: string;
   type?: "number" | "date";
@@ -149,6 +151,7 @@ export function PInput({
           inputMode={type === "number" ? "decimal" : undefined}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
           style={{
             width: "100%",
             boxSizing: "border-box",
