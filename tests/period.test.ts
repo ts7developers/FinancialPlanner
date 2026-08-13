@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPeriods, dateFromISO, isFT, periodKeyOf } from "@/lib/period";
+import { buildPeriods, currentPeriod, dateFromISO, isFT, periodKeyOf } from "@/lib/period";
 
 // Baseline figures from build spec §2.
 const ANCHOR = "2026-08-24";
@@ -52,5 +52,20 @@ describe("period engine — baseline figures (spec §2)", () => {
 
   it("periodKeyOf returns null for dates before the anchor", () => {
     expect(periodKeyOf("2026-08-23", ANCHOR)).toBeNull();
+  });
+
+  it("currentPeriod falls back to the first period when today is before the anchor", () => {
+    const periods = buildPeriods(ANCHOR);
+    expect(currentPeriod(periods, "2026-08-13").key).toBe(ANCHOR);
+  });
+
+  it("currentPeriod finds the containing period once the plan has started", () => {
+    const periods = buildPeriods(ANCHOR);
+    expect(currentPeriod(periods, "2026-09-10").key).toBe("2026-09-07");
+  });
+
+  it("currentPeriod falls back to the last period once the plan has ended", () => {
+    const periods = buildPeriods(ANCHOR);
+    expect(currentPeriod(periods, "2030-01-15").key).toBe(periods[periods.length - 1].key);
   });
 });

@@ -1,0 +1,254 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { useAppData } from "@/components/AppDataProvider";
+import { useIsMobile } from "@/lib/useIsMobile";
+import { periodKeyOf, periodLabel } from "@/lib/period";
+import { TXN_CATEGORIES } from "@/lib/categories";
+import { AUD } from "@/lib/money";
+import { ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, INK, NAVY, selStyle } from "@/lib/theme";
+import { Field } from "@/components/ui/atoms";
+
+function todayLocalISO() {
+  const d = new Date();
+  const tz = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tz).toISOString().slice(0, 10);
+}
+
+export default function ExpensesTab() {
+  const isMobile = useIsMobile();
+  const { profile, transactions, periods, addTransaction, deleteTransaction } = useAppData();
+
+  const [form, setForm] = useState({ date: "", desc: "", amount: "", catId: "groceries", account: "Everyday" as string });
+  const [txnFilter, setTxnFilter] = useState("all");
+  const [flashMsg, setFlashMsg] = useState("");
+
+  useEffect(() => {
+    // Must run client-only: the server has no notion of the user's local calendar day,
+    // so computing this during render would mismatch between SSR and hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setForm((f) => (f.date ? f : { ...f, date: todayLocalISO() }));
+  }, []);
+
+  const flash = (m = "Saved") => {
+    setFlashMsg(m);
+    setTimeout(() => setFlashMsg(""), 1300);
+  };
+
+  const addTxn = async () => {
+    if (!form.amount || !form.date) {
+      flash("Add a date and amount");
+      return;
+    }
+    await addTransaction({
+      date: form.date,
+      description: form.desc,
+      amount: Number(form.amount),
+      category_key: form.catId,
+      account: form.account,
+    });
+    setForm((f) => ({ ...f, desc: "", amount: "" }));
+    flash("Expense logged");
+  };
+
+  const catLabel = (id: string) => TXN_CATEGORIES.find((c) => c.id === id)?.label || id;
+
+  const filteredTxns = transactions
+    .filter((t) => txnFilter === "all" || periodKeyOf(t.date, profile.pay_anchor) === txnFilter)
+    .slice()
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const filterTotal = filteredTxns.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const byAccount = ACCOUNTS.map((acc) => ({
+    acc,
+    total: filteredTxns.filter((t) => t.account === acc).reduce((s, t) => s + (Number(t.amount) || 0), 0),
+  })).filter((x) => x.total > 0);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+        <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 12 }}>Log an expense</div>
+        {isMobile ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Field label="Amount">
+              <div style={{ display: "flex", alignItems: "center", gap: 4, border: `1px solid ${LINE}`, borderRadius: 8, background: "#FCFBF7", padding: "4px 10px" }}>
+                <span style={{ color: MUTE, fontSize: 20 }}>$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={form.amount}
+                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                  style={{ border: "none", background: "transparent", outline: "none", width: "100%", fontSize: 22, fontWeight: 600, fontFamily: "var(--font-space-grotesk), sans-serif", color: NAVY, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "6px 0" }}
+                />
+              </div>
+            </Field>
+            <Field label="Description">
+              <input type="text" placeholder="e.g. Woolworths" value={form.desc} onChange={(e) => setForm((f) => ({ ...f, desc: e.target.value }))} style={{ ...selStyle, width: "100%", textAlign: "left", height: 42 }} />
+            </Field>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Field label="Category" grow>
+                <select value={form.catId} onChange={(e) => setForm((f) => ({ ...f, catId: e.target.value }))} style={{ ...selStyle, width: "100%", height: 42 }}>
+                  {TXN_CATEGORIES.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Account / card" grow>
+                <select value={form.account} onChange={(e) => setForm((f) => ({ ...f, account: e.target.value }))} style={{ ...selStyle, width: "100%", height: 42 }}>
+                  {ACCOUNTS.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <Field label="Date">
+              <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} style={{ ...selStyle, width: "100%", height: 42 }} />
+            </Field>
+            <button onClick={addTxn} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, background: GOLD, color: INK, border: "none", borderRadius: 10, padding: "13px", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif" }}>
+              <Plus size={18} /> Add expense
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <Field label="Date">
+              <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} style={{ ...selStyle, width: 150 }} />
+            </Field>
+            <Field label="Description" grow>
+              <input type="text" placeholder="e.g. Woolworths" value={form.desc} onChange={(e) => setForm((f) => ({ ...f, desc: e.target.value }))} style={{ ...selStyle, width: "100%", textAlign: "left" }} />
+            </Field>
+            <Field label="Amount">
+              <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                <span style={{ color: MUTE, fontSize: 13 }}>$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={form.amount}
+                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                  onKeyDown={(e) => e.key === "Enter" && addTxn()}
+                  style={{ ...selStyle, width: 100, textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+                />
+              </div>
+            </Field>
+            <Field label="Category">
+              <select value={form.catId} onChange={(e) => setForm((f) => ({ ...f, catId: e.target.value }))} style={{ ...selStyle, width: 140 }}>
+                {TXN_CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Account / card">
+              <select value={form.account} onChange={(e) => setForm((f) => ({ ...f, account: e.target.value }))} style={{ ...selStyle, width: 140 }}>
+                {ACCOUNTS.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <button onClick={addTxn} style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}>
+              <Plus size={15} /> Add
+            </button>
+          </div>
+        )}
+        {flashMsg && <div style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginTop: 10 }}>{flashMsg}</div>}
+      </div>
+
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 640px" }}>
+          <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${LINE}`, gap: 8 }}>
+              <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Transactions</div>
+              <select value={txnFilter} onChange={(e) => setTxnFilter(e.target.value)} style={selStyle}>
+                <option value="all">All fortnights</option>
+                {periods.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {periodLabel(p)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {filteredTxns.length === 0 ? (
+              <div style={{ padding: 24, fontSize: 13, color: MUTE, textAlign: "center" }}>
+                No expenses logged yet. Add one above — it flows into the matching category on the Reconcile tab for its fortnight.
+              </div>
+            ) : isMobile ? (
+              <div>
+                {filteredTxns.map((t) => (
+                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: `1px solid ${LINE}` }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: ACC_COLOR[t.account as keyof typeof ACC_COLOR] || MUTE, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.description || catLabel(t.category_key)}</div>
+                      <div style={{ fontSize: 11, color: MUTE, marginTop: 1 }}>
+                        {(t.date || "").slice(5)} · {catLabel(t.category_key)} · {t.account}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{AUD(Number(t.amount), 2)}</span>
+                    <button onClick={() => deleteTransaction(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", padding: 8, display: "flex" }}>
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 14px", background: "#F4EFE1", borderTop: `2px solid ${GOLD}`, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 700 }}>
+                  <span>Total</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(filterTotal, 2)}</span>
+                </div>
+              </div>
+            ) : (
+              <div>
+                {filteredTxns.map((t) => (
+                  <div key={t.id} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "84px 1fr 108px 120px 96px 34px", alignItems: "center", padding: "8px 14px", borderBottom: `1px solid ${LINE}`, fontSize: 13 }}>
+                    <span style={{ color: MUTE, fontVariantNumeric: "tabular-nums" }}>{(t.date || "").slice(5)}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.description || <span style={{ color: "#C7C2B4" }}>—</span>}</span>
+                    <span style={{ fontSize: 11.5, color: MUTE }}>{catLabel(t.category_key)}</span>
+                    <span style={{ fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: ACC_COLOR[t.account as keyof typeof ACC_COLOR] || MUTE }} />
+                      {t.account}
+                    </span>
+                    <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{AUD(Number(t.amount), 2)}</span>
+                    <button onClick={() => deleteTransaction(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex", justifyContent: "center" }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+                <div style={{ display: "grid", gridTemplateColumns: "84px 1fr 108px 120px 96px 34px", padding: "11px 14px", background: "#F4EFE1", borderTop: `2px solid ${GOLD}`, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 700 }}>
+                  <span style={{ gridColumn: "1 / 5" }}>Total {txnFilter === "all" ? "(all)" : ""}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{AUD(filterTotal, 2)}</span>
+                  <span />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={{ flex: "1 1 240px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+            <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 10 }}>By account / card</div>
+            {byAccount.length === 0 ? (
+              <div style={{ fontSize: 12.5, color: MUTE }}>Nothing logged for this filter.</div>
+            ) : (
+              byAccount.map((x) => (
+                <div key={x.acc} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0", fontSize: 13 }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 2, background: ACC_COLOR[x.acc] }} />
+                    {x.acc}
+                  </span>
+                  <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{AUD(x.total, 2)}</span>
+                </div>
+              ))
+            )}
+          </div>
+          <div style={{ background: `linear-gradient(120deg, ${INK}, ${NAVY})`, borderRadius: 14, padding: 16, fontSize: 12, color: "#C4CDE0", lineHeight: 1.55 }}>
+            Each expense auto-fills the matching line on <b style={{ color: "#E7D6A8" }}>Reconcile</b> for its fortnight. Type a manual actual there only to override the logged total.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

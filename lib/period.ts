@@ -19,7 +19,7 @@ export function isoFromDate(dt: Date): string {
   return dt.toISOString().slice(0, 10);
 }
 
-function shortLabel(dt: Date): string {
+export function dayLabel(dt: Date): string {
   return `${dt.getUTCDate()} ${MONTHS[dt.getUTCMonth()]}`;
 }
 
@@ -46,7 +46,7 @@ export function buildPeriods(anchorStr: string, cutoffStr: string = LAST_PERIOD_
       key: isoFromDate(start),
       start: new Date(start),
       end,
-      label: `${shortLabel(start)} – ${shortLabel(end)}`,
+      label: `${dayLabel(start)} – ${dayLabel(end)}`,
       year: start.getUTCFullYear(),
     });
     start = new Date(start);
@@ -66,6 +66,15 @@ export function periodKeyOf(dateStr: string | null | undefined, anchorStr: strin
   const s = new Date(anchor);
   s.setUTCDate(s.getUTCDate() + idx * 14);
   return isoFromDate(s);
+}
+
+/** The period covering today, or the nearest boundary period if today falls outside the plan's range. */
+export function currentPeriod(periods: Period[], todayISO: string): Period {
+  if (periods.length === 0) throw new Error("currentPeriod: no periods generated");
+  const today = dateFromISO(todayISO);
+  const found = periods.find((p) => today >= p.start && today <= p.end);
+  if (found) return found;
+  return today < periods[0].start ? periods[0] : periods[periods.length - 1];
 }
 
 export function isFT(periodKey: string, ftStartStr: string): boolean {

@@ -1,5 +1,7 @@
 // Palette + shared style tokens, ported from the FinancialPlanTracker.jsx prototype (spec §8).
 
+import type { CSSProperties } from "react";
+
 export const INK = "#16203A";
 export const NAVY = "#1F2A44";
 export const NAVY2 = "#2C3A5C";
@@ -27,4 +29,28 @@ export const ACC_COLOR: Record<Account, string> = {
   "Credit card": "#C0492F",
   Holiday: "#2E7D5B",
   Cash: "#8CA0BE",
+};
+
+export const selStyle: CSSProperties = {
+  padding: "7px 9px",
+  border: `1px solid ${LINE}`,
+  borderRadius: 8,
+  fontFamily: "var(--font-inter), sans-serif",
+  fontSize: 13,
+  color: NAVY,
+  background: "#FCFBF7",
+};
+
+export const inputStyle: CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "7px 9px",
+  border: `1px solid ${LINE}`,
+  borderRadius: 8,
+  fontFamily: "var(--font-inter), sans-serif",
+  fontSize: 13,
+  textAlign: "right",
+  fontVariantNumeric: "tabular-nums",
+  color: NAVY,
+  background: "#FCFBF7",
 };
