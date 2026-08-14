@@ -6,7 +6,17 @@ import { Wallet, PiggyBank, Home, TrendingUp, Receipt, ScrollText, Camera, Landm
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { currentPeriod, financialYearStart, isoFromDate } from "@/lib/period";
-import { buildPieData, sumYTD, buildSpendTrend, buildBorrowingCapacity, borrowingCapacityYearReached, BORROW_MULT_LOW, BORROW_MULT_HIGH } from "@/lib/derive";
+import {
+  buildPieData,
+  sumYTD,
+  buildSpendTrend,
+  buildBorrowingCapacity,
+  borrowingCapacityYearReached,
+  fhssSummary,
+  DEFAULT_FHSS_DEEMED_RATE,
+  BORROW_MULT_LOW,
+  BORROW_MULT_HIGH,
+} from "@/lib/derive";
 import { AUD, num } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, FAV, PIE_COLORS } from "@/lib/theme";
 import { Metric, Progress } from "@/components/ui/atoms";
@@ -22,12 +32,21 @@ const BorrowingCapacityChart = dynamic(() => import("@/components/charts/Borrowi
 
 export default function OverviewTab() {
   const isMobile = useIsMobile();
-  const { profile, categories, balances, planPath, snapshots, periods, payslips, loggedByCat, reconciliations, D } = useAppData();
+  const { profile, categories, balances, planPath, snapshots, periods, payslips, loggedByCat, reconciliations, superContributions, D } = useAppData();
 
   const today = isoFromDate(new Date());
   const yr = currentPeriod(periods, today).year;
   const ytd = sumYTD(payslips, financialYearStart(today));
   const taxPaidYTD = ytd.paygwTax + (Number(profile.tax_paid_opening) || 0);
+
+  const fhss = fhssSummary(
+    superContributions.map((c) => ({ date: c.date, amount: c.amount, taxDeductible: c.tax_deductible })),
+    today,
+    DEFAULT_FHSS_DEEMED_RATE,
+    D.cashFT
+  );
+  const cashDeposit = Number(balances.anzplus) || 0;
+  const combinedDeposit = cashDeposit + fhss.estimatedNetReleasable;
 
   const chartData = planPath.map((p) => {
     const s = snapshots.find((x) => x.period_key === p.key);
@@ -107,7 +126,7 @@ export default function OverviewTab() {
         />
         <Metric icon={TrendingUp} label="Planned surplus / fn" value={AUD(D.netFTfn - D.expFN(2027))} sub="2027+, all costs running" />
         <Metric icon={PiggyBank} label="Emergency fund" value={AUD(num(balances.emergency))} sub={`target ${AUD(profile.emergency_target)}`} accent={FAV} />
-        <Metric icon={Home} label="Deposit saved" value={AUD(num(balances.anzplus))} sub={`5% goal ${AUD(D.dep5)}`} />
+        <Metric icon={Home} label="Deposit saved" value={AUD(combinedDeposit)} sub={`cash + FHSS, 5% goal ${AUD(D.dep5)}`} />
       </div>
 
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: "18px 18px 6px" }}>
@@ -137,9 +156,10 @@ export default function OverviewTab() {
         <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18, flex: "1 1 300px", display: "flex", flexDirection: "column", gap: 16, justifyContent: "center" }}>
           <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Goal progress</div>
           <Progress label="Emergency fund" value={num(balances.emergency)} target={num(profile.emergency_target)} colorFrom={FAV} />
-          <Progress label="House deposit (5%)" value={num(balances.anzplus)} target={D.dep5} />
+          <Progress label="House deposit (cash + FHSS)" value={combinedDeposit} target={D.dep5} />
           <div style={{ fontSize: 11.5, color: MUTE, borderTop: `1px solid ${LINE}`, paddingTop: 10 }}>
-            Edit the baseline on <b style={{ color: NAVY }}>Plan</b>; log balances on <b style={{ color: NAVY }}>Accounts</b> and hit <b style={{ color: NAVY }}>Snapshot</b> to plot a dot.
+            Edit the baseline on <b style={{ color: NAVY }}>Plan</b>; log balances on <b style={{ color: NAVY }}>Accounts</b> and hit <b style={{ color: NAVY }}>Snapshot</b> to plot a dot. Full FHSS
+            breakdown and fortnight-by-fortnight projection on <b style={{ color: NAVY }}>Savings</b>.
           </div>
         </div>
       </div>
@@ -147,8 +167,8 @@ export default function OverviewTab() {
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
         <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: "18px 18px 6px", flex: "1 1 380px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexWrap: "wrap", gap: 4 }}>
-            <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Spending trend</div>
-            <div style={{ fontSize: 12, color: MUTE }}>plan vs actual, last {spendTrend.length} fortnights</div>
+            <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Plan vs actual spend</div>
+            <div style={{ fontSize: 12, color: MUTE }}>last {spendTrend.length} fortnights · for a pure actuals view, see Expenses</div>
           </div>
           <SpendingTrendChart data={spendTrend} />
         </div>

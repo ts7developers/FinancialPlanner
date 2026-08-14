@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Receipt, ScrollText, Landmark, LineChart, PiggyBank, SlidersHorizontal } from "lucide-react";
+import { LayoutDashboard, Wallet, Receipt, ScrollText, Landmark, LineChart, PiggyBank, SlidersHorizontal } from "lucide-react";
 import { PAPER, NAVY, GOLD } from "@/lib/theme";
 
 const TABS = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
+  { href: "/income", label: "Income", icon: Wallet },
   { href: "/expenses", label: "Expenses", icon: Receipt },
   { href: "/reconcile", label: "Reconcile", icon: ScrollText },
   { href: "/accounts", label: "Accounts", icon: Landmark },
@@ -47,13 +48,26 @@ export default function TabNav({ isMobile }: { isMobile: boolean }) {
                 flexDirection: "column",
                 alignItems: "center",
                 gap: 2,
-                padding: "9px 2px 8px",
+                padding: "9px 1px 8px",
                 color: on ? GOLD : "#9FB0CE",
                 textDecoration: "none",
+                minWidth: 0,
               }}
             >
-              <t.icon size={19} />
-              <span style={{ fontSize: 10, fontWeight: 600, fontFamily: "var(--font-space-grotesk), sans-serif" }}>{t.label}</span>
+              <t.icon size={17} />
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 600,
+                  fontFamily: "var(--font-space-grotesk), sans-serif",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  maxWidth: "100%",
+                }}
+              >
+                {t.label}
+              </span>
             </Link>
           );
         })}

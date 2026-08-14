@@ -4,7 +4,7 @@ import { useState } from "react";
 import { PiggyBank, Plus, Trash2, Sparkles } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { isoFromDate, financialYearStart } from "@/lib/period";
-import { sumYTD, fhssSummary, FHSS_ANNUAL_CAP, FHSS_LIFETIME_CAP } from "@/lib/derive";
+import { sumYTD, fhssSummary, FHSS_ANNUAL_CAP, FHSS_LIFETIME_CAP, DEFAULT_FHSS_DEEMED_RATE } from "@/lib/derive";
 import { AUD, num } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, FAV, selStyle } from "@/lib/theme";
 import { Metric, Progress, Field } from "@/components/ui/atoms";
@@ -25,7 +25,7 @@ export default function SuperTab() {
   const [taxDeductible, setTaxDeductible] = useState(true);
   const [affectsBalance, setAffectsBalance] = useState(true);
   const [note, setNote] = useState("");
-  const [deemedRate, setDeemedRate] = useState("7.4");
+  const [deemedRate, setDeemedRate] = useState(String(DEFAULT_FHSS_DEEMED_RATE));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [flashMsg, setFlashMsg] = useState("");

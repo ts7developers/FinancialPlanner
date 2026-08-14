@@ -7,7 +7,7 @@ import { AUD, num } from "@/lib/money";
 import { netPosition, applyTransfer, computeHoldingPL } from "@/lib/derive";
 import { dateFromISO, dayLabel } from "@/lib/period";
 import { CARD, LINE, MUTE, GOLD, INK, NAVY, GOLD_SOFT, FAV, UNFAV, inputStyle, selStyle } from "@/lib/theme";
-import { Progress, Stat, Field } from "@/components/ui/atoms";
+import { Stat, Field } from "@/components/ui/atoms";
 import type { Balances } from "@/lib/types";
 
 const BALANCE_FIELDS: [keyof Omit<Balances, "user_id">, string][] = [
@@ -23,13 +23,11 @@ const BALANCE_FIELDS: [keyof Omit<Balances, "user_id">, string][] = [
 
 export default function AccountsTab() {
   const {
-    profile,
     balances,
     snapshots,
     transfers,
     holdings,
     holdingLots,
-    D,
     updateBalances,
     takeSnapshot,
     addTransfer,
@@ -210,9 +208,9 @@ export default function AccountsTab() {
               Negative today is normal for a new grad — HECS is the cheapest debt you&apos;ll hold. It flips positive as the deposit grows.
             </div>
           </div>
-          <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
-            <Progress label="Emergency fund" value={num(balances.emergency)} target={num(profile.emergency_target)} colorFrom="#2E7D5B" />
-            <Progress label="House deposit (5%)" value={num(balances.anzplus)} target={D.dep5} />
+          <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18, fontSize: 12, color: MUTE, lineHeight: 1.5 }}>
+            Goal progress and the FHSS-adjusted house deposit total are tracked on <b style={{ color: NAVY }}>Overview</b> and{" "}
+            <b style={{ color: NAVY }}>Savings</b> — edit balances here and they&apos;ll flow through automatically.
           </div>
         </div>
       </div>

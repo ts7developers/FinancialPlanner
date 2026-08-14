@@ -125,6 +125,8 @@ export default function ExpensesTab() {
 
   const catLabel = (id: string) => TXN_CATEGORIES.find((c) => c.id === id)?.label || id;
   const quickCats = topCategories(transactions);
+  const dateBeforeAnchor = form.date !== "" && periodKeyOf(form.date, profile.pay_anchor) === null;
+  const recDateBeforeAnchor = recForm.nextDue !== "" && periodKeyOf(recForm.nextDue, profile.pay_anchor) === null;
 
   const today = form.date || todayLocalISO();
   const activeRecurring = recurringExpenses.filter((r) => r.active).sort((a, b) => a.next_due.localeCompare(b.next_due));
@@ -309,6 +311,11 @@ export default function ExpensesTab() {
             </button>
           </div>
         )}
+        {dateBeforeAnchor && (
+          <div style={{ fontSize: 12, color: "#C0492F", marginTop: 10 }}>
+            This date is before your pay cycle starts (see <b>Plan</b>) — it&apos;ll still update balances, but won&apos;t auto-fill into Reconcile or the plan-vs-actual charts.
+          </div>
+        )}
         {flashMsg && <div style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginTop: 10 }}>{flashMsg}</div>}
       </div>
 
@@ -444,6 +451,11 @@ export default function ExpensesTab() {
             <Plus size={15} /> Add
           </button>
         </div>
+        {recDateBeforeAnchor && (
+          <div style={{ fontSize: 12, color: "#C0492F", marginTop: 10 }}>
+            This due date is before your pay cycle starts (see <b>Plan</b>) — logging it will still update balances, but won&apos;t auto-fill into Reconcile.
+          </div>
+        )}
       </div>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>

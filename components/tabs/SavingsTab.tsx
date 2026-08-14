@@ -14,6 +14,7 @@ import {
   buildFortnightSplit,
   fortnightCategoryBreakdown,
   periodsToTarget,
+  DEFAULT_FHSS_DEEMED_RATE,
 } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, FAV, selStyle } from "@/lib/theme";
@@ -32,7 +33,7 @@ export default function SavingsTab() {
   const [extraFn, setExtraFn] = useState("0");
   const [hecsIndexPct, setHecsIndexPct] = useState("3");
   const [scenarioId, setScenarioId] = useState("standard");
-  const [deemedRate, setDeemedRate] = useState("7.4");
+  const [deemedRate, setDeemedRate] = useState(String(DEFAULT_FHSS_DEEMED_RATE));
 
   const scenario = SALARY_SCENARIOS.find((s) => s.id === scenarioId) ?? SALARY_SCENARIOS[0];
   const comparisonScenario = SALARY_SCENARIOS.find((s) => s.id !== scenarioId) ?? SALARY_SCENARIOS[0];

@@ -488,6 +488,8 @@ export function sumYTD(payslips: Payslip[], fyStartISO: string): YtdTotals {
 /** First Home Super Saver Scheme eligibility caps (ATO, current since 1 July 2022). */
 export const FHSS_ANNUAL_CAP = 15000;
 export const FHSS_LIFETIME_CAP = 50000;
+/** Default deemed-earnings rate shown across the Super/Savings/Overview tabs — approximates the ATO's shortfall interest charge rate, which changes quarterly. Editable per-tab; this is just the shared starting point. */
+export const DEFAULT_FHSS_DEEMED_RATE = 7.4;
 
 export interface FhssSummary {
   thisFYTotal: number; // raw logged total this FY, uncapped

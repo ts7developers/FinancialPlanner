@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Check } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
@@ -13,10 +14,22 @@ import PayslipPanel from "@/components/PayslipPanel";
 
 export default function ReconcileTab() {
   const isMobile = useIsMobile();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { profile, categories, periods, D, loggedByCat, reconciliations, setReconciliation, payslips } = useAppData();
 
-  const [period, setPeriod] = useState(() => currentPeriod(periods, isoFromDate(new Date())).key);
+  const [period, setPeriod] = useState(() => {
+    const fromQuery = searchParams.get("period");
+    if (fromQuery && periods.some((p) => p.key === fromQuery)) return fromQuery;
+    return currentPeriod(periods, isoFromDate(new Date())).key;
+  });
   const rec = reconciliations[period];
+
+  useEffect(() => {
+    // Arrived via a deep link (e.g. from Income's payslip history) — drop the marker once used.
+    if (searchParams.get("period")) router.replace("/reconcile");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [incomeInput, setIncomeInput] = useState(() => (rec?.actual_income == null ? "" : String(rec.actual_income)));
   const [overridesInput, setOverridesInput] = useState<Record<string, string>>(() => rec?.actual_overrides ?? {});
