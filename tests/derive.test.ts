@@ -20,6 +20,11 @@ import {
   fhssSummary,
   FHSS_ANNUAL_CAP,
   FHSS_LIFETIME_CAP,
+  nextOccurrence,
+  daysUntil,
+  buildFortnightSplit,
+  fortnightCategoryBreakdown,
+  periodsToTarget,
 } from "@/lib/derive";
 import { buildPeriods, isFT } from "@/lib/period";
 import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
@@ -127,7 +132,7 @@ describe("applyIncomeToBalance", () => {
   });
 });
 
-const profile: Profile = { user_id: "u1", display_name: null, ...DEFAULT_PROFILE_SETTINGS };
+const profile: Profile = { user_id: "u1", display_name: null, super_employer_extra: 0, ...DEFAULT_PROFILE_SETTINGS };
 const categories: BudgetCategoryRow[] = [
   { id: "c1", user_id: "u1", key: "groceries", label: "Groceries", amount_2026: 500, amount_2027: 500, sort: 0 },
 ];
@@ -430,5 +435,92 @@ describe("fhssSummary", () => {
       baseIncome
     );
     expect(split.estimatedNetReleasable).toBeGreaterThan(allDeductible.estimatedNetReleasable);
+  });
+});
+
+describe("nextOccurrence", () => {
+  it("advances weekly by 7 days", () => {
+    expect(nextOccurrence("2026-08-14", "weekly")).toBe("2026-08-21");
+  });
+
+  it("advances fortnightly by 14 days", () => {
+    expect(nextOccurrence("2026-08-14", "fortnightly")).toBe("2026-08-28");
+  });
+
+  it("advances monthly, rolling over year-end correctly", () => {
+    expect(nextOccurrence("2026-08-14", "monthly")).toBe("2026-09-14");
+    expect(nextOccurrence("2026-12-14", "monthly")).toBe("2027-01-14");
+  });
+
+  it("advances quarterly by 3 months", () => {
+    expect(nextOccurrence("2026-08-14", "quarterly")).toBe("2026-11-14");
+  });
+
+  it("advances yearly by 1 year", () => {
+    expect(nextOccurrence("2026-08-14", "yearly")).toBe("2027-08-14");
+  });
+});
+
+describe("daysUntil", () => {
+  it("is 0 for today", () => {
+    expect(daysUntil("2026-08-14", "2026-08-14")).toBe(0);
+  });
+
+  it("is positive for a future date", () => {
+    expect(daysUntil("2026-08-20", "2026-08-14")).toBe(6);
+  });
+
+  it("is negative for a past date (overdue)", () => {
+    expect(daysUntil("2026-08-01", "2026-08-14")).toBe(-13);
+  });
+});
+
+describe("buildFortnightSplit", () => {
+  const periods = buildPeriods(profile.pay_anchor);
+  const D = deriveFinancials(profile, categories);
+
+  it("routes surplus to the emergency fund first, up to its target, starting from real balances", () => {
+    const split = buildFortnightSplit(profile, D, categories, balances, periods, profile.pay_anchor, 3);
+    expect(split).toHaveLength(3);
+    const first = split[0];
+    expect(first.categoriesTotal).toBeCloseTo(D.expFN(periods[0].year), 5);
+    const surplus = first.netPay - first.categoriesTotal;
+    expect(first.toEmergency).toBeCloseTo(Math.min(surplus, (profile.emergency_target || 0) - balances.emergency), 5);
+  });
+
+  it("stops topping up the emergency fund once it's already at its target", () => {
+    const fullEmergency = { ...balances, emergency: profile.emergency_target };
+    const split = buildFortnightSplit(profile, D, categories, fullEmergency, periods, profile.pay_anchor, 1);
+    expect(split[0].toEmergency).toBe(0);
+    expect(split[0].toDeposit).toBeCloseTo(split[0].netPay - split[0].categoriesTotal, 5);
+  });
+
+  it("accumulates the running deposit balance period over period", () => {
+    const split = buildFortnightSplit(profile, D, categories, balances, periods, profile.pay_anchor, 2);
+    expect(split[1].depositBalance).toBe(Math.round(balances.anzplus + split[0].toDeposit + split[1].toDeposit));
+  });
+});
+
+describe("fortnightCategoryBreakdown", () => {
+  it("returns each category's fortnightly amount for the given year", () => {
+    const D = deriveFinancials(profile, categories);
+    const rows = fortnightCategoryBreakdown(categories, D, 2026);
+    expect(rows).toEqual([{ label: "Groceries", amount: D.catFN("groceries", 2026) }]);
+  });
+});
+
+describe("periodsToTarget", () => {
+  it("is 0 when already at or above target", () => {
+    expect(periodsToTarget(1000, 1000, 100)).toBe(0);
+    expect(periodsToTarget(1200, 1000, 100)).toBe(0);
+  });
+
+  it("is null when the rate can't make progress toward an unmet target", () => {
+    expect(periodsToTarget(0, 1000, 0)).toBeNull();
+    expect(periodsToTarget(0, 1000, -50)).toBeNull();
+  });
+
+  it("rounds up the number of fortnights needed at a constant rate", () => {
+    expect(periodsToTarget(0, 1000, 300)).toBe(4);
   });
 });

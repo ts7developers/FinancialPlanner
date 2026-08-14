@@ -3,17 +3,25 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Plus, Trash2, Wallet, Receipt, ListChecks, Flame } from "lucide-react";
+import { Plus, Trash2, Wallet, Receipt, ListChecks, Flame, Repeat, Pause, Play, Zap } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { periodKeyOf, periodLabel, isoFromDate } from "@/lib/period";
 import { TXN_CATEGORIES } from "@/lib/categories";
-import { periodTotals, averageSpend, buildActualSpendTrend, type PieSlice } from "@/lib/derive";
+import { periodTotals, averageSpend, buildActualSpendTrend, daysUntil, type PieSlice } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, INK, NAVY, PIE_COLORS, selStyle } from "@/lib/theme";
+import { ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, PIE_COLORS, selStyle } from "@/lib/theme";
 import { Field, Toast, Metric } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
-import type { Transaction } from "@/lib/types";
+import type { Transaction, RecurringExpense, RecurringFrequency } from "@/lib/types";
+
+const FREQ_LABEL: Record<RecurringFrequency, string> = {
+  weekly: "Weekly",
+  fortnightly: "Fortnightly",
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  yearly: "Yearly",
+};
 
 const ActualSpendTrendChart = dynamic(() => import("@/components/charts/ActualSpendTrendChart"), { ssr: false, loading: () => <ChartSkeleton height={200} /> });
 const MoneyGoesChart = dynamic(() => import("@/components/charts/MoneyGoesChart"), { ssr: false, loading: () => <ChartSkeleton height={160} /> });
@@ -40,25 +48,49 @@ export default function ExpensesTab() {
   const isMobile = useIsMobile();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { profile, transactions, periods, loggedByCat, addTransaction, deleteTransaction, undoDeleteTransaction } = useAppData();
+  const {
+    profile,
+    transactions,
+    periods,
+    loggedByCat,
+    addTransaction,
+    deleteTransaction,
+    undoDeleteTransaction,
+    recurringExpenses,
+    addRecurringExpense,
+    deleteRecurringExpense,
+    toggleRecurringExpense,
+    logRecurringExpense,
+  } = useAppData();
 
   const [form, setForm] = useState(() => ({
     date: "",
     desc: "",
     amount: "",
     catId: transactions[0]?.category_key || "groceries",
-    account: "Everyday" as string,
+    account: "Credit card" as string,
   }));
   const [txnFilter, setTxnFilter] = useState("all");
   const [flashMsg, setFlashMsg] = useState("");
   const [pendingDelete, setPendingDelete] = useState<{ id: string; desc: string } | null>(null);
   const amountRef = useRef<HTMLInputElement>(null);
 
+  const [recForm, setRecForm] = useState(() => ({
+    desc: "",
+    amount: "",
+    catId: "other",
+    account: "Credit card" as string,
+    frequency: "monthly" as RecurringFrequency,
+    nextDue: "",
+  }));
+  const [recBusy, setRecBusy] = useState<string | null>(null);
+
   useEffect(() => {
     // Must run client-only: the server has no notion of the user's local calendar day,
     // so computing this during render would mismatch between SSR and hydration.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setForm((f) => (f.date ? f : { ...f, date: todayLocalISO() }));
+    setRecForm((f) => (f.nextDue ? f : { ...f, nextDue: todayLocalISO() }));
   }, []);
 
   useEffect(() => {
@@ -93,6 +125,36 @@ export default function ExpensesTab() {
 
   const catLabel = (id: string) => TXN_CATEGORIES.find((c) => c.id === id)?.label || id;
   const quickCats = topCategories(transactions);
+
+  const today = form.date || todayLocalISO();
+  const activeRecurring = recurringExpenses.filter((r) => r.active).sort((a, b) => a.next_due.localeCompare(b.next_due));
+  const pausedRecurring = recurringExpenses.filter((r) => !r.active);
+  const dueRecurring = activeRecurring.filter((r) => daysUntil(r.next_due, today) <= 0);
+  const upcomingRecurring = activeRecurring.filter((r) => daysUntil(r.next_due, today) > 0);
+  const recurringMonthlyTotal = activeRecurring.reduce((s, r) => {
+    const perYear = r.frequency === "weekly" ? 52 : r.frequency === "fortnightly" ? 26 : r.frequency === "monthly" ? 12 : r.frequency === "quarterly" ? 4 : 1;
+    return s + (r.amount * perYear) / 12;
+  }, 0);
+
+  const addRecurring = async () => {
+    if (!recForm.amount || !recForm.desc.trim() || !recForm.nextDue) {
+      flash("Add a description, amount and start date");
+      return;
+    }
+    await addRecurringExpense(recForm.desc, Number(recForm.amount), recForm.catId, recForm.account, recForm.frequency, recForm.nextDue);
+    setRecForm((f) => ({ ...f, desc: "", amount: "" }));
+    flash("Recurring expense added");
+  };
+
+  const onLogRecurring = async (r: RecurringExpense) => {
+    setRecBusy(r.id);
+    try {
+      await logRecurringExpense(r.id);
+      flash(`Logged ${r.description}`);
+    } finally {
+      setRecBusy(null);
+    }
+  };
 
   const onDelete = (t: Transaction) => {
     deleteTransaction(t.id);
@@ -248,6 +310,140 @@ export default function ExpensesTab() {
           </div>
         )}
         {flashMsg && <div style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginTop: 10 }}>{flashMsg}</div>}
+      </div>
+
+      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>
+            <Repeat size={16} color={GOLD} /> Recurring expenses
+          </div>
+          {activeRecurring.length > 0 && <div style={{ fontSize: 12, color: MUTE }}>~{AUD(recurringMonthlyTotal)} / month across {activeRecurring.length}</div>}
+        </div>
+
+        {dueRecurring.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: upcomingRecurring.length || pausedRecurring.length ? 14 : 0 }}>
+            {dueRecurring.map((r) => {
+              const overdueDays = -daysUntil(r.next_due, today);
+              return (
+                <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "#FBF3E0", border: `1px solid ${GOLD}`, borderRadius: 10, flexWrap: "wrap" }}>
+                  <Zap size={15} color={GOLD} style={{ flexShrink: 0 }} />
+                  <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.description}</div>
+                    <div style={{ fontSize: 11, color: MUTE, marginTop: 1 }}>
+                      {FREQ_LABEL[r.frequency]} · {catLabel(r.category_key)} · {r.account} · {overdueDays > 0 ? `${overdueDays}d overdue` : "due today"}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{AUD(Number(r.amount), 2)}</span>
+                  <button
+                    onClick={() => onLogRecurring(r)}
+                    disabled={recBusy === r.id}
+                    style={{ display: "flex", alignItems: "center", gap: 5, background: GOLD, color: INK, border: "none", borderRadius: 7, padding: "7px 12px", fontSize: 12.5, fontWeight: 700, cursor: recBusy === r.id ? "default" : "pointer", opacity: recBusy === r.id ? 0.6 : 1, fontFamily: "var(--font-space-grotesk), sans-serif" }}
+                  >
+                    <Plus size={13} /> Log it
+                  </button>
+                  <button onClick={() => toggleRecurringExpense(r.id)} title="Pause" style={{ background: "none", border: "none", cursor: "pointer", color: "#A99B6E", display: "flex" }}>
+                    <Pause size={14} />
+                  </button>
+                  <button onClick={() => deleteRecurringExpense(r.id)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {upcomingRecurring.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: pausedRecurring.length ? 14 : 0 }}>
+            {upcomingRecurring.map((r) => (
+              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: `1px solid ${LINE}`, fontSize: 13 }}>
+                <div style={{ flex: "1 1 160px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.description}</div>
+                <span style={{ fontSize: 11.5, color: MUTE, flex: "0 0 auto" }}>
+                  {FREQ_LABEL[r.frequency]} · next {r.next_due.slice(5)} · in {daysUntil(r.next_due, today)}d
+                </span>
+                <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500, flex: "0 0 auto" }}>{AUD(Number(r.amount), 2)}</span>
+                <button onClick={() => toggleRecurringExpense(r.id)} title="Pause" style={{ background: "none", border: "none", cursor: "pointer", color: "#A99B6E", display: "flex" }}>
+                  <Pause size={13} />
+                </button>
+                <button onClick={() => deleteRecurringExpense(r.id)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {pausedRecurring.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 14 }}>
+            {pausedRecurring.map((r) => (
+              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: `1px solid ${LINE}`, fontSize: 13, opacity: 0.55 }}>
+                <div style={{ flex: "1 1 160px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.description}</div>
+                <span style={{ fontSize: 11.5, color: MUTE, flex: "0 0 auto" }}>{FREQ_LABEL[r.frequency]} · paused</span>
+                <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500, flex: "0 0 auto" }}>{AUD(Number(r.amount), 2)}</span>
+                <button onClick={() => toggleRecurringExpense(r.id)} title="Resume" style={{ background: "none", border: "none", cursor: "pointer", color: FAV, display: "flex" }}>
+                  <Play size={13} />
+                </button>
+                <button onClick={() => deleteRecurringExpense(r.id)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {recurringExpenses.length === 0 && <div style={{ fontSize: 12.5, color: MUTE, marginBottom: 14 }}>Nothing set up yet — add a rent payment, subscription, or insurance premium below.</div>}
+
+        <div style={{ paddingTop: 12, borderTop: `1px solid ${LINE}`, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <Field label="Description" grow>
+            <input type="text" placeholder="e.g. Netflix" value={recForm.desc} onChange={(e) => setRecForm((f) => ({ ...f, desc: e.target.value }))} style={{ ...selStyle, width: "100%", textAlign: "left" }} />
+          </Field>
+          <Field label="Amount">
+            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span style={{ color: MUTE, fontSize: 13 }}>$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="0.00"
+                value={recForm.amount}
+                onChange={(e) => setRecForm((f) => ({ ...f, amount: e.target.value }))}
+                style={{ ...selStyle, width: 90, textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+              />
+            </div>
+          </Field>
+          <Field label="Category">
+            <select value={recForm.catId} onChange={(e) => setRecForm((f) => ({ ...f, catId: e.target.value }))} style={{ ...selStyle, width: 130 }}>
+              {TXN_CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Account / card">
+            <select value={recForm.account} onChange={(e) => setRecForm((f) => ({ ...f, account: e.target.value }))} style={{ ...selStyle, width: 130 }}>
+              {ACCOUNTS.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Repeats">
+            <select value={recForm.frequency} onChange={(e) => setRecForm((f) => ({ ...f, frequency: e.target.value as RecurringFrequency }))} style={{ ...selStyle, width: 120 }}>
+              {(Object.keys(FREQ_LABEL) as RecurringFrequency[]).map((f) => (
+                <option key={f} value={f}>
+                  {FREQ_LABEL[f]}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Next due">
+            <input type="date" value={recForm.nextDue} onChange={(e) => setRecForm((f) => ({ ...f, nextDue: e.target.value }))} style={{ ...selStyle, width: 140 }} />
+          </Field>
+          <button onClick={addRecurring} style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}>
+            <Plus size={15} /> Add
+          </button>
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>

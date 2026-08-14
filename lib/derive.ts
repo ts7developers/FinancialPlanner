@@ -2,11 +2,11 @@
 // in FinancialPlanTracker.jsx. Pure functions so the same math is reusable and testable
 // independent of React / Supabase.
 
-import { dayLabel, dateFromISO, currentPeriod, financialYearStart, isFT, periodKeyOf, type Period } from "./period";
+import { dayLabel, dateFromISO, isoFromDate, currentPeriod, financialYearStart, isFT, periodKeyOf, periodLabel, type Period } from "./period";
 import { netFromPackage, hecsCompulsoryRepayment, incomeTaxAU, litoAU, FN_PER_YEAR, FN_FROM_MO } from "./tax";
 export { hecsCompulsoryRepayment } from "./tax";
 import type { Account } from "./theme";
-import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot } from "./types";
+import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot, RecurringFrequency } from "./types";
 
 export interface DerivedFinancials {
   netFTfn: number;
@@ -585,4 +585,112 @@ export function fhssSummary(
     estimatedTax,
     estimatedNetReleasable,
   };
+}
+
+/** Advances an ISO date one step forward by a recurring-expense cadence. */
+export function nextOccurrence(dateISO: string, frequency: RecurringFrequency): string {
+  const d = dateFromISO(dateISO);
+  const next = new Date(d);
+  switch (frequency) {
+    case "weekly":
+      next.setUTCDate(next.getUTCDate() + 7);
+      break;
+    case "fortnightly":
+      next.setUTCDate(next.getUTCDate() + 14);
+      break;
+    case "monthly":
+      next.setUTCMonth(next.getUTCMonth() + 1);
+      break;
+    case "quarterly":
+      next.setUTCMonth(next.getUTCMonth() + 3);
+      break;
+    case "yearly":
+      next.setUTCFullYear(next.getUTCFullYear() + 1);
+      break;
+  }
+  return isoFromDate(next);
+}
+
+/** Whole days between today and an ISO date — negative if the date is in the past (overdue). */
+export function daysUntil(dateISO: string, todayISO: string): number {
+  const dayMs = 86400000;
+  return Math.round((dateFromISO(dateISO).getTime() - dateFromISO(todayISO).getTime()) / dayMs);
+}
+
+export interface FortnightSplitCategory {
+  label: string;
+  amount: number;
+}
+
+export interface FortnightSplitPoint {
+  key: string;
+  label: string;
+  isFT: boolean;
+  netPay: number;
+  categoriesTotal: number;
+  toEmergency: number;
+  toDeposit: number;
+  emergencyBalance: number;
+  depositBalance: number;
+}
+
+/**
+ * Walks forward from today's real balances, one pay period at a time, showing exactly where
+ * each fortnight's pay is planned to go: budgeted categories first, then whatever's left tops
+ * up the emergency fund (until its target), then the rest goes to the house deposit. Same
+ * waterfall `buildPlanPath`/`buildNetWorthProjection` use, just surfaced per-period instead of
+ * collapsed into a single running total.
+ */
+export function buildFortnightSplit(
+  profile: Profile,
+  D: DerivedFinancials,
+  categories: BudgetCategoryRow[],
+  balances: Balances,
+  periods: Period[],
+  todayISO: string,
+  horizonPeriods = 10
+): FortnightSplitPoint[] {
+  const startIdx = currentPeriod(periods, todayISO).idx;
+  const emergencyTarget = Number(profile.emergency_target) || 0;
+  let emergency = Number(balances.emergency) || 0;
+  let deposit = Number(balances.anzplus) || 0;
+
+  return periods.slice(startIdx, startIdx + horizonPeriods).map((per) => {
+    const netPay = plannedIncomeFN(per, profile, D);
+    const categoriesTotal = D.expFN(per.year);
+    const surplus = Math.max(0, netPay - categoriesTotal);
+    const toEmergency = Math.max(0, Math.min(surplus, emergencyTarget - emergency));
+    const toDeposit = surplus - toEmergency;
+    emergency += toEmergency;
+    deposit += toDeposit;
+    return {
+      key: per.key,
+      label: periodLabel(per),
+      isFT: isFT(per.key, profile.ft_start),
+      netPay,
+      categoriesTotal,
+      toEmergency,
+      toDeposit,
+      emergencyBalance: Math.round(emergency),
+      depositBalance: Math.round(deposit),
+    };
+  });
+}
+
+/**
+ * Category breakdown of a fortnight's budgeted expenses for a given year — the composition of
+ * `categoriesTotal` in `buildFortnightSplit`, which doesn't vary period to period within a year.
+ */
+export function fortnightCategoryBreakdown(categories: BudgetCategoryRow[], D: DerivedFinancials, year: number): FortnightSplitCategory[] {
+  return categories
+    .slice()
+    .sort((a, b) => a.sort - b.sort)
+    .map((c) => ({ label: c.label, amount: D.catFN(c.key, year) }));
+}
+
+/** Fortnights until `current` reaches `target` at a constant `perPeriod` savings rate — 0 if already there, null if the rate can't get there. */
+export function periodsToTarget(current: number, target: number, perPeriod: number): number | null {
+  if (current >= target) return 0;
+  if (perPeriod <= 0) return null;
+  return Math.ceil((target - current) / perPeriod);
 }

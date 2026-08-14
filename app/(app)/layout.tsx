@@ -28,6 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     holdings,
     holdingLots,
     superContributions,
+    recurringExpenses,
   } = await fetchAppData(user.id);
 
   return (
@@ -45,6 +46,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         initialHoldings={holdings}
         initialHoldingLots={holdingLots}
         initialSuperContributions={superContributions}
+        initialRecurringExpenses={recurringExpenses}
       >
         <PageContent>{children}</PageContent>
       </AppDataProvider>

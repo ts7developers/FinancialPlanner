@@ -18,6 +18,8 @@ export interface Profile {
   tax_paid_opening: number;
   partner_income: number;
   income_growth_pct: number;
+  /** Employer super this FY not captured by a payslip (e.g. a casual job) — already in the real balance, added only to the YTD display figure. */
+  super_employer_extra: number;
 }
 
 export interface BudgetCategoryRow {
@@ -114,6 +116,21 @@ export interface SuperContribution {
   /** Whether this contribution was folded into the "superb" balance when logged (false for historical backfills already reflected in the current balance). */
   affects_balance: boolean;
   note: string | null;
+  created_at: string;
+}
+
+export type RecurringFrequency = "weekly" | "fortnightly" | "monthly" | "quarterly" | "yearly";
+
+export interface RecurringExpense {
+  id: string;
+  user_id: string;
+  description: string;
+  amount: number;
+  category_key: string;
+  account: string;
+  frequency: RecurringFrequency;
+  next_due: string; // ISO date
+  active: boolean;
   created_at: string;
 }
 

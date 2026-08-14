@@ -2,14 +2,22 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import { TrendingUp, Sparkles } from "lucide-react";
+import { TrendingUp, Sparkles, Home, Wallet } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { isoFromDate } from "@/lib/period";
-import { buildNetWorthProjection, netWorthPositiveAt, SALARY_SCENARIOS } from "@/lib/derive";
+import {
+  buildNetWorthProjection,
+  netWorthPositiveAt,
+  SALARY_SCENARIOS,
+  fhssSummary,
+  buildFortnightSplit,
+  fortnightCategoryBreakdown,
+  periodsToTarget,
+} from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, FAV, selStyle } from "@/lib/theme";
-import { Metric, Field } from "@/components/ui/atoms";
+import { Metric, Field, Progress } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { NetWorthChartRow } from "@/components/charts/NetWorthChart";
 
@@ -19,11 +27,12 @@ const HORIZON_PERIODS = 78; // roughly 3 years of fortnights
 
 export default function SavingsTab() {
   const isMobile = useIsMobile();
-  const { profile, balances, periods, D } = useAppData();
+  const { profile, balances, periods, categories, superContributions, D } = useAppData();
   const [growthPct, setGrowthPct] = useState("7");
   const [extraFn, setExtraFn] = useState("0");
   const [hecsIndexPct, setHecsIndexPct] = useState("3");
   const [scenarioId, setScenarioId] = useState("standard");
+  const [deemedRate, setDeemedRate] = useState("7.4");
 
   const scenario = SALARY_SCENARIOS.find((s) => s.id === scenarioId) ?? SALARY_SCENARIOS[0];
   const comparisonScenario = SALARY_SCENARIOS.find((s) => s.id !== scenarioId) ?? SALARY_SCENARIOS[0];
@@ -57,12 +66,73 @@ export default function SavingsTab() {
   const netWorthToday = (balances.emergency || 0) + (balances.anzplus || 0) + (balances.shares || 0) + (balances.superb || 0) - (balances.cc || 0) - (balances.hecs || 0);
   const horizonYears = Math.round((HORIZON_PERIODS * 14) / 365);
 
+  const fhss = fhssSummary(
+    superContributions.map((c) => ({ date: c.date, amount: c.amount, taxDeductible: c.tax_deductible })),
+    today,
+    Number(deemedRate) || 0,
+    D.cashFT
+  );
+  const cashDeposit = Number(balances.anzplus) || 0;
+  const combinedDeposit = cashDeposit + fhss.estimatedNetReleasable;
+  const depositTarget = D.dep5;
+  const depositRemaining = Math.max(0, depositTarget - combinedDeposit);
+
+  const split = buildFortnightSplit(profile, D, categories, balances, periods, today, 10);
+  const avgToDeposit = split.length > 0 ? split.reduce((s, p) => s + p.toDeposit, 0) / split.length : 0;
+  const etaPeriods = periodsToTarget(combinedDeposit, depositTarget, avgToDeposit);
+  const currentIdx = split.length > 0 ? periods.findIndex((p) => p.key === split[0].key) : -1;
+  const etaLabel =
+    etaPeriods === null
+      ? `not at this rate`
+      : etaPeriods === 0
+        ? "already there"
+        : currentIdx >= 0 && currentIdx + etaPeriods < periods.length
+          ? periods[currentIdx + etaPeriods].label
+          : `beyond ${Math.round(((currentIdx + etaPeriods) * 14) / 365)} years`;
+
+  const categoryBreakdown = fortnightCategoryBreakdown(categories, D, currentIdx >= 0 ? periods[currentIdx].year : new Date().getUTCFullYear());
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div>
         <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 18 }}>Savings projection</div>
         <div style={{ fontSize: 12.5, color: MUTE, marginTop: 2 }}>
           Where your planned surplus, super contributions and an assumed investment return put your net worth over the next few years.
+        </div>
+      </div>
+
+      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15 }}>
+            <Home size={16} color={GOLD} /> House deposit
+          </div>
+          <div style={{ fontSize: 12, color: MUTE }}>cash + FHSS, vs your 5% target</div>
+        </div>
+        <Progress label="Combined deposit" value={combinedDeposit} target={depositTarget} colorFrom={FAV} />
+        <div style={{ display: "flex", gap: 20, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${LINE}`, fontSize: 12.5, flexWrap: "wrap" }}>
+          <span style={{ color: MUTE }}>
+            Cash (ANZ Plus) <b style={{ color: NAVY }}>{AUD(cashDeposit)}</b>
+          </span>
+          <span style={{ color: MUTE }}>
+            FHSS net releasable <b style={{ color: NAVY }}>{AUD(fhss.estimatedNetReleasable)}</b>
+          </span>
+          <span style={{ color: MUTE }}>
+            Still needed <b style={{ color: depositRemaining > 0 ? "#C0492F" : FAV }}>{AUD(depositRemaining)}</b>
+          </span>
+          <span style={{ color: MUTE }}>
+            At current rate <b style={{ color: NAVY }}>{etaLabel}</b>
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 10, marginTop: 14 }}>
+          <Field label="FHSS deemed rate (% p.a.)">
+            <input type="number" inputMode="decimal" value={deemedRate} onChange={(e) => setDeemedRate(e.target.value)} style={{ ...selStyle, width: 90, textAlign: "right" }} />
+          </Field>
+        </div>
+        <div style={{ fontSize: 11, color: MUTE, marginTop: 10, lineHeight: 1.5 }}>
+          Your voluntary super contributions count toward this deposit through the First Home Super Saver scheme —
+          see <b style={{ color: NAVY }}>Super</b> for the full FHSS breakdown. &ldquo;At current rate&rdquo; uses your
+          average planned deposit contribution over the next {split.length} fortnights below. Estimate only — not
+          financial advice.
         </div>
       </div>
 
@@ -138,6 +208,71 @@ export default function SavingsTab() {
         <NetWorthChart data={chartRows} comparisonLabel={comparisonScenario.label} isMobile={isMobile} />
         <div style={{ fontSize: 11.5, color: MUTE, padding: "2px 0 12px" }}>
           Starts from your current balances on <b style={{ color: NAVY }}>Accounts</b>, not the original plan baseline — so it reflects where you actually are today.
+        </div>
+      </div>
+
+      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>
+        <div style={{ padding: "18px 18px 4px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>
+            <Wallet size={16} color={GOLD} /> Fortnight-by-fortnight split
+          </div>
+          <div style={{ fontSize: 12, color: MUTE, marginTop: 2 }}>
+            Where each payslip is planned to go: budgeted categories first, then the emergency fund until it&apos;s full, then the house deposit.
+          </div>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          {isMobile ? (
+            <div>
+              {split.map((p) => (
+                <div key={p.key} style={{ padding: "11px 18px", borderBottom: `1px solid ${LINE}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600 }}>
+                    <span>{p.label}</span>
+                    <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(p.netPay)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: MUTE, marginTop: 4 }}>
+                    <span>Expenses {AUD(p.categoriesTotal)}</span>
+                    {p.toEmergency > 0 && <span>→ Emergency {AUD(p.toEmergency)}</span>}
+                    <span>→ Deposit {AUD(p.toDeposit)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 100px 100px 100px 110px", padding: "7px 18px", fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600 }}>
+                <span>Fortnight</span>
+                <span style={{ textAlign: "right" }}>Net pay</span>
+                <span style={{ textAlign: "right" }}>Expenses</span>
+                <span style={{ textAlign: "right" }}>→ Emergency</span>
+                <span style={{ textAlign: "right" }}>→ Deposit</span>
+                <span style={{ textAlign: "right" }}>Deposit bal.</span>
+              </div>
+              {split.map((p) => (
+                <div key={p.key} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "1fr 100px 100px 100px 100px 110px", alignItems: "center", padding: "8px 18px", borderTop: `1px solid ${LINE}`, fontSize: 13 }}>
+                  <span>
+                    {p.label} <span style={{ color: "#C7C2B4", fontSize: 11 }}>{p.isFT ? "FT" : "PT"}</span>
+                  </span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{AUD(p.netPay)}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: MUTE }}>{AUD(p.categoriesTotal)}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toEmergency > 0 ? FAV : "#C7C2B4" }}>{p.toEmergency > 0 ? AUD(p.toEmergency) : "—"}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: FAV, fontWeight: 500 }}>{AUD(p.toDeposit)}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{AUD(p.depositBalance)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{ padding: "14px 18px", borderTop: `2px solid ${GOLD}`, background: "#F4EFE1" }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Budgeted categories this fortnight ({AUD(categoryBreakdown.reduce((s, c) => s + c.amount, 0))} total)</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px" }}>
+            {categoryBreakdown
+              .filter((c) => c.amount > 0)
+              .map((c) => (
+                <span key={c.label} style={{ fontSize: 12, color: MUTE }}>
+                  {c.label} <b style={{ color: NAVY }}>{AUD(c.amount)}</b>
+                </span>
+              ))}
+          </div>
         </div>
       </div>
     </div>

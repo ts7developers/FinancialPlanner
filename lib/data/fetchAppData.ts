@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip, Transfer, Holding, HoldingLot, SuperContribution } from "@/lib/types";
+import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip, Transfer, Holding, HoldingLot, SuperContribution, RecurringExpense } from "@/lib/types";
 
 export interface AppData {
   profile: Profile;
@@ -14,6 +14,7 @@ export interface AppData {
   holdings: Holding[];
   holdingLots: HoldingLot[];
   superContributions: SuperContribution[];
+  recurringExpenses: RecurringExpense[];
 }
 
 /** Loads everything the authed app shell needs for a user in one round trip. */
@@ -32,6 +33,7 @@ export async function fetchAppData(userId: string): Promise<AppData> {
     holdingsRes,
     holdingLotsRes,
     superContributionsRes,
+    recurringExpensesRes,
   ] = await Promise.all([
     supabase.from("profiles").select("*").eq("user_id", userId).single(),
     supabase.from("budget_categories").select("*").eq("user_id", userId).order("sort"),
@@ -44,6 +46,7 @@ export async function fetchAppData(userId: string): Promise<AppData> {
     supabase.from("holdings").select("*").eq("user_id", userId).order("code"),
     supabase.from("holding_lots").select("*").eq("user_id", userId).order("date", { ascending: false }),
     supabase.from("super_contributions").select("*").eq("user_id", userId).order("date", { ascending: false }),
+    supabase.from("recurring_expenses").select("*").eq("user_id", userId).order("next_due"),
   ]);
 
   if (profileRes.error) throw profileRes.error;
@@ -61,5 +64,6 @@ export async function fetchAppData(userId: string): Promise<AppData> {
     holdings: (holdingsRes.data ?? []) as Holding[],
     holdingLots: (holdingLotsRes.data ?? []) as HoldingLot[],
     superContributions: (superContributionsRes.data ?? []) as SuperContribution[],
+    recurringExpenses: (recurringExpensesRes.data ?? []) as RecurringExpense[],
   };
 }

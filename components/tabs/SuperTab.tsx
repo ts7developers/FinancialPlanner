@@ -16,8 +16,9 @@ const TYPE_LABEL: Record<SuperContribution["type"], string> = {
 };
 
 export default function SuperTab() {
-  const { balances, payslips, superContributions, D, addSuperContribution, deleteSuperContribution } = useAppData();
+  const { balances, payslips, superContributions, D, profile, updateProfile, addSuperContribution, deleteSuperContribution } = useAppData();
 
+  const [employerExtra, setEmployerExtra] = useState(String(profile.super_employer_extra ?? 0));
   const [date, setDate] = useState("");
   const [amount, setAmount] = useState("");
   const [type, setType] = useState<SuperContribution["type"]>("salary_sacrifice");
@@ -78,9 +79,38 @@ export default function SuperTab() {
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Metric icon={PiggyBank} label="Super balance" value={AUD(num(balances.superb))} sub="from Accounts" />
-        <Metric icon={PiggyBank} label="Employer super (FY YTD)" value={AUD(ytd.super)} sub="from confirmed payslips" accent={FAV} />
+        <Metric
+          icon={PiggyBank}
+          label="Employer super (FY YTD)"
+          value={AUD(ytd.super + (Number(profile.super_employer_extra) || 0))}
+          sub="from payslips + other employers"
+          accent={FAV}
+        />
         <Metric icon={PiggyBank} label="FHSS eligible this FY" value={AUD(fhss.thisFYEligible)} sub={`of ${AUD(FHSS_ANNUAL_CAP)} cap`} />
         <Metric icon={PiggyBank} label="Est. FHSS releasable (after tax)" value={AUD(fhss.estimatedNetReleasable)} sub={`${AUD(fhss.estimatedReleasable)} before tax`} accent={FAV} />
+      </div>
+
+      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+        <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12 }}>Other employer super</div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap" }}>
+          <Field label="This FY, not from a payslip">
+            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span style={{ color: MUTE, fontSize: 13 }}>$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={employerExtra}
+                onChange={(e) => setEmployerExtra(e.target.value)}
+                onBlur={() => updateProfile({ super_employer_extra: Number(employerExtra) || 0 })}
+                style={{ ...selStyle, width: 110, textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+              />
+            </div>
+          </Field>
+        </div>
+        <div style={{ fontSize: 11, color: MUTE, marginTop: 10, lineHeight: 1.5 }}>
+          Employer super contributions this FY that don&apos;t come through an uploaded payslip (e.g. a casual or second job) — already reflected
+          in the Super balance on Accounts, so this only tops up the YTD figure above, not the balance itself.
+        </div>
       </div>
 
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>

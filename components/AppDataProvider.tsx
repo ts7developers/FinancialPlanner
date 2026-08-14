@@ -10,10 +10,25 @@ import {
   applyTransfer,
   applyExpenseToBalance,
   applyIncomeToBalance,
+  nextOccurrence,
   type DerivedFinancials,
   type PlanPathPoint,
 } from "@/lib/derive";
-import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip, Transfer, Holding, HoldingLot, SuperContribution } from "@/lib/types";
+import type {
+  Profile,
+  BudgetCategoryRow,
+  Transaction,
+  Reconciliation,
+  Snapshot,
+  Balances,
+  Payslip,
+  Transfer,
+  Holding,
+  HoldingLot,
+  SuperContribution,
+  RecurringExpense,
+  RecurringFrequency,
+} from "@/lib/types";
 
 interface NewTransaction {
   date: string;
@@ -35,6 +50,7 @@ interface AppDataContextValue {
   holdings: Holding[];
   holdingLots: HoldingLot[];
   superContributions: SuperContribution[];
+  recurringExpenses: RecurringExpense[];
   periods: Period[];
   D: DerivedFinancials;
   planPath: PlanPathPoint[];
@@ -76,6 +92,18 @@ interface AppDataContextValue {
     note?: string
   ) => Promise<void>;
   deleteSuperContribution: (id: string) => Promise<void>;
+  addRecurringExpense: (
+    description: string,
+    amount: number,
+    categoryKey: string,
+    account: string,
+    frequency: RecurringFrequency,
+    nextDue: string
+  ) => Promise<void>;
+  deleteRecurringExpense: (id: string) => Promise<void>;
+  toggleRecurringExpense: (id: string) => Promise<void>;
+  /** Posts today's occurrence as a real transaction (so it flows through the usual balance/reconciliation path) and rolls next_due forward one cadence. */
+  logRecurringExpense: (id: string) => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -98,6 +126,7 @@ export function AppDataProvider({
   initialHoldings,
   initialHoldingLots,
   initialSuperContributions,
+  initialRecurringExpenses,
   children,
 }: {
   initialProfile: Profile;
@@ -111,6 +140,7 @@ export function AppDataProvider({
   initialHoldings: Holding[];
   initialHoldingLots: HoldingLot[];
   initialSuperContributions: SuperContribution[];
+  initialRecurringExpenses: RecurringExpense[];
   children: React.ReactNode;
 }) {
   const supabase = useMemo(() => createClient(), []);
@@ -127,6 +157,7 @@ export function AppDataProvider({
   const [holdings, setHoldings] = useState(initialHoldings);
   const [holdingLots, setHoldingLots] = useState(initialHoldingLots);
   const [superContributions, setSuperContributions] = useState(initialSuperContributions);
+  const [recurringExpenses, setRecurringExpenses] = useState(initialRecurringExpenses);
 
   const periods = useMemo(() => buildPeriods(profile.pay_anchor), [profile.pay_anchor]);
   const D = useMemo(() => deriveFinancials(profile, categories), [profile, categories]);
@@ -429,6 +460,68 @@ export function AppDataProvider({
     [supabase, superContributions, balances, updateBalances]
   );
 
+  const addRecurringExpense = useCallback(
+    async (description: string, amount: number, categoryKey: string, account: string, frequency: RecurringFrequency, nextDue: string) => {
+      if (!(amount > 0) || !description.trim()) return;
+      const { data, error } = await supabase
+        .from("recurring_expenses")
+        .insert({
+          user_id: profile.user_id,
+          description: description.trim(),
+          amount,
+          category_key: categoryKey,
+          account,
+          frequency,
+          next_due: nextDue,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      setRecurringExpenses((rs) => [...rs, data as RecurringExpense].sort((a, b) => a.next_due.localeCompare(b.next_due)));
+    },
+    [supabase, profile.user_id]
+  );
+
+  const deleteRecurringExpense = useCallback(
+    async (id: string) => {
+      setRecurringExpenses((rs) => rs.filter((r) => r.id !== id));
+      const { error } = await supabase.from("recurring_expenses").delete().eq("id", id);
+      if (error) throw error;
+    },
+    [supabase]
+  );
+
+  const toggleRecurringExpense = useCallback(
+    async (id: string) => {
+      const r = recurringExpenses.find((x) => x.id === id);
+      if (!r) return;
+      const active = !r.active;
+      setRecurringExpenses((rs) => rs.map((x) => (x.id === id ? { ...x, active } : x)));
+      const { error } = await supabase.from("recurring_expenses").update({ active }).eq("id", id);
+      if (error) throw error;
+    },
+    [supabase, recurringExpenses]
+  );
+
+  const logRecurringExpense = useCallback(
+    async (id: string) => {
+      const r = recurringExpenses.find((x) => x.id === id);
+      if (!r) return;
+      await addTransaction({
+        date: r.next_due,
+        description: r.description,
+        amount: r.amount,
+        category_key: r.category_key,
+        account: r.account,
+      });
+      const nextDue = nextOccurrence(r.next_due, r.frequency);
+      setRecurringExpenses((rs) => rs.map((x) => (x.id === id ? { ...x, next_due: nextDue } : x)));
+      const { error } = await supabase.from("recurring_expenses").update({ next_due: nextDue }).eq("id", id);
+      if (error) throw error;
+    },
+    [supabase, recurringExpenses, addTransaction]
+  );
+
   const value: AppDataContextValue = {
     profile,
     categories,
@@ -441,6 +534,7 @@ export function AppDataProvider({
     holdings,
     holdingLots,
     superContributions,
+    recurringExpenses,
     periods,
     D,
     planPath,
@@ -464,6 +558,10 @@ export function AppDataProvider({
     deleteHoldingLot,
     addSuperContribution,
     deleteSuperContribution,
+    addRecurringExpense,
+    deleteRecurringExpense,
+    toggleRecurringExpense,
+    logRecurringExpense,
   };
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
