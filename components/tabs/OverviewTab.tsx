@@ -1,32 +1,24 @@
 "use client";
 
 import React from "react";
-import {
-  ComposedChart,
-  Line,
-  Scatter,
-  Bar,
-  BarChart,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-  PieChart,
-  Pie,
-  Cell,
-  type TooltipValueType,
-} from "recharts";
+import dynamic from "next/dynamic";
 import { Wallet, PiggyBank, Home, TrendingUp, Receipt, ScrollText, Camera, Landmark } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { currentPeriod, financialYearStart, isoFromDate } from "@/lib/period";
 import { buildPieData, sumYTD, buildSpendTrend, buildBorrowingCapacity, borrowingCapacityYearReached, BORROW_MULT_LOW, BORROW_MULT_HIGH } from "@/lib/derive";
 import { AUD, num } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, PIE_COLORS } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, NAVY, FAV, PIE_COLORS } from "@/lib/theme";
 import { Metric, Progress } from "@/components/ui/atoms";
+import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import Link from "next/link";
+
+// Recharts (~130KB gzipped) is kept out of the critical bundle for this — the default landing
+// page after login — so the metrics/nav paint before that JS downloads and parses.
+const DepositChart = dynamic(() => import("@/components/charts/DepositChart"), { ssr: false, loading: () => <ChartSkeleton height={260} /> });
+const MoneyGoesChart = dynamic(() => import("@/components/charts/MoneyGoesChart"), { ssr: false, loading: () => <ChartSkeleton height={180} /> });
+const SpendingTrendChart = dynamic(() => import("@/components/charts/SpendingTrendChart"), { ssr: false, loading: () => <ChartSkeleton height={220} /> });
+const BorrowingCapacityChart = dynamic(() => import("@/components/charts/BorrowingCapacityChart"), { ssr: false, loading: () => <ChartSkeleton height={220} /> });
 
 export default function OverviewTab() {
   const isMobile = useIsMobile();
@@ -123,20 +115,7 @@ export default function OverviewTab() {
           <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Road to the deposit</div>
           <div style={{ fontSize: 12, color: MUTE }}>gold line = 5% goal · dots = your snapshots</div>
         </div>
-        <ResponsiveContainer width="100%" height={260}>
-          <ComposedChart data={chartData} margin={{ top: 8, right: 10, left: 6, bottom: 0 }}>
-            <CartesianGrid stroke="#EFEBDD" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 11, fill: MUTE }} interval={isMobile ? 12 : 7} tickLine={false} axisLine={{ stroke: LINE }} />
-            <YAxis tickFormatter={(v) => `$${v / 1000}k`} tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={false} width={44} />
-            <Tooltip
-              formatter={(v: TooltipValueType | undefined) => (v == null ? "—" : AUD(Number(v)))}
-              contentStyle={{ borderRadius: 10, border: `1px solid ${LINE}`, fontSize: 12, fontFamily: "Inter" }}
-            />
-            <ReferenceLine y={D.dep5} stroke={GOLD} strokeDasharray="5 4" strokeWidth={1.5} />
-            <Line type="monotone" dataKey="planDeposit" name="Planned deposit" stroke={NAVY} strokeWidth={2.4} dot={false} />
-            <Scatter dataKey="actualDeposit" name="Actual" fill={FAV} />
-          </ComposedChart>
-        </ResponsiveContainer>
+        <DepositChart data={chartData} goal={D.dep5} isMobile={isMobile} />
       </div>
 
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
@@ -144,16 +123,7 @@ export default function OverviewTab() {
           <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 8 }}>Where the money goes</div>
           <div style={{ fontSize: 11.5, color: MUTE, marginTop: -4, marginBottom: 6 }}>per fortnight</div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <ResponsiveContainer width={180} height={180}>
-              <PieChart>
-                <Pie data={pieData} dataKey="value" innerRadius={48} outerRadius={80} paddingAngle={1} stroke="none">
-                  {pieData.map((_, i) => (
-                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v: TooltipValueType | undefined) => AUD(Number(v))} contentStyle={{ borderRadius: 10, border: `1px solid ${LINE}`, fontSize: 12 }} />
-              </PieChart>
-            </ResponsiveContainer>
+            <MoneyGoesChart data={pieData} />
             <div style={{ flex: 1, minWidth: 150, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3px 10px" }}>
               {pieData.map((d, i) => (
                 <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: MUTE }}>
@@ -180,23 +150,7 @@ export default function OverviewTab() {
             <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Spending trend</div>
             <div style={{ fontSize: 12, color: MUTE }}>plan vs actual, last {spendTrend.length} fortnights</div>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={spendTrend} margin={{ top: 8, right: 10, left: 6, bottom: 0 }}>
-              <CartesianGrid stroke="#EFEBDD" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={{ stroke: LINE }} />
-              <YAxis tickFormatter={(v) => `$${v / 1000}k`} tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={false} width={44} />
-              <Tooltip
-                formatter={(v: TooltipValueType | undefined) => (v == null ? "not reconciled" : AUD(Number(v)))}
-                contentStyle={{ borderRadius: 10, border: `1px solid ${LINE}`, fontSize: 12, fontFamily: "Inter" }}
-              />
-              <Bar dataKey="planned" name="Planned" fill={LINE} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="actual" name="Actual" radius={[4, 4, 0, 0]}>
-                {spendTrend.map((d, i) => (
-                  <Cell key={i} fill={d.actual == null ? "#EFEBDD" : d.actual <= d.planned ? FAV : UNFAV} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <SpendingTrendChart data={spendTrend} />
         </div>
         <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: "18px 18px 6px", flex: "1 1 380px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexWrap: "wrap", gap: 4 }}>
@@ -205,20 +159,7 @@ export default function OverviewTab() {
               {BORROW_MULT_LOW}–{BORROW_MULT_HIGH}× household cash income
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <ComposedChart data={borrowPoints} margin={{ top: 8, right: 10, left: 6, bottom: 0 }}>
-              <CartesianGrid stroke="#EFEBDD" vertical={false} />
-              <XAxis dataKey="year" tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={{ stroke: LINE }} />
-              <YAxis tickFormatter={(v) => `$${v / 1000}k`} tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={false} width={48} />
-              <Tooltip
-                formatter={(v: TooltipValueType | undefined) => (v == null ? "—" : AUD(Number(v)))}
-                contentStyle={{ borderRadius: 10, border: `1px solid ${LINE}`, fontSize: 12, fontFamily: "Inter" }}
-              />
-              <ReferenceLine y={loanNeeded} stroke={GOLD} strokeDasharray="5 4" strokeWidth={1.5} />
-              <Line type="monotone" dataKey="capLow" name="Capacity (low)" stroke={NAVY} strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="capHigh" name="Capacity (high)" stroke={FAV} strokeWidth={2} dot={{ r: 3 }} />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <BorrowingCapacityChart data={borrowPoints} loanNeeded={loanNeeded} />
           <div style={{ fontSize: 11.5, color: MUTE, padding: "2px 0 12px" }}>
             gold line = loan needed for house target ·{" "}
             {borrowReachYear ? (
