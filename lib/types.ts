@@ -68,6 +68,17 @@ export interface Balances {
   hecs: number;
 }
 
+export interface Transfer {
+  id: string;
+  user_id: string;
+  date: string; // ISO date
+  from_account: keyof Omit<Balances, "user_id">;
+  to_account: keyof Omit<Balances, "user_id">;
+  amount: number;
+  note: string | null;
+  created_at: string;
+}
+
 export type PayslipStatus = "uploaded" | "parsed" | "confirmed";
 
 export interface Payslip {

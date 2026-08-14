@@ -3,8 +3,8 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { buildPeriods, isoFromDate, periodKeyOf, type Period } from "@/lib/period";
-import { deriveFinancials, buildPlanPath, loggedByCategory, type DerivedFinancials, type PlanPathPoint } from "@/lib/derive";
-import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip } from "@/lib/types";
+import { deriveFinancials, buildPlanPath, loggedByCategory, applyTransfer, type DerivedFinancials, type PlanPathPoint } from "@/lib/derive";
+import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip, Transfer } from "@/lib/types";
 
 interface NewTransaction {
   date: string;
@@ -22,6 +22,7 @@ interface AppDataContextValue {
   snapshots: Snapshot[];
   balances: Balances;
   payslips: Payslip[];
+  transfers: Transfer[];
   periods: Period[];
   D: DerivedFinancials;
   planPath: PlanPathPoint[];
@@ -40,6 +41,12 @@ interface AppDataContextValue {
   addPayslip: (payslip: Payslip) => void;
   updatePayslip: (id: string, patch: Partial<Payslip>) => void;
   confirmPayslip: (id: string, periodKey: string, net: number) => Promise<void>;
+  addTransfer: (
+    from: keyof Omit<Balances, "user_id">,
+    to: keyof Omit<Balances, "user_id">,
+    amount: number,
+    note?: string
+  ) => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -58,6 +65,7 @@ export function AppDataProvider({
   initialSnapshots,
   initialBalances,
   initialPayslips,
+  initialTransfers,
   children,
 }: {
   initialProfile: Profile;
@@ -67,6 +75,7 @@ export function AppDataProvider({
   initialSnapshots: Snapshot[];
   initialBalances: Balances;
   initialPayslips: Payslip[];
+  initialTransfers: Transfer[];
   children: React.ReactNode;
 }) {
   const supabase = useMemo(() => createClient(), []);
@@ -79,6 +88,7 @@ export function AppDataProvider({
   const [snapshots, setSnapshots] = useState(initialSnapshots);
   const [balances, setBalances] = useState(initialBalances);
   const [payslips, setPayslips] = useState(initialPayslips);
+  const [transfers, setTransfers] = useState(initialTransfers);
 
   const periods = useMemo(() => buildPeriods(profile.pay_anchor), [profile.pay_anchor]);
   const D = useMemo(() => deriveFinancials(profile, categories), [profile, categories]);
@@ -188,6 +198,22 @@ export function AppDataProvider({
     [supabase, setReconciliation]
   );
 
+  const addTransfer = useCallback(
+    async (from: keyof Omit<Balances, "user_id">, to: keyof Omit<Balances, "user_id">, amount: number, note?: string) => {
+      if (from === to || !(amount > 0)) return;
+      const patch = applyTransfer(balances, from, to, amount);
+      await updateBalances(patch);
+      const { data, error } = await supabase
+        .from("transfers")
+        .insert({ user_id: profile.user_id, from_account: from, to_account: to, amount, note: note || null })
+        .select()
+        .single();
+      if (error) throw error;
+      setTransfers((ts) => [data as Transfer, ...ts]);
+    },
+    [supabase, profile.user_id, balances, updateBalances]
+  );
+
   const value: AppDataContextValue = {
     profile,
     categories,
@@ -196,6 +222,7 @@ export function AppDataProvider({
     snapshots,
     balances,
     payslips,
+    transfers,
     periods,
     D,
     planPath,
@@ -210,6 +237,7 @@ export function AppDataProvider({
     addPayslip,
     updatePayslip,
     confirmPayslip,
+    addTransfer,
   };
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

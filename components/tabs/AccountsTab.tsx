@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Camera } from "lucide-react";
+import { Camera, ArrowRightLeft } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { AUD, num } from "@/lib/money";
-import { netPosition } from "@/lib/derive";
+import { netPosition, applyTransfer } from "@/lib/derive";
 import { dateFromISO, dayLabel } from "@/lib/period";
-import { CARD, LINE, MUTE, GOLD, INK, NAVY, GOLD_SOFT, UNFAV, inputStyle } from "@/lib/theme";
-import { Progress, Stat } from "@/components/ui/atoms";
+import { CARD, LINE, MUTE, GOLD, INK, NAVY, GOLD_SOFT, UNFAV, inputStyle, selStyle } from "@/lib/theme";
+import { Progress, Stat, Field } from "@/components/ui/atoms";
 import type { Balances } from "@/lib/types";
 
 const BALANCE_FIELDS: [keyof Omit<Balances, "user_id">, string][] = [
@@ -22,7 +22,7 @@ const BALANCE_FIELDS: [keyof Omit<Balances, "user_id">, string][] = [
 ];
 
 export default function AccountsTab() {
-  const { profile, balances, snapshots, D, updateBalances, takeSnapshot } = useAppData();
+  const { profile, balances, snapshots, transfers, D, updateBalances, takeSnapshot, addTransfer } = useAppData();
   // Seeded once from the server-fetched balances; kept as a local editable buffer thereafter
   // so typing doesn't fire a write on every keystroke (only on blur — see commit()).
   const [inputs, setInputs] = useState<Record<string, string>>(() =>
@@ -43,6 +43,39 @@ export default function AccountsTab() {
   const onSnapshot = async () => {
     await takeSnapshot();
     flash("Snapshot saved");
+  };
+
+  const [transferFrom, setTransferFrom] = useState<keyof Omit<Balances, "user_id">>("everyday");
+  const [transferTo, setTransferTo] = useState<keyof Omit<Balances, "user_id">>("cc");
+  const [transferAmount, setTransferAmount] = useState("");
+  const [transferNote, setTransferNote] = useState("");
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferError, setTransferError] = useState("");
+
+  const onTransfer = async () => {
+    const amount = Number(transferAmount);
+    if (transferFrom === transferTo) {
+      setTransferError("Pick two different accounts.");
+      return;
+    }
+    if (!(amount > 0)) {
+      setTransferError("Enter an amount.");
+      return;
+    }
+    setTransferBusy(true);
+    setTransferError("");
+    try {
+      const patch = applyTransfer(balances, transferFrom, transferTo, amount);
+      await addTransfer(transferFrom, transferTo, amount, transferNote || undefined);
+      setInputs((ii) => ({ ...ii, ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, String(v)])) }));
+      setTransferAmount("");
+      setTransferNote("");
+      flash("Transferred");
+    } catch {
+      setTransferError("Could not complete the transfer");
+    } finally {
+      setTransferBusy(false);
+    }
   };
 
   const { assets, liabilities, net } = netPosition(balances);
@@ -98,6 +131,76 @@ export default function AccountsTab() {
             <Progress label="House deposit (5%)" value={num(balances.anzplus)} target={D.dep5} />
           </div>
         </div>
+      </div>
+      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+        <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 4 }}>Move money</div>
+        <div style={{ fontSize: 12, color: MUTE, marginBottom: 12 }}>
+          Payday: sweep from Everyday to pay off the credit card, top up the emergency fund, or add to the house deposit.
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <Field label="From">
+            <select value={transferFrom} onChange={(e) => setTransferFrom(e.target.value as keyof Omit<Balances, "user_id">)} style={{ ...selStyle, width: 170 }}>
+              {BALANCE_FIELDS.map(([k, lbl]) => (
+                <option key={k} value={k}>
+                  {lbl}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="To">
+            <select value={transferTo} onChange={(e) => setTransferTo(e.target.value as keyof Omit<Balances, "user_id">)} style={{ ...selStyle, width: 170 }}>
+              {BALANCE_FIELDS.map(([k, lbl]) => (
+                <option key={k} value={k}>
+                  {lbl}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Amount">
+            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span style={{ color: MUTE, fontSize: 13 }}>$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="0.00"
+                value={transferAmount}
+                onChange={(e) => setTransferAmount(e.target.value)}
+                style={{ ...selStyle, width: 110, textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+              />
+            </div>
+          </Field>
+          <Field label="Note (optional)" grow>
+            <input
+              type="text"
+              placeholder="e.g. Payday sweep"
+              value={transferNote}
+              onChange={(e) => setTransferNote(e.target.value)}
+              style={{ ...selStyle, width: "100%", textAlign: "left" }}
+            />
+          </Field>
+          <button
+            onClick={onTransfer}
+            disabled={transferBusy}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: transferBusy ? "default" : "pointer", opacity: transferBusy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
+          >
+            <ArrowRightLeft size={14} /> Transfer
+          </button>
+        </div>
+        {transferError && <div style={{ fontSize: 12, color: "#C0492F", marginTop: 8 }}>{transferError}</div>}
+        {transfers.length > 0 && (
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${LINE}`, display: "flex", flexDirection: "column", gap: 2 }}>
+            {transfers.slice(0, 5).map((t) => (
+              <div key={t.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "4px 0", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ color: MUTE }}>
+                  {(BALANCE_FIELDS.find(([k]) => k === t.from_account)?.[1] || t.from_account)} →{" "}
+                  {(BALANCE_FIELDS.find(([k]) => k === t.to_account)?.[1] || t.to_account)}
+                  {t.note ? ` · ${t.note}` : ""}
+                </span>
+                <span>{AUD(t.amount, 2)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
         <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 10 }}>Snapshot history</div>

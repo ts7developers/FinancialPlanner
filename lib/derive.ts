@@ -166,6 +166,27 @@ export function netPosition(balances: Balances): NetPosition {
   return { assets, liabilities, net: assets - liabilities };
 }
 
+/** Accounts stored as "amount owing" — moving money here pays the balance down, not up. */
+export const LIABILITY_ACCOUNTS = new Set<keyof Omit<Balances, "user_id">>(["cc", "hecs"]);
+
+/**
+ * The balance patch for moving `amount` from one tracked account to another — e.g. payday:
+ * Everyday -> pay off Credit card, top up Emergency fund / ANZ Plus deposit. Funding a
+ * liability account (cc/hecs) reduces what's owed rather than adding to it.
+ */
+export function applyTransfer(
+  balances: Balances,
+  from: keyof Omit<Balances, "user_id">,
+  to: keyof Omit<Balances, "user_id">,
+  amount: number
+): Partial<Omit<Balances, "user_id">> {
+  const toDelta = LIABILITY_ACCOUNTS.has(to) ? -amount : amount;
+  return {
+    [from]: balances[from] - amount,
+    [to]: balances[to] + toDelta,
+  };
+}
+
 export interface PieSlice {
   name: string;
   value: number;
