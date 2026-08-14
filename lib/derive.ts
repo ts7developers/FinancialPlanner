@@ -619,6 +619,46 @@ export function daysUntil(dateISO: string, todayISO: string): number {
   return Math.round((dateFromISO(dateISO).getTime() - dateFromISO(todayISO).getTime()) / dayMs);
 }
 
+export interface IncomeProjectionPoint {
+  key: string;
+  label: string;
+  isFT: boolean;
+  gross: number; // per-fortnight cash salary (excl. super)
+  tax: number; // per-fortnight PAYG + Medicare + HECS
+  super: number; // per-fortnight employer contribution
+  net: number; // per-fortnight take-home
+}
+
+/**
+ * Projects gross/tax/super/net per fortnight forward from today under a salary-growth
+ * `scenario` (the same ones used on Savings' net-worth projection) — recomputing tax/HECS
+ * withholding and the FT/PT split at each period rather than just scaling last pay by a flat
+ * rate. A rough guide, not advice.
+ */
+export function buildIncomeProjection(profile: Profile, periods: Period[], todayISO: string, scenario: SalaryScenario, horizonPeriods = 13): IncomeProjectionPoint[] {
+  const startIdx = currentPeriod(periods, todayISO).idx;
+  const superRate = Number(profile.super_rate) || 0;
+  const basePackage = Number(profile.package) || 0;
+  const ptFraction = Number(profile.pt_fraction) || 0;
+
+  return periods.slice(startIdx, startIdx + horizonPeriods).map((per, i) => {
+    const periodIsFT = isFT(per.key, profile.ft_start);
+    const grownPackage = (periodIsFT ? basePackage : basePackage * ptFraction) * scenario.multiplierAt(i);
+    const { cash, net } = netFromPackage(grownPackage, superRate);
+    const grossFn = cash / FN_PER_YEAR;
+    const netFn = net / FN_PER_YEAR;
+    return {
+      key: per.key,
+      label: periodLabel(per),
+      isFT: periodIsFT,
+      gross: grossFn,
+      tax: grossFn - netFn,
+      super: (grownPackage - cash) / FN_PER_YEAR,
+      net: netFn,
+    };
+  });
+}
+
 export interface FortnightSplitCategory {
   label: string;
   amount: number;

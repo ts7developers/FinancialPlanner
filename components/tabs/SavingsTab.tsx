@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import { TrendingUp, Sparkles, Home, Wallet } from "lucide-react";
+import { TrendingUp, Sparkles, Home } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { isoFromDate } from "@/lib/period";
@@ -12,7 +12,6 @@ import {
   SALARY_SCENARIOS,
   fhssSummary,
   buildFortnightSplit,
-  fortnightCategoryBreakdown,
   periodsToTarget,
   DEFAULT_FHSS_DEEMED_RATE,
 } from "@/lib/derive";
@@ -91,8 +90,6 @@ export default function SavingsTab() {
           ? periods[currentIdx + etaPeriods].label
           : `beyond ${Math.round(((currentIdx + etaPeriods) * 14) / 365)} years`;
 
-  const categoryBreakdown = fortnightCategoryBreakdown(categories, D, currentIdx >= 0 ? periods[currentIdx].year : new Date().getUTCFullYear());
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div>
@@ -132,8 +129,8 @@ export default function SavingsTab() {
         <div style={{ fontSize: 11, color: MUTE, marginTop: 10, lineHeight: 1.5 }}>
           Your voluntary super contributions count toward this deposit through the First Home Super Saver scheme —
           see <b style={{ color: NAVY }}>Super</b> for the full FHSS breakdown. &ldquo;At current rate&rdquo; uses your
-          average planned deposit contribution over the next {split.length} fortnights below. Estimate only — not
-          financial advice.
+          average planned deposit contribution over the next {split.length} fortnights — see the fortnight-by-fortnight
+          breakdown on <b style={{ color: NAVY }}>Income</b>. Estimate only — not financial advice.
         </div>
       </div>
 
@@ -209,71 +206,6 @@ export default function SavingsTab() {
         <NetWorthChart data={chartRows} comparisonLabel={comparisonScenario.label} isMobile={isMobile} />
         <div style={{ fontSize: 11.5, color: MUTE, padding: "2px 0 12px" }}>
           Starts from your current balances on <b style={{ color: NAVY }}>Accounts</b>, not the original plan baseline — so it reflects where you actually are today.
-        </div>
-      </div>
-
-      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>
-        <div style={{ padding: "18px 18px 4px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>
-            <Wallet size={16} color={GOLD} /> Fortnight-by-fortnight split
-          </div>
-          <div style={{ fontSize: 12, color: MUTE, marginTop: 2 }}>
-            Where each payslip is planned to go: budgeted categories first, then the emergency fund until it&apos;s full, then the house deposit.
-          </div>
-        </div>
-        <div style={{ marginTop: 10 }}>
-          {isMobile ? (
-            <div>
-              {split.map((p) => (
-                <div key={p.key} style={{ padding: "11px 18px", borderBottom: `1px solid ${LINE}` }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600 }}>
-                    <span>{p.label}</span>
-                    <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(p.netPay)}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: MUTE, marginTop: 4 }}>
-                    <span>Expenses {AUD(p.categoriesTotal)}</span>
-                    {p.toEmergency > 0 && <span>→ Emergency {AUD(p.toEmergency)}</span>}
-                    <span>→ Deposit {AUD(p.toDeposit)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 100px 100px 100px 110px", padding: "7px 18px", fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600 }}>
-                <span>Fortnight</span>
-                <span style={{ textAlign: "right" }}>Net pay</span>
-                <span style={{ textAlign: "right" }}>Expenses</span>
-                <span style={{ textAlign: "right" }}>→ Emergency</span>
-                <span style={{ textAlign: "right" }}>→ Deposit</span>
-                <span style={{ textAlign: "right" }}>Deposit bal.</span>
-              </div>
-              {split.map((p) => (
-                <div key={p.key} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "1fr 100px 100px 100px 100px 110px", alignItems: "center", padding: "8px 18px", borderTop: `1px solid ${LINE}`, fontSize: 13 }}>
-                  <span>
-                    {p.label} <span style={{ color: "#C7C2B4", fontSize: 11 }}>{p.isFT ? "FT" : "PT"}</span>
-                  </span>
-                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{AUD(p.netPay)}</span>
-                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: MUTE }}>{AUD(p.categoriesTotal)}</span>
-                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toEmergency > 0 ? FAV : "#C7C2B4" }}>{p.toEmergency > 0 ? AUD(p.toEmergency) : "—"}</span>
-                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: FAV, fontWeight: 500 }}>{AUD(p.toDeposit)}</span>
-                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{AUD(p.depositBalance)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div style={{ padding: "14px 18px", borderTop: `2px solid ${GOLD}`, background: "#F4EFE1" }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Budgeted categories this fortnight ({AUD(categoryBreakdown.reduce((s, c) => s + c.amount, 0))} total)</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px" }}>
-            {categoryBreakdown
-              .filter((c) => c.amount > 0)
-              .map((c) => (
-                <span key={c.label} style={{ fontSize: 12, color: MUTE }}>
-                  {c.label} <b style={{ color: NAVY }}>{AUD(c.amount)}</b>
-                </span>
-              ))}
-          </div>
         </div>
       </div>
     </div>

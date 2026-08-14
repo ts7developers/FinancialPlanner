@@ -25,6 +25,7 @@ import {
   buildFortnightSplit,
   fortnightCategoryBreakdown,
   periodsToTarget,
+  buildIncomeProjection,
 } from "@/lib/derive";
 import { buildPeriods, isFT } from "@/lib/period";
 import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
@@ -522,5 +523,33 @@ describe("periodsToTarget", () => {
 
   it("rounds up the number of fortnights needed at a constant rate", () => {
     expect(periodsToTarget(0, 1000, 300)).toBe(4);
+  });
+});
+
+describe("buildIncomeProjection", () => {
+  const periods = buildPeriods(profile.pay_anchor);
+  const flat = SALARY_SCENARIOS.find((s) => s.id === "flat")!;
+  const standard = SALARY_SCENARIOS.find((s) => s.id === "standard")!;
+
+  it("matches netFromPackage for the flat scenario's first (part-time) period", () => {
+    const projection = buildIncomeProjection(profile, periods, profile.pay_anchor, flat, 3);
+    const { cash, net } = netFromPackage(profile.package * profile.pt_fraction, profile.super_rate);
+    expect(projection[0].gross).toBeCloseTo(cash / FN_PER_YEAR, 5);
+    expect(projection[0].net).toBeCloseTo(net / FN_PER_YEAR, 5);
+    expect(projection[0].tax).toBeCloseTo(projection[0].gross - projection[0].net, 5);
+    expect(projection[0].isFT).toBe(false);
+  });
+
+  it("switches to full-time pay from ft_start", () => {
+    const projection = buildIncomeProjection(profile, periods, profile.pay_anchor, flat, 10);
+    const ftPoint = projection.find((p) => p.isFT);
+    expect(ftPoint).toBeDefined();
+    const { net } = netFromPackage(profile.package, profile.super_rate);
+    expect(ftPoint!.net).toBeCloseTo(net / FN_PER_YEAR, 5);
+  });
+
+  it("grows pay period over period under the standard scenario", () => {
+    const projection = buildIncomeProjection(profile, periods, profile.pay_anchor, standard, 30);
+    expect(projection[29].gross).toBeGreaterThan(projection[0].gross);
   });
 });
