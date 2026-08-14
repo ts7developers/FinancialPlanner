@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, RotateCcw, CalendarClock } from "lucide-react";
+import { Copy, RotateCcw, CalendarClock, Trash2, Plus } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
 import { BORROW_MULT_LOW, BORROW_MULT_HIGH } from "@/lib/derive";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
 import { AUD } from "@/lib/money";
-import { NAVY, MUTE, GOLD, LINE, inputStyle } from "@/lib/theme";
-import { Panel, PInput, Derived } from "@/components/ui/atoms";
+import { NAVY, MUTE, GOLD, LINE, INK, inputStyle, selStyle } from "@/lib/theme";
+import { Panel, PInput, Derived, Field } from "@/components/ui/atoms";
 import type { Profile } from "@/lib/types";
 
 type ProfileInputs = {
@@ -44,12 +44,14 @@ function toInputs(profile: Profile): ProfileInputs {
 }
 
 export default function PlanTab() {
-  const { profile, categories, D, updateProfile, updateCategory } = useAppData();
+  const { profile, categories, D, updateProfile, updateCategory, addCategory, deleteCategory } = useAppData();
   const [inputs, setInputs] = useState<ProfileInputs>(() => toInputs(profile));
-  const [catInputs, setCatInputs] = useState<Record<string, { a26: string; a27: string }>>(() =>
-    Object.fromEntries(categories.map((c) => [c.key, { a26: String(c.amount_2026), a27: String(c.amount_2027) }]))
+  const [catInputs, setCatInputs] = useState<Record<string, { label: string; a26: string; a27: string }>>(() =>
+    Object.fromEntries(categories.map((c) => [c.key, { label: c.label, a26: String(c.amount_2026), a27: String(c.amount_2027) }]))
   );
   const [flashMsg, setFlashMsg] = useState("");
+  const [newCatLabel, setNewCatLabel] = useState("");
+  const [newCatBusy, setNewCatBusy] = useState(false);
 
   const flash = (m = "Saved") => {
     setFlashMsg(m);
@@ -68,21 +70,59 @@ export default function PlanTab() {
     flash();
   };
 
-  const commitCategory = (key: string) => {
+  const commitCategory = (key: string, field: "label" | "a26" | "a27", raw?: string) => {
+    const c = categories.find((cc) => cc.key === key);
     const v = catInputs[key];
-    updateCategory(key, { amount_2026: Number(v.a26) || 0, amount_2027: Number(v.a27) || 0 });
+    const label = (field === "label" ? raw : v?.label) ?? c?.label ?? "";
+    const a26 = (field === "a26" ? raw : v?.a26) ?? String(c?.amount_2026 ?? 0);
+    const a27 = (field === "a27" ? raw : v?.a27) ?? String(c?.amount_2027 ?? 0);
+    if (!label.trim()) return;
+    updateCategory(key, { label: label.trim(), amount_2026: Number(a26) || 0, amount_2027: Number(a27) || 0 });
     flash();
   };
 
-  const restoreDefaults = () => {
+  const onDeleteCategory = (key: string, label: string) => {
+    if (!window.confirm(`Remove "${label}" from your budget? Past transactions logged against it stay, just unlabelled going forward.`)) return;
+    deleteCategory(key);
+    setCatInputs((ci) => {
+      const next = { ...ci };
+      delete next[key];
+      return next;
+    });
+    flash("Category removed");
+  };
+
+  const onAddCategory = async () => {
+    if (!newCatLabel.trim()) return;
+    setNewCatBusy(true);
+    try {
+      await addCategory(newCatLabel);
+      setNewCatLabel("");
+      flash("Category added");
+    } finally {
+      setNewCatBusy(false);
+    }
+  };
+
+  const restoreDefaults = async () => {
     if (
-      !window.confirm("Reset the plan assumptions to the original baseline? Your reconciliations and balances stay.")
+      !window.confirm("Reset the plan assumptions to the original baseline? Categories you've added stay; the standard ones are restored. Your reconciliations and balances stay.")
     )
       return;
     updateProfile(DEFAULT_PROFILE_SETTINGS);
-    DEFAULT_CATEGORIES.forEach((c) => updateCategory(c.id, { amount_2026: c.amount2026, amount_2027: c.amount2027 }));
+    const existingKeys = new Set(categories.map((c) => c.key));
+    for (const c of DEFAULT_CATEGORIES) {
+      if (existingKeys.has(c.id)) {
+        updateCategory(c.id, { label: c.label, amount_2026: c.amount2026, amount_2027: c.amount2027 });
+      } else {
+        await addCategory(c.label, c.amount2026, c.amount2027, c.id);
+      }
+    }
     setInputs(toInputs({ ...profile, ...DEFAULT_PROFILE_SETTINGS }));
-    setCatInputs(Object.fromEntries(DEFAULT_CATEGORIES.map((c) => [c.id, { a26: String(c.amount2026), a27: String(c.amount2027) }])));
+    setCatInputs((ci) => ({
+      ...ci,
+      ...Object.fromEntries(DEFAULT_CATEGORIES.map((c) => [c.id, { label: c.label, a26: String(c.amount2026), a27: String(c.amount2027) }])),
+    }));
     flash("Baseline restored");
   };
 
@@ -213,45 +253,79 @@ export default function PlanTab() {
         </div>
         <div style={{ flex: "1 1 380px" }}>
           <Panel title="Monthly expenses">
-            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr", gap: 6, alignItems: "center", marginBottom: 4 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr 26px", gap: 6, alignItems: "center", marginBottom: 4 }}>
               <span />
               <span style={{ fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", textAlign: "right" }}>2026 (now)</span>
               <span style={{ fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", textAlign: "right" }}>2027 +</span>
+              <span />
             </div>
             {categories.map((c) => (
-              <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr", gap: 6, alignItems: "center", padding: "3px 0" }}>
-                <span style={{ fontSize: 13 }}>{c.label}</span>
+              <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr 26px", gap: 6, alignItems: "center", padding: "3px 0" }}>
+                <input
+                  type="text"
+                  value={catInputs[c.key]?.label ?? c.label}
+                  onChange={(e) => setCatInputs((ci) => ({ ...ci, [c.key]: { label: e.target.value, a26: ci[c.key]?.a26 ?? String(c.amount_2026), a27: ci[c.key]?.a27 ?? String(c.amount_2027) } }))}
+                  onBlur={(e) => commitCategory(c.key, "label", e.target.value)}
+                  style={{ ...inputStyle, textAlign: "left", fontSize: 13 }}
+                />
                 <input
                   type="number"
                   inputMode="decimal"
-                  value={catInputs[c.key]?.a26 ?? ""}
-                  onChange={(e) => setCatInputs((ci) => ({ ...ci, [c.key]: { ...ci[c.key], a26: e.target.value } }))}
-                  onBlur={() => commitCategory(c.key)}
+                  value={catInputs[c.key]?.a26 ?? String(c.amount_2026)}
+                  onChange={(e) => setCatInputs((ci) => ({ ...ci, [c.key]: { label: ci[c.key]?.label ?? c.label, a26: e.target.value, a27: ci[c.key]?.a27 ?? String(c.amount_2027) } }))}
+                  onBlur={(e) => commitCategory(c.key, "a26", e.target.value)}
                   style={inputStyle}
                 />
                 <input
                   type="number"
                   inputMode="decimal"
-                  value={catInputs[c.key]?.a27 ?? ""}
-                  onChange={(e) => setCatInputs((ci) => ({ ...ci, [c.key]: { ...ci[c.key], a27: e.target.value } }))}
-                  onBlur={() => commitCategory(c.key)}
+                  value={catInputs[c.key]?.a27 ?? String(c.amount_2027)}
+                  onChange={(e) => setCatInputs((ci) => ({ ...ci, [c.key]: { label: ci[c.key]?.label ?? c.label, a26: ci[c.key]?.a26 ?? String(c.amount_2026), a27: e.target.value } }))}
+                  onBlur={(e) => commitCategory(c.key, "a27", e.target.value)}
                   style={inputStyle}
                 />
+                <button
+                  onClick={() => onDeleteCategory(c.key, catInputs[c.key]?.label ?? c.label)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex", justifyContent: "center" }}
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             ))}
-            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr", gap: 6, marginTop: 8, paddingTop: 8, borderTop: `2px solid ${GOLD}`, fontWeight: 700, fontFamily: "var(--font-space-grotesk), sans-serif", fontVariantNumeric: "tabular-nums" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr 26px", gap: 6, marginTop: 8, paddingTop: 8, borderTop: `2px solid ${GOLD}`, fontWeight: 700, fontFamily: "var(--font-space-grotesk), sans-serif", fontVariantNumeric: "tabular-nums" }}>
               <span>Total / mo</span>
               <span style={{ textAlign: "right" }}>{AUD(D.expMo(2026))}</span>
               <span style={{ textAlign: "right" }}>{AUD(D.expMo(2027))}</span>
+              <span />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr", gap: 6, marginTop: 4, fontSize: 12, color: MUTE, fontVariantNumeric: "tabular-nums" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr 26px", gap: 6, marginTop: 4, fontSize: 12, color: MUTE, fontVariantNumeric: "tabular-nums" }}>
               <span>Per fortnight</span>
               <span style={{ textAlign: "right" }}>{AUD(D.expFN(2026))}</span>
               <span style={{ textAlign: "right" }}>{AUD(D.expFN(2027))}</span>
+              <span />
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${LINE}`, alignItems: "flex-end" }}>
+              <Field label="New category" grow>
+                <input
+                  type="text"
+                  placeholder="e.g. Subscriptions"
+                  value={newCatLabel}
+                  onChange={(e) => setNewCatLabel(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && onAddCategory()}
+                  style={{ ...selStyle, width: "100%", textAlign: "left" }}
+                />
+              </Field>
+              <button
+                onClick={onAddCategory}
+                disabled={newCatBusy || !newCatLabel.trim()}
+                style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: newCatBusy ? "default" : "pointer", opacity: newCatBusy || !newCatLabel.trim() ? 0.6 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
+              >
+                <Plus size={14} /> Add
+              </button>
             </div>
             <div style={{ fontSize: 11.5, color: MUTE, marginTop: 10, lineHeight: 1.5 }}>
-              Enter monthly figures; the rec converts them to a fortnightly budget (× 12 ÷ 26). Board and private health
-              start in the 2027 column. Editing here won&apos;t touch your Excel — use{" "}
+              Enter monthly figures; the rec converts them to a fortnightly budget (× 12 ÷ 26). New categories start at $0/$0 —
+              set their amounts above once added. Editing here won&apos;t touch your Excel — use{" "}
               <b style={{ color: NAVY }}>Copy figures for Claude</b> to resync it.
             </div>
           </Panel>

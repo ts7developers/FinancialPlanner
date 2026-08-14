@@ -7,7 +7,7 @@ import { Plus, Trash2, Wallet, Receipt, ListChecks, Flame, Repeat, Pause, Play, 
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { periodKeyOf, periodLabel, isoFromDate } from "@/lib/period";
-import { TXN_CATEGORIES } from "@/lib/categories";
+import { OTHER_CATEGORY_KEY } from "@/lib/categories";
 import { periodTotals, averageSpend, buildActualSpendTrend, daysUntil, type PieSlice } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, PIE_COLORS, selStyle } from "@/lib/theme";
@@ -50,6 +50,7 @@ export default function ExpensesTab() {
   const searchParams = useSearchParams();
   const {
     profile,
+    categories,
     transactions,
     periods,
     loggedByCat,
@@ -62,12 +63,15 @@ export default function ExpensesTab() {
     toggleRecurringExpense,
     logRecurringExpense,
   } = useAppData();
+  // Budgeted categories from Budget, plus the synthetic "Other" catch-all (not a real budget
+  // row — $0 planned, always available for expenses that don't fit an existing category).
+  const catOptions = [...categories.map((c) => ({ key: c.key, label: c.label })), { key: OTHER_CATEGORY_KEY, label: "Other" }];
 
   const [form, setForm] = useState(() => ({
     date: "",
     desc: "",
     amount: "",
-    catId: transactions[0]?.category_key || "groceries",
+    catId: transactions[0]?.category_key || categories[0]?.key || OTHER_CATEGORY_KEY,
     account: "Credit card" as string,
   }));
   const [txnFilter, setTxnFilter] = useState("all");
@@ -78,7 +82,7 @@ export default function ExpensesTab() {
   const [recForm, setRecForm] = useState(() => ({
     desc: "",
     amount: "",
-    catId: "other",
+    catId: OTHER_CATEGORY_KEY,
     account: "Credit card" as string,
     frequency: "monthly" as RecurringFrequency,
     nextDue: "",
@@ -123,7 +127,7 @@ export default function ExpensesTab() {
     flash("Expense logged");
   };
 
-  const catLabel = (id: string) => TXN_CATEGORIES.find((c) => c.id === id)?.label || id;
+  const catLabel = (id: string) => catOptions.find((c) => c.key === id)?.label || id;
   const quickCats = topCategories(transactions);
   const dateBeforeAnchor = form.date !== "" && periodKeyOf(form.date, profile.pay_anchor) === null;
   const recDateBeforeAnchor = recForm.nextDue !== "" && periodKeyOf(recForm.nextDue, profile.pay_anchor) === null;
@@ -183,9 +187,9 @@ export default function ExpensesTab() {
   const avgPerPeriod = averageSpend(periodTotals(loggedByCat));
   const avgTxn = transactions.length > 0 ? transactions.reduce((s, t) => s + (Number(t.amount) || 0), 0) / transactions.length : 0;
   const spendTrend = buildActualSpendTrend(periods, loggedByCat, isoFromDate(new Date()));
-  const categoryTotals: PieSlice[] = TXN_CATEGORIES.map((c) => ({
+  const categoryTotals: PieSlice[] = catOptions.map((c) => ({
     name: c.label,
-    value: filteredTxns.filter((t) => t.category_key === c.id).reduce((s, t) => s + (Number(t.amount) || 0), 0),
+    value: filteredTxns.filter((t) => t.category_key === c.key).reduce((s, t) => s + (Number(t.amount) || 0), 0),
   })).filter((d) => d.value > 0);
   const categoryTotal = categoryTotals.reduce((s, d) => s + d.value, 0);
   const biggestCategory = categoryTotals.slice().sort((a, b) => b.value - a.value)[0];
@@ -241,8 +245,8 @@ export default function ExpensesTab() {
             <div style={{ display: "flex", gap: 10 }}>
               <Field label="Category" grow>
                 <select value={form.catId} onChange={(e) => setForm((f) => ({ ...f, catId: e.target.value }))} style={{ ...selStyle, width: "100%", height: 42 }}>
-                  {TXN_CATEGORIES.map((c) => (
-                    <option key={c.id} value={c.id}>
+                  {catOptions.map((c) => (
+                    <option key={c.key} value={c.key}>
                       {c.label}
                     </option>
                   ))}
@@ -290,8 +294,8 @@ export default function ExpensesTab() {
             </Field>
             <Field label="Category">
               <select value={form.catId} onChange={(e) => setForm((f) => ({ ...f, catId: e.target.value }))} style={{ ...selStyle, width: 140 }}>
-                {TXN_CATEGORIES.map((c) => (
-                  <option key={c.id} value={c.id}>
+                {catOptions.map((c) => (
+                  <option key={c.key} value={c.key}>
                     {c.label}
                   </option>
                 ))}
@@ -419,8 +423,8 @@ export default function ExpensesTab() {
           </Field>
           <Field label="Category">
             <select value={recForm.catId} onChange={(e) => setRecForm((f) => ({ ...f, catId: e.target.value }))} style={{ ...selStyle, width: 130 }}>
-              {TXN_CATEGORIES.map((c) => (
-                <option key={c.id} value={c.id}>
+              {catOptions.map((c) => (
+                <option key={c.key} value={c.key}>
                   {c.label}
                 </option>
               ))}

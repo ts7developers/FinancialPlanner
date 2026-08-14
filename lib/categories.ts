@@ -25,6 +25,25 @@ export const DEFAULT_CATEGORIES: CategoryMeta[] = [
 
 export const TXN_CATEGORIES = [...DEFAULT_CATEGORIES, { id: "other", label: "Other", amount2026: 0, amount2027: 0, sort: 11 }];
 
+/** Synthetic catch-all — always available for logging an expense, never a real budgeted row (can't be edited/deleted on Budget). */
+export const OTHER_CATEGORY_KEY = "other";
+
+/** Turns a category label into a stable, URL/DB-safe key, avoiding collisions with existing keys or the reserved "other" catch-all. */
+export function slugifyCategoryKey(label: string, existingKeys: Iterable<string>): string {
+  const taken = new Set(existingKeys);
+  taken.add(OTHER_CATEGORY_KEY);
+  const base =
+    label
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "category";
+  let key = base;
+  let n = 1;
+  while (taken.has(key)) key = `${base}_${++n}`;
+  return key;
+}
+
 export function categoryMonthly(id: string, year: number, categories: CategoryMeta[] = DEFAULT_CATEGORIES): number {
   const c = categories.find((c) => c.id === id);
   if (!c) return 0;

@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { buildPeriods, isoFromDate, periodKeyOf, type Period } from "@/lib/period";
+import { slugifyCategoryKey } from "@/lib/categories";
 import {
   deriveFinancials,
   buildPlanPath,
@@ -58,7 +59,10 @@ interface AppDataContextValue {
   loggedByCat: Record<string, Record<string, number>>;
 
   updateProfile: (patch: Partial<Profile>) => Promise<void>;
-  updateCategory: (key: string, patch: Partial<Pick<BudgetCategoryRow, "amount_2026" | "amount_2027">>) => Promise<void>;
+  updateCategory: (key: string, patch: Partial<Pick<BudgetCategoryRow, "label" | "amount_2026" | "amount_2027">>) => Promise<void>;
+  /** Slugifies the label into a new unique key unless `explicitKey` is given (used to recreate a default category with its original key). */
+  addCategory: (label: string, amount2026?: number, amount2027?: number, explicitKey?: string) => Promise<void>;
+  deleteCategory: (key: string) => Promise<void>;
   addTransaction: (t: NewTransaction) => Promise<void>;
   /** Removes the transaction from view immediately; the DB delete is deferred so `undoDeleteTransaction` can still cancel it. */
   deleteTransaction: (id: string) => void;
@@ -176,9 +180,35 @@ export function AppDataProvider({
   );
 
   const updateCategory = useCallback(
-    async (key: string, patch: Partial<Pick<BudgetCategoryRow, "amount_2026" | "amount_2027">>) => {
+    async (key: string, patch: Partial<Pick<BudgetCategoryRow, "label" | "amount_2026" | "amount_2027">>) => {
       setCategories((cs) => cs.map((c) => (c.key === key ? { ...c, ...patch } : c)));
       const { error } = await supabase.from("budget_categories").update(patch).eq("user_id", profile.user_id).eq("key", key);
+      if (error) throw error;
+    },
+    [supabase, profile.user_id]
+  );
+
+  const addCategory = useCallback(
+    async (label: string, amount2026 = 0, amount2027 = 0, explicitKey?: string) => {
+      const trimmed = label.trim();
+      if (!trimmed) return;
+      const key = explicitKey ?? slugifyCategoryKey(trimmed, categories.map((c) => c.key));
+      const sort = categories.length > 0 ? Math.max(...categories.map((c) => c.sort)) + 1 : 0;
+      const { data, error } = await supabase
+        .from("budget_categories")
+        .insert({ user_id: profile.user_id, key, label: trimmed, amount_2026: amount2026, amount_2027: amount2027, sort })
+        .select()
+        .single();
+      if (error) throw error;
+      setCategories((cs) => [...cs, data as BudgetCategoryRow].sort((a, b) => a.sort - b.sort));
+    },
+    [supabase, profile.user_id, categories]
+  );
+
+  const deleteCategory = useCallback(
+    async (key: string) => {
+      setCategories((cs) => cs.filter((c) => c.key !== key));
+      const { error } = await supabase.from("budget_categories").delete().eq("user_id", profile.user_id).eq("key", key);
       if (error) throw error;
     },
     [supabase, profile.user_id]
@@ -556,6 +586,8 @@ export function AppDataProvider({
     loggedByCat,
     updateProfile,
     updateCategory,
+    addCategory,
+    deleteCategory,
     addTransaction,
     deleteTransaction,
     undoDeleteTransaction,
