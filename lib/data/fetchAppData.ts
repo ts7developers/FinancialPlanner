@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip, Transfer } from "@/lib/types";
+import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip, Transfer, Holding, HoldingLot } from "@/lib/types";
 
 export interface AppData {
   profile: Profile;
@@ -11,23 +11,37 @@ export interface AppData {
   balances: Balances;
   payslips: Payslip[];
   transfers: Transfer[];
+  holdings: Holding[];
+  holdingLots: HoldingLot[];
 }
 
 /** Loads everything the authed app shell needs for a user in one round trip. */
 export async function fetchAppData(userId: string): Promise<AppData> {
   const supabase = await createClient();
 
-  const [profileRes, categoriesRes, transactionsRes, reconciliationsRes, snapshotsRes, balancesRes, payslipsRes, transfersRes] =
-    await Promise.all([
-      supabase.from("profiles").select("*").eq("user_id", userId).single(),
-      supabase.from("budget_categories").select("*").eq("user_id", userId).order("sort"),
-      supabase.from("transactions").select("*").eq("user_id", userId).order("date", { ascending: false }),
-      supabase.from("reconciliations").select("*").eq("user_id", userId),
-      supabase.from("snapshots").select("*").eq("user_id", userId).order("period_key"),
-      supabase.from("balances").select("*").eq("user_id", userId).single(),
-      supabase.from("payslips").select("*").eq("user_id", userId).order("period_key"),
-      supabase.from("transfers").select("*").eq("user_id", userId).order("date", { ascending: false }),
-    ]);
+  const [
+    profileRes,
+    categoriesRes,
+    transactionsRes,
+    reconciliationsRes,
+    snapshotsRes,
+    balancesRes,
+    payslipsRes,
+    transfersRes,
+    holdingsRes,
+    holdingLotsRes,
+  ] = await Promise.all([
+    supabase.from("profiles").select("*").eq("user_id", userId).single(),
+    supabase.from("budget_categories").select("*").eq("user_id", userId).order("sort"),
+    supabase.from("transactions").select("*").eq("user_id", userId).order("date", { ascending: false }),
+    supabase.from("reconciliations").select("*").eq("user_id", userId),
+    supabase.from("snapshots").select("*").eq("user_id", userId).order("period_key"),
+    supabase.from("balances").select("*").eq("user_id", userId).single(),
+    supabase.from("payslips").select("*").eq("user_id", userId).order("period_key"),
+    supabase.from("transfers").select("*").eq("user_id", userId).order("date", { ascending: false }),
+    supabase.from("holdings").select("*").eq("user_id", userId).order("code"),
+    supabase.from("holding_lots").select("*").eq("user_id", userId).order("date", { ascending: false }),
+  ]);
 
   if (profileRes.error) throw profileRes.error;
   if (balancesRes.error) throw balancesRes.error;
@@ -41,5 +55,7 @@ export async function fetchAppData(userId: string): Promise<AppData> {
     balances: balancesRes.data as Balances,
     payslips: (payslipsRes.data ?? []) as Payslip[],
     transfers: (transfersRes.data ?? []) as Transfer[],
+    holdings: (holdingsRes.data ?? []) as Holding[],
+    holdingLots: (holdingLotsRes.data ?? []) as HoldingLot[],
   };
 }

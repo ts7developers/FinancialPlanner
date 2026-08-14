@@ -116,6 +116,12 @@ export default function ReconcileTab() {
         </div>
       </div>
 
+      {!summary.anyActual && !loggedByCat[period] && (
+        <div style={{ background: "#F4EFE1", border: `1px solid ${GOLD_SOFT}`, borderRadius: 12, padding: "12px 16px", fontSize: 12.5, color: NAVY, lineHeight: 1.5 }}>
+          Nothing logged for this fortnight yet. Log expenses on <b>Expenses</b> and they&apos;ll fill in below automatically — or type an actual straight into a row to override it.
+        </div>
+      )}
+
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>
         {!isMobile && (
           <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", background: NAVY, color: "#fff", fontSize: 11.5, fontWeight: 600, letterSpacing: ".04em", textTransform: "uppercase" }}>

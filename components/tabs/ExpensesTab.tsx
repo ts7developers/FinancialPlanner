@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
@@ -8,7 +9,8 @@ import { periodKeyOf, periodLabel } from "@/lib/period";
 import { TXN_CATEGORIES } from "@/lib/categories";
 import { AUD } from "@/lib/money";
 import { ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, INK, NAVY, selStyle } from "@/lib/theme";
-import { Field } from "@/components/ui/atoms";
+import { Field, Toast } from "@/components/ui/atoms";
+import type { Transaction } from "@/lib/types";
 
 function todayLocalISO() {
   const d = new Date();
@@ -16,19 +18,50 @@ function todayLocalISO() {
   return new Date(d.getTime() - tz).toISOString().slice(0, 10);
 }
 
+/** Most-used categories first, for the one-tap quick-select chips. */
+function topCategories(transactions: Transaction[], n = 4): string[] {
+  const counts: Record<string, number> = {};
+  transactions.forEach((t) => {
+    counts[t.category_key] = (counts[t.category_key] || 0) + 1;
+  });
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([k]) => k);
+}
+
 export default function ExpensesTab() {
   const isMobile = useIsMobile();
-  const { profile, transactions, periods, addTransaction, deleteTransaction } = useAppData();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { profile, transactions, periods, addTransaction, deleteTransaction, undoDeleteTransaction } = useAppData();
 
-  const [form, setForm] = useState({ date: "", desc: "", amount: "", catId: "groceries", account: "Everyday" as string });
+  const [form, setForm] = useState(() => ({
+    date: "",
+    desc: "",
+    amount: "",
+    catId: transactions[0]?.category_key || "groceries",
+    account: "Everyday" as string,
+  }));
   const [txnFilter, setTxnFilter] = useState("all");
   const [flashMsg, setFlashMsg] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; desc: string } | null>(null);
+  const amountRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // Must run client-only: the server has no notion of the user's local calendar day,
     // so computing this during render would mismatch between SSR and hydration.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setForm((f) => (f.date ? f : { ...f, date: todayLocalISO() }));
+  }, []);
+
+  useEffect(() => {
+    // Arrived via the quick-add FAB — jump straight to the amount field and drop the marker.
+    if (searchParams.get("add") === "1") {
+      amountRef.current?.focus();
+      router.replace("/expenses");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const flash = (m = "Saved") => {
@@ -53,6 +86,19 @@ export default function ExpensesTab() {
   };
 
   const catLabel = (id: string) => TXN_CATEGORIES.find((c) => c.id === id)?.label || id;
+  const quickCats = topCategories(transactions);
+
+  const onDelete = (t: Transaction) => {
+    deleteTransaction(t.id);
+    const desc = t.description || catLabel(t.category_key);
+    setPendingDelete({ id: t.id, desc });
+    setTimeout(() => setPendingDelete((p) => (p?.id === t.id ? null : p)), 5000);
+  };
+  const onUndo = () => {
+    if (!pendingDelete) return;
+    undoDeleteTransaction(pendingDelete.id);
+    setPendingDelete(null);
+  };
 
   const filteredTxns = transactions
     .filter((t) => txnFilter === "all" || periodKeyOf(t.date, profile.pay_anchor) === txnFilter)
@@ -68,12 +114,38 @@ export default function ExpensesTab() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
         <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 12 }}>Log an expense</div>
+        {quickCats.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            {quickCats.map((id) => {
+              const on = form.catId === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setForm((f) => ({ ...f, catId: id }))}
+                  style={{
+                    background: on ? GOLD : "#F4EFE1",
+                    color: on ? INK : NAVY,
+                    border: "none",
+                    borderRadius: 999,
+                    padding: "6px 12px",
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {catLabel(id)}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {isMobile ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <Field label="Amount">
               <div style={{ display: "flex", alignItems: "center", gap: 4, border: `1px solid ${LINE}`, borderRadius: 8, background: "#FCFBF7", padding: "4px 10px" }}>
                 <span style={{ color: MUTE, fontSize: 20 }}>$</span>
                 <input
+                  ref={amountRef}
                   type="number"
                   inputMode="decimal"
                   placeholder="0.00"
@@ -125,6 +197,7 @@ export default function ExpensesTab() {
               <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
                 <span style={{ color: MUTE, fontSize: 13 }}>$</span>
                 <input
+                  ref={amountRef}
                   type="number"
                   inputMode="decimal"
                   placeholder="0.00"
@@ -191,7 +264,7 @@ export default function ExpensesTab() {
                       </div>
                     </div>
                     <span style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{AUD(Number(t.amount), 2)}</span>
-                    <button onClick={() => deleteTransaction(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", padding: 8, display: "flex" }}>
+                    <button onClick={() => onDelete(t)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", padding: 8, display: "flex" }}>
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -213,7 +286,7 @@ export default function ExpensesTab() {
                       {t.account}
                     </span>
                     <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{AUD(Number(t.amount), 2)}</span>
-                    <button onClick={() => deleteTransaction(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex", justifyContent: "center" }}>
+                    <button onClick={() => onDelete(t)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex", justifyContent: "center" }}>
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -245,10 +318,11 @@ export default function ExpensesTab() {
             )}
           </div>
           <div style={{ background: `linear-gradient(120deg, ${INK}, ${NAVY})`, borderRadius: 14, padding: 16, fontSize: 12, color: "#C4CDE0", lineHeight: 1.55 }}>
-            Each expense auto-fills the matching line on <b style={{ color: "#E7D6A8" }}>Reconcile</b> for its fortnight. Type a manual actual there only to override the logged total.
+            Each expense auto-fills the matching line on <b style={{ color: "#E7D6A8" }}>Reconcile</b> for its fortnight, and adjusts the linked account balance on <b style={{ color: "#E7D6A8" }}>Accounts</b> — spend on Credit card increases what&apos;s owed; spend from Everyday, ANZ Plus or Holiday comes off that balance. Fun money and Cash aren&apos;t tracked balances, so those don&apos;t move anything.
           </div>
         </div>
       </div>
+      {pendingDelete && <Toast message={`Deleted "${pendingDelete.desc}"`} actionLabel="Undo" onAction={onUndo} />}
     </div>
   );
 }

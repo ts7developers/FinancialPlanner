@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { applyTransfer, buildSpendTrend, buildBorrowingCapacity, borrowingCapacityYearReached, deriveFinancials } from "@/lib/derive";
+import {
+  applyTransfer,
+  applyExpenseToBalance,
+  applyIncomeToBalance,
+  buildSpendTrend,
+  buildBorrowingCapacity,
+  borrowingCapacityYearReached,
+  computeHoldingPL,
+  deriveFinancials,
+} from "@/lib/derive";
 import { buildPeriods } from "@/lib/period";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
-import type { Balances, BudgetCategoryRow, Profile, Reconciliation } from "@/lib/types";
+import type { Balances, BudgetCategoryRow, HoldingLot, Profile, Reconciliation } from "@/lib/types";
 
 const balances: Balances = {
   user_id: "u1",
@@ -31,6 +40,77 @@ describe("applyTransfer", () => {
   it("paying toward HECS reduces the owing balance", () => {
     const patch = applyTransfer(balances, "everyday", "hecs", 100);
     expect(patch.hecs).toBeCloseTo(45082.77, 5);
+  });
+});
+
+const lot = (code: string, shares: number, price: number): HoldingLot => ({
+  id: `${code}-${shares}-${price}`,
+  user_id: "u1",
+  code,
+  shares,
+  price,
+  date: "2026-01-01",
+  created_at: "2026-01-01T00:00:00Z",
+});
+
+describe("computeHoldingPL", () => {
+  it("blends multiple buys into a weighted average cost", () => {
+    const lots = [lot("AGL", 60, 8.0), lot("AGL", 40, 9.0)];
+    const pl = computeHoldingPL(lots, "AGL", 100, 10);
+    expect(pl.avgCost).toBeCloseTo(8.4, 5);
+    expect(pl.costBasis).toBeCloseTo(840, 5);
+    expect(pl.marketValue).toBe(1000);
+    expect(pl.unrealizedPL).toBeCloseTo(160, 5);
+    expect(pl.unrealizedPLPct).toBeCloseTo(19.047619, 4);
+  });
+
+  it("returns nulls when there are no logged lots for the code", () => {
+    const pl = computeHoldingPL([lot("ANZ", 10, 30)], "AGL", 60, 8.84);
+    expect(pl.avgCost).toBeNull();
+    expect(pl.unrealizedPL).toBeNull();
+    expect(pl.unrealizedPLPct).toBeNull();
+    expect(pl.costBasis).toBe(0);
+  });
+
+  it("marketValue is null without a current price, even with known cost basis", () => {
+    const pl = computeHoldingPL([lot("AGL", 60, 8.0)], "AGL", 60, null);
+    expect(pl.avgCost).toBe(8);
+    expect(pl.marketValue).toBeNull();
+    expect(pl.unrealizedPL).toBeNull();
+  });
+});
+
+describe("applyExpenseToBalance", () => {
+  it("spending from an asset account (Everyday) reduces that balance", () => {
+    const patch = applyExpenseToBalance(balances, "Everyday", 50);
+    expect(patch).toEqual({ everyday: 950 });
+  });
+
+  it("spending on the credit card increases what's owed", () => {
+    const patch = applyExpenseToBalance(balances, "Credit card", 25);
+    expect(patch?.cc).toBeCloseTo(215.6, 5);
+  });
+
+  it("reverses cleanly with sign -1 (delete/undo)", () => {
+    const spent = applyExpenseToBalance(balances, "Credit card", 25, 1)!;
+    const after = { ...balances, ...spent };
+    const reversed = applyExpenseToBalance(after, "Credit card", 25, -1);
+    expect(reversed?.cc).toBeCloseTo(balances.cc, 5);
+  });
+
+  it("accounts with no tracked balance (Fun money, Cash) return null", () => {
+    expect(applyExpenseToBalance(balances, "Fun money", 20)).toBeNull();
+    expect(applyExpenseToBalance(balances, "Cash", 20)).toBeNull();
+  });
+});
+
+describe("applyIncomeToBalance", () => {
+  it("adds confirmed pay to the everyday balance", () => {
+    expect(applyIncomeToBalance(balances, 1000)).toEqual({ everyday: 2000 });
+  });
+
+  it("reverses with sign -1", () => {
+    expect(applyIncomeToBalance(balances, 1000, -1)).toEqual({ everyday: 0 });
   });
 });
 

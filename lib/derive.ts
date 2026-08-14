@@ -4,7 +4,8 @@
 
 import { dayLabel, currentPeriod, isFT, periodKeyOf, type Period } from "./period";
 import { netFromPackage, FN_PER_YEAR, FN_FROM_MO } from "./tax";
-import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip } from "./types";
+import type { Account } from "./theme";
+import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot } from "./types";
 
 export interface DerivedFinancials {
   netFTfn: number;
@@ -185,6 +186,62 @@ export function applyTransfer(
     [from]: balances[from] - amount,
     [to]: balances[to] + toDelta,
   };
+}
+
+/** Which tracked balance (if any) a transaction's account label maps to. "Fun money" and
+ * "Cash" have no ledger balance in `Balances`, so expenses logged against them don't move one. */
+export const ACCOUNT_BALANCE_KEY: Partial<Record<Account, keyof Omit<Balances, "user_id">>> = {
+  Everyday: "everyday",
+  "ANZ Plus": "anzplus",
+  "Credit card": "cc",
+  Holiday: "holiday",
+};
+
+/**
+ * Balance patch for logging an expense against a tracked account, or reversing one on
+ * delete/undo via `sign: -1`. Spending from an asset account reduces it; spending on the
+ * credit card increases what's owed. Returns null when the account isn't tracked.
+ */
+export function applyExpenseToBalance(
+  balances: Balances,
+  account: string,
+  amount: number,
+  sign: 1 | -1 = 1
+): Partial<Omit<Balances, "user_id">> | null {
+  const key = ACCOUNT_BALANCE_KEY[account as Account];
+  if (!key) return null;
+  const delta = sign * amount * (LIABILITY_ACCOUNTS.has(key) ? 1 : -1);
+  return { [key]: balances[key] + delta };
+}
+
+/** Balance patch for landing confirmed pay in the everyday account, or reversing it via `sign: -1`. */
+export function applyIncomeToBalance(balances: Balances, amount: number, sign: 1 | -1 = 1): Partial<Omit<Balances, "user_id">> {
+  return { everyday: balances.everyday + sign * amount };
+}
+
+export interface HoldingPL {
+  avgCost: number | null;
+  costBasis: number;
+  marketValue: number | null;
+  unrealizedPL: number | null;
+  unrealizedPLPct: number | null;
+}
+
+/**
+ * Average-cost (DCA) basis and unrealized P/L for one holding, from its logged buy lots.
+ * Only buys are tracked — this blends to a simple average cost, not a CGT-parcel (FIFO)
+ * method, and applies that average to whatever `shares` currently holds. Not tax advice.
+ */
+export function computeHoldingPL(lots: HoldingLot[], code: string, shares: number, currentPrice: number | null): HoldingPL {
+  const codeLots = lots.filter((l) => l.code === code);
+  const totalLotShares = codeLots.reduce((s, l) => s + l.shares, 0);
+  const totalCost = codeLots.reduce((s, l) => s + l.shares * l.price, 0);
+  const avgCost = totalLotShares > 0 ? totalCost / totalLotShares : null;
+  const costBasis = avgCost != null ? avgCost * shares : 0;
+  const marketValue = currentPrice != null ? currentPrice * shares : null;
+  const unrealizedPL = avgCost != null && marketValue != null ? marketValue - costBasis : null;
+  const unrealizedPLPct = avgCost != null && avgCost > 0 && currentPrice != null ? (currentPrice / avgCost - 1) * 100 : null;
+  return { avgCost, costBasis, marketValue, unrealizedPL, unrealizedPLPct };
 }
 
 export interface PieSlice {

@@ -1,7 +1,7 @@
 // Presentational atoms — ported verbatim (styling + behaviour) from FinancialPlanTracker.jsx.
 
 import type { LucideIcon } from "lucide-react";
-import { CARD, LINE, MUTE, GOLD, GOLD_SOFT, NAVY, FAV, UNFAV } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, GOLD_SOFT, NAVY, INK, FAV, UNFAV } from "@/lib/theme";
 import { AUD } from "@/lib/money";
 
 export function Row({
@@ -198,6 +198,40 @@ export function VarTag({ v }: { v: number }) {
 
 export function Cell2({ children, right }: { children: React.ReactNode; right?: boolean }) {
   return <div style={{ padding: "12px 16px", textAlign: right ? "right" : "left", fontVariantNumeric: "tabular-nums", color: NAVY }}>{children}</div>;
+}
+
+export function Toast({ message, actionLabel, onAction }: { message: string; actionLabel?: string; onAction?: () => void }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        left: "50%",
+        bottom: 22,
+        transform: "translateX(-50%)",
+        zIndex: 40,
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        background: INK,
+        color: "#fff",
+        borderRadius: 10,
+        padding: "11px 12px 11px 16px",
+        boxShadow: "0 8px 24px rgba(22,32,58,.35)",
+        fontSize: 13,
+        maxWidth: "calc(100vw - 32px)",
+      }}
+    >
+      <span>{message}</span>
+      {actionLabel && onAction && (
+        <button
+          onClick={onAction}
+          style={{ background: "none", border: "none", color: GOLD, fontWeight: 700, fontSize: 13, cursor: "pointer", padding: "4px 6px", fontFamily: "var(--font-space-grotesk), sans-serif", flexShrink: 0 }}
+        >
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function Stat({ k, v, color = "#fff" }: { k: string; v: string; color?: string }) {

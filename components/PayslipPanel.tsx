@@ -112,7 +112,7 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
             disabled={busy}
             style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif" }}
           >
-            <Check size={14} /> Confirm &amp; post to this fortnight
+            <Check size={14} /> Confirm &amp; add to Everyday
           </button>
           <button
             onClick={() => setReview(null)}
@@ -132,7 +132,7 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
           <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15 }}>Payslip</div>
           {existing?.status === "confirmed" ? (
             <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, color: FAV, fontWeight: 600, marginTop: 4 }}>
-              <Check size={13} /> Confirmed — net {AUD(existing.net || 0)} posted to this fortnight
+              <Check size={13} /> Confirmed — net {AUD(existing.net || 0)} posted to this fortnight and added to Everyday
             </div>
           ) : (
             <div style={{ fontSize: 12.5, color: MUTE, marginTop: 4 }}>

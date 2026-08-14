@@ -81,6 +81,27 @@ export interface Transfer {
   created_at: string;
 }
 
+export interface Holding {
+  id: string;
+  user_id: string;
+  code: string;
+  shares: number;
+  last_price: number | null;
+  last_change_pct: number | null;
+  priced_at: string | null;
+  created_at: string;
+}
+
+export interface HoldingLot {
+  id: string;
+  user_id: string;
+  code: string;
+  shares: number;
+  price: number;
+  date: string;
+  created_at: string;
+}
+
 export type PayslipStatus = "uploaded" | "parsed" | "confirmed";
 
 export interface Payslip {
