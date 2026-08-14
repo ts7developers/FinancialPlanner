@@ -6,11 +6,12 @@ import { TrendingUp, Sparkles } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { isoFromDate } from "@/lib/period";
-import { buildNetWorthProjection, netWorthPositiveAt } from "@/lib/derive";
+import { buildNetWorthProjection, netWorthPositiveAt, SALARY_SCENARIOS } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, FAV, selStyle } from "@/lib/theme";
 import { Metric, Field } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
+import type { NetWorthChartRow } from "@/components/charts/NetWorthChart";
 
 const NetWorthChart = dynamic(() => import("@/components/charts/NetWorthChart"), { ssr: false, loading: () => <ChartSkeleton height={300} /> });
 
@@ -21,9 +22,15 @@ export default function SavingsTab() {
   const { profile, balances, periods, D } = useAppData();
   const [growthPct, setGrowthPct] = useState("7");
   const [extraFn, setExtraFn] = useState("0");
+  const [hecsIndexPct, setHecsIndexPct] = useState("3");
+  const [scenarioId, setScenarioId] = useState("standard");
+
+  const scenario = SALARY_SCENARIOS.find((s) => s.id === scenarioId) ?? SALARY_SCENARIOS[0];
+  const comparisonScenario = SALARY_SCENARIOS.find((s) => s.id !== scenarioId) ?? SALARY_SCENARIOS[0];
 
   const today = isoFromDate(new Date());
-  const points = buildNetWorthProjection(
+  const points = buildNetWorthProjection(profile, D, balances, periods, today, Number(growthPct) || 0, Number(extraFn) || 0, scenario, Number(hecsIndexPct) || 0, HORIZON_PERIODS);
+  const comparisonPoints = buildNetWorthProjection(
     profile,
     D,
     balances,
@@ -31,8 +38,18 @@ export default function SavingsTab() {
     today,
     Number(growthPct) || 0,
     Number(extraFn) || 0,
+    comparisonScenario,
+    Number(hecsIndexPct) || 0,
     HORIZON_PERIODS
   );
+
+  const chartRows: NetWorthChartRow[] = points.map((p, i) => ({
+    label: p.label,
+    liquid: p.liquid,
+    invested: p.invested,
+    netWorth: p.netWorth,
+    netWorthComparison: comparisonPoints[i].netWorth,
+  }));
 
   const in1yr = points[Math.min(25, points.length - 1)];
   const in3yr = points[points.length - 1];
@@ -53,9 +70,37 @@ export default function SavingsTab() {
         <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12 }}>
           <Sparkles size={16} color={GOLD} /> Assumptions
         </div>
-        <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+        <Field label="Salary scenario">
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {SALARY_SCENARIOS.map((s) => {
+              const on = s.id === scenarioId;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setScenarioId(s.id)}
+                  style={{
+                    background: on ? GOLD : "#F4EFE1",
+                    color: on ? "#16203A" : NAVY,
+                    border: "none",
+                    borderRadius: 999,
+                    padding: "7px 14px",
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 14 }}>
           <Field label="Investment growth (% p.a.)">
             <input type="number" inputMode="decimal" value={growthPct} onChange={(e) => setGrowthPct(e.target.value)} style={{ ...selStyle, width: 90, textAlign: "right" }} />
+          </Field>
+          <Field label="HECS indexation (% p.a.)">
+            <input type="number" inputMode="decimal" value={hecsIndexPct} onChange={(e) => setHecsIndexPct(e.target.value)} style={{ ...selStyle, width: 90, textAlign: "right" }} />
           </Field>
           <Field label="Extra savings / fortnight">
             <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
@@ -65,9 +110,11 @@ export default function SavingsTab() {
           </Field>
         </div>
         <div style={{ fontSize: 11, color: MUTE, marginTop: 10, lineHeight: 1.5 }}>
-          Shares and super compound at the rate above; super also keeps getting its usual employer contribution. Credit
-          card and HECS are held flat — no repayment or indexation schedule modelled. A rough guide only, not
-          financial advice.
+          &ldquo;Standard accountant progression&rdquo; compounds your package ~9% p.a. for the first 5 years (typical AU
+          graduate-to-intermediate accountant growth, per SEEK/Hays salary guides) then ~3.5% p.a. after — a rough
+          guide, not a guarantee. HECS reduces via the real compulsory-repayment schedule (marginal rates above
+          $69,528 repayment income) and indexes at the rate above. Credit card is held flat. Shares and super compound
+          at the investment-growth rate; super also keeps its usual employer contribution. Not financial advice.
         </div>
       </div>
 
@@ -86,9 +133,9 @@ export default function SavingsTab() {
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: "18px 18px 6px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexWrap: "wrap", gap: 4 }}>
           <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Net worth over time</div>
-          <div style={{ fontSize: 12, color: MUTE }}>gold line = net worth · shaded = cash vs invested</div>
+          <div style={{ fontSize: 12, color: MUTE }}>gold = {scenario.label.toLowerCase()} · dashed = {comparisonScenario.label.toLowerCase()}</div>
         </div>
-        <NetWorthChart data={points} isMobile={isMobile} />
+        <NetWorthChart data={chartRows} comparisonLabel={comparisonScenario.label} isMobile={isMobile} />
         <div style={{ fontSize: 11.5, color: MUTE, padding: "2px 0 12px" }}>
           Starts from your current balances on <b style={{ color: NAVY }}>Accounts</b>, not the original plan baseline — so it reflects where you actually are today.
         </div>

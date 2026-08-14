@@ -79,6 +79,47 @@ export function buildPlanPath(profile: Profile, D: DerivedFinancials, periods: P
   });
 }
 
+/**
+ * HECS-HELP compulsory repayment on annual repayment income, under the marginal system that
+ * took effect 1 July 2025 (ATO 2026-27 thresholds: $69,528 / $129,717 / $186,050, indexed
+ * annually — this snapshot won't track future indexation of the brackets themselves). Above
+ * the top threshold the rate flips from marginal to a flat 10% of total repayment income.
+ */
+export function hecsCompulsoryRepayment(repaymentIncome: number): number {
+  const T = repaymentIncome;
+  if (T < 69528) return 0;
+  if (T <= 129717) return (T - 69528) * 0.15;
+  if (T <= 186050) return 9028.35 + (T - 129717) * 0.17;
+  return T * 0.1;
+}
+
+export interface SalaryScenario {
+  id: string;
+  label: string;
+  /** Multiplier on the FT/PT-adjusted package at period index `i` (0 = the current period). */
+  multiplierAt: (i: number) => number;
+}
+
+/**
+ * "Standard progression" compounds at roughly the early-career rate typical of AU graduate
+ * accountants moving toward intermediate/senior level (SEEK/Hays-range salary guides put that
+ * around $56k–$67k graduate to $75k–$95k by year 3–5), then settles to a rate closer to
+ * general wage growth once that step-up has played out. A rough guide, not a guarantee.
+ */
+export const SALARY_SCENARIOS: SalaryScenario[] = [
+  { id: "flat", label: "No raises", multiplierAt: () => 1 },
+  {
+    id: "standard",
+    label: "Standard accountant progression",
+    multiplierAt: (i) => {
+      const years = (i * 14) / 365;
+      const earlyYears = Math.min(years, 5);
+      const laterYears = Math.max(0, years - 5);
+      return Math.pow(1.09, earlyYears) * Math.pow(1.035, laterYears);
+    },
+  },
+];
+
 export interface NetWorthPoint {
   key: string;
   label: string;
@@ -89,10 +130,12 @@ export interface NetWorthPoint {
 
 /**
  * Projects net worth forward from today's real balances (not the plan baseline used by
- * `buildPlanPath`) — surplus each fortnight tops up the emergency fund then the deposit,
- * shares/super compound at `annualGrowthPct`, super also gets its usual employer
- * contribution. Credit card and HECS are held flat: a real repayment/indexation schedule for
- * either is out of scope here, so this stays a rough, informational estimate — not advice.
+ * `buildPlanPath`) under a given salary-growth `scenario`. Each period: the package grows per
+ * the scenario, net pay is recomputed from that grown package (so tax/HECS withholding scale
+ * with it too), surplus tops up the emergency fund then the deposit, shares/super compound at
+ * `annualGrowthPct` (super also keeps its usual employer contribution), and HECS reduces by
+ * the compulsory repayment on the grown income while indexing at `hecsIndexationPct`. Credit
+ * card is held flat — no repayment schedule modelled for it. A rough guide, not advice.
  */
 export function buildNetWorthProjection(
   profile: Profile,
@@ -102,27 +145,41 @@ export function buildNetWorthProjection(
   todayISO: string,
   annualGrowthPct: number,
   extraPerFortnight: number,
+  scenario: SalaryScenario,
+  hecsIndexationPct: number,
   horizonPeriods = 20
 ): NetWorthPoint[] {
   const startIdx = currentPeriod(periods, todayISO).idx;
   const periodGrowth = Math.pow(1 + annualGrowthPct / 100, 14 / 365) - 1;
+  const hecsPeriodIndexation = Math.pow(1 + hecsIndexationPct / 100, 14 / 365) - 1;
   const emergencyTarget = Number(profile.emergency_target) || 0;
+  const superRate = Number(profile.super_rate) || 0;
+  const hecsThreshold = Number(profile.hecs_threshold) || 0;
+  const basePackage = Number(profile.package) || 0;
+  const ptFraction = Number(profile.pt_fraction) || 0;
 
   let emergency = Number(balances.emergency) || 0;
   let deposit = Number(balances.anzplus) || 0;
   let shares = Number(balances.shares) || 0;
   let superb = Number(balances.superb) || 0;
   const cc = Number(balances.cc) || 0;
-  const hecs = Number(balances.hecs) || 0;
+  let hecs = Number(balances.hecs) || 0;
 
-  return periods.slice(startIdx, startIdx + horizonPeriods).map((per) => {
-    const income = plannedIncomeFN(per, profile, D);
-    const surplus = Math.max(0, income - D.expFN(per.year)) + extraPerFortnight;
+  return periods.slice(startIdx, startIdx + horizonPeriods).map((per, i) => {
+    const grownPackage = (isFT(per.key, profile.ft_start) ? basePackage : basePackage * ptFraction) * scenario.multiplierAt(i);
+    const { cash, net } = netFromPackage(grownPackage, superRate, hecsThreshold);
+    const incomeFn = net / FN_PER_YEAR;
+    const superFn = (grownPackage - cash) / FN_PER_YEAR;
+
+    const surplus = Math.max(0, incomeFn - D.expFN(per.year)) + extraPerFortnight;
     const toEmergency = Math.max(0, Math.min(surplus, emergencyTarget - emergency));
     emergency += toEmergency;
     deposit += surplus - toEmergency;
     shares *= 1 + periodGrowth;
-    superb = superb * (1 + periodGrowth) + D.superFTfn;
+    superb = superb * (1 + periodGrowth) + superFn;
+
+    const hecsRepaymentFn = hecsCompulsoryRepayment(cash) / FN_PER_YEAR;
+    hecs = Math.max(0, hecs * (1 + hecsPeriodIndexation) - hecsRepaymentFn);
 
     return {
       key: per.key,

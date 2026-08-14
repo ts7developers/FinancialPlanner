@@ -3,9 +3,24 @@
 import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, type TooltipValueType } from "recharts";
 import { AUD } from "@/lib/money";
 import { LINE, MUTE, GOLD, NAVY, FAV, chartTooltipStyle } from "@/lib/theme";
-import type { NetWorthPoint } from "@/lib/derive";
 
-export default function NetWorthChart({ data, isMobile }: { data: NetWorthPoint[]; isMobile: boolean }) {
+export interface NetWorthChartRow {
+  label: string;
+  liquid: number;
+  invested: number;
+  netWorth: number;
+  netWorthComparison: number;
+}
+
+export default function NetWorthChart({
+  data,
+  comparisonLabel,
+  isMobile,
+}: {
+  data: NetWorthChartRow[];
+  comparisonLabel: string;
+  isMobile: boolean;
+}) {
   return (
     <ResponsiveContainer width="100%" height={300}>
       <ComposedChart data={data} margin={{ top: 8, right: 10, left: 6, bottom: 0 }}>
@@ -26,6 +41,17 @@ export default function NetWorthChart({ data, isMobile }: { data: NetWorthPoint[
         <ReferenceLine y={0} stroke={MUTE} strokeDasharray="3 3" strokeWidth={1} />
         <Area type="monotone" dataKey="liquid" stackId="assets" name="Cash (emergency + deposit)" stroke={NAVY} strokeWidth={1.5} fill="url(#liquidFill)" animationDuration={700} />
         <Area type="monotone" dataKey="invested" stackId="assets" name="Invested (shares + super)" stroke={FAV} strokeWidth={1.5} fill="url(#investedFill)" animationDuration={700} />
+        <Line
+          type="monotone"
+          dataKey="netWorthComparison"
+          name={comparisonLabel}
+          stroke={MUTE}
+          strokeWidth={1.8}
+          strokeDasharray="5 4"
+          dot={false}
+          activeDot={{ r: 4, fill: MUTE, stroke: "#fff", strokeWidth: 2 }}
+          animationDuration={700}
+        />
         <Line
           type="monotone"
           dataKey="netWorth"

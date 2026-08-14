@@ -8,11 +8,14 @@ import {
   borrowingCapacityYearReached,
   buildNetWorthProjection,
   netWorthPositiveAt,
+  hecsCompulsoryRepayment,
+  SALARY_SCENARIOS,
   computeHoldingPL,
   deriveFinancials,
   plannedIncomeFN,
 } from "@/lib/derive";
-import { buildPeriods } from "@/lib/period";
+import { buildPeriods, isFT } from "@/lib/period";
+import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
 import type { Balances, BudgetCategoryRow, HoldingLot, Profile, Reconciliation } from "@/lib/types";
 
@@ -191,13 +194,53 @@ describe("borrowingCapacityYearReached", () => {
   });
 });
 
+describe("hecsCompulsoryRepayment", () => {
+  it("nothing below the minimum threshold", () => {
+    expect(hecsCompulsoryRepayment(60000)).toBe(0);
+  });
+
+  it("15% marginal in the first bracket", () => {
+    expect(hecsCompulsoryRepayment(100000)).toBeCloseTo((100000 - 69528) * 0.15, 5);
+  });
+
+  it("9,028.35 plus 17% marginal in the second bracket", () => {
+    expect(hecsCompulsoryRepayment(150000)).toBeCloseTo(9028.35 + (150000 - 129717) * 0.17, 5);
+  });
+
+  it("flips to a flat 10% of total income at the top threshold", () => {
+    expect(hecsCompulsoryRepayment(200000)).toBeCloseTo(20000, 5);
+  });
+});
+
+describe("SALARY_SCENARIOS", () => {
+  it("'flat' never grows the package", () => {
+    const flat = SALARY_SCENARIOS.find((s) => s.id === "flat")!;
+    expect(flat.multiplierAt(0)).toBe(1);
+    expect(flat.multiplierAt(100)).toBe(1);
+  });
+
+  it("'standard' compounds faster in the first 5 years than after", () => {
+    const standard = SALARY_SCENARIOS.find((s) => s.id === "standard")!;
+    const atYear1 = standard.multiplierAt(26); // ~1 year of fortnights
+    const atYear5 = standard.multiplierAt(130); // ~5 years
+    const atYear6 = standard.multiplierAt(156); // ~6 years
+    expect(atYear1).toBeGreaterThan(1);
+    expect(atYear5).toBeGreaterThan(atYear1);
+    // The year-5-to-6 step should be smaller than any early year's step (growth rate slows).
+    const earlyStep = atYear1 / standard.multiplierAt(0);
+    const laterStep = atYear6 / atYear5;
+    expect(laterStep).toBeLessThan(earlyStep);
+  });
+});
+
 describe("buildNetWorthProjection", () => {
   const periods = buildPeriods(profile.pay_anchor);
   const D = deriveFinancials(profile, categories);
+  const flatScenario = SALARY_SCENARIOS[0];
   const startBalances: Balances = { ...balances, emergency: 0, anzplus: 0, shares: 1000, superb: 1000, cc: 0, hecs: 0 };
 
   it("starts from today's real balances, not the plan baseline", () => {
-    const [first] = buildNetWorthProjection(profile, D, startBalances, periods, profile.pay_anchor, 0, 0, 1);
+    const [first] = buildNetWorthProjection(profile, D, startBalances, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 1);
     // Zero growth, zero extra: liquid should just be the period's surplus (income - expenses).
     const income = plannedIncomeFN(periods[0], profile, D);
     const surplus = Math.max(0, income - D.expFN(periods[0].year));
@@ -208,25 +251,42 @@ describe("buildNetWorthProjection", () => {
     const zeroExpenseCategories: BudgetCategoryRow[] = [{ id: "c1", user_id: "u1", key: "groceries", label: "Groceries", amount_2026: 0, amount_2027: 0, sort: 0 }];
     const D0 = deriveFinancials(profile, zeroExpenseCategories);
     const flatBalances: Balances = { ...startBalances, shares: 1000, superb: 0 };
-    const [first] = buildNetWorthProjection(profile, D0, flatBalances, periods, profile.pay_anchor, 10, 0, 1);
+    const [first] = buildNetWorthProjection(profile, D0, flatBalances, periods, profile.pay_anchor, 10, 0, flatScenario, 0, 1);
     const periodGrowth = Math.pow(1.1, 14 / 365) - 1;
-    expect(first.invested).toBeCloseTo(Math.round(1000 * (1 + periodGrowth) + D0.superFTfn), -1);
+    const pkg = isFT(periods[0].key, profile.ft_start) ? profile.package : profile.package * profile.pt_fraction;
+    const { cash } = netFromPackage(pkg, profile.super_rate, profile.hecs_threshold);
+    const expectedSuperFn = (pkg - cash) / FN_PER_YEAR;
+    expect(first.invested).toBeCloseTo(Math.round(1000 * (1 + periodGrowth) + expectedSuperFn), -1);
   });
 
   it("extra fortnightly savings flows straight into liquid balance", () => {
     const zeroIncomeProfile: Profile = { ...profile, package: 0 };
     const D0 = deriveFinancials(zeroIncomeProfile, categories);
-    const [first] = buildNetWorthProjection(zeroIncomeProfile, D0, startBalances, periods, profile.pay_anchor, 0, 100, 1);
+    const [first] = buildNetWorthProjection(zeroIncomeProfile, D0, startBalances, periods, profile.pay_anchor, 0, 100, flatScenario, 0, 1);
     expect(first.liquid).toBe(100);
   });
 
-  it("holds credit card and HECS flat rather than modeling repayment", () => {
-    const withDebt: Balances = { ...startBalances, cc: 200, hecs: 40000 };
-    const points = buildNetWorthProjection(profile, D, withDebt, periods, profile.pay_anchor, 5, 0, 3);
-    points.forEach((p, i) => {
-      expect(p.netWorth).toBeCloseTo(p.liquid + p.invested - 200 - 40000, -1);
-      void i;
+  it("holds credit card flat — no repayment schedule modelled", () => {
+    const withDebt: Balances = { ...startBalances, cc: 200 };
+    const points = buildNetWorthProjection(profile, D, withDebt, periods, profile.pay_anchor, 5, 0, flatScenario, 3, 3);
+    points.forEach((p) => {
+      expect(p.netWorth).toBeCloseTo(p.liquid + p.invested - 200 - 0, -1);
     });
+  });
+
+  it("reduces HECS via the compulsory repayment on income, and grows it via indexation", () => {
+    const withHecs: Balances = { ...startBalances, hecs: 40000 };
+    const noIndexation = buildNetWorthProjection(profile, D, withHecs, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 5);
+    const withIndexation = buildNetWorthProjection(profile, D, withHecs, periods, profile.pay_anchor, 0, 0, flatScenario, 10, 5);
+    // Same income/repayment either way, but indexation grows the balance, so net worth ends up lower.
+    expect(withIndexation[4].netWorth).toBeLessThan(noIndexation[4].netWorth);
+  });
+
+  it("a higher-paying salary scenario produces a higher (or equal) net worth over time", () => {
+    const standardScenario = SALARY_SCENARIOS.find((s) => s.id === "standard")!;
+    const flatPoints = buildNetWorthProjection(profile, D, startBalances, periods, profile.pay_anchor, 5, 0, flatScenario, 3, 26);
+    const standardPoints = buildNetWorthProjection(profile, D, startBalances, periods, profile.pay_anchor, 5, 0, standardScenario, 3, 26);
+    expect(standardPoints[25].netWorth).toBeGreaterThan(flatPoints[25].netWorth);
   });
 });
 
