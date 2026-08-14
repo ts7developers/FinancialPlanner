@@ -16,8 +16,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Belt-and-braces alongside proxy.ts, which already redirects unauthenticated requests.
   if (!user) redirect("/login");
 
-  const { profile, categories, transactions, reconciliations, snapshots, balances, payslips, transfers, holdings, holdingLots } =
-    await fetchAppData(user.id);
+  const {
+    profile,
+    categories,
+    transactions,
+    reconciliations,
+    snapshots,
+    balances,
+    payslips,
+    transfers,
+    holdings,
+    holdingLots,
+    superContributions,
+  } = await fetchAppData(user.id);
 
   return (
     <div style={{ background: PAPER, minHeight: "100vh", color: "#1F2A44" }}>
@@ -33,6 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         initialTransfers={transfers}
         initialHoldings={holdings}
         initialHoldingLots={holdingLots}
+        initialSuperContributions={superContributions}
       >
         <PageContent>{children}</PageContent>
       </AppDataProvider>

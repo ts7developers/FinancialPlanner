@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Receipt, ScrollText, Landmark, LineChart, SlidersHorizontal } from "lucide-react";
+import { LayoutDashboard, Receipt, ScrollText, Landmark, LineChart, PiggyBank, SlidersHorizontal } from "lucide-react";
 import { PAPER, NAVY, GOLD } from "@/lib/theme";
 
 const TABS = [
@@ -11,6 +11,7 @@ const TABS = [
   { href: "/reconcile", label: "Reconcile", icon: ScrollText },
   { href: "/accounts", label: "Accounts", icon: Landmark },
   { href: "/savings", label: "Savings", icon: LineChart },
+  { href: "/super", label: "Super", icon: PiggyBank },
   { href: "/plan", label: "Plan", icon: SlidersHorizontal },
 ];
 

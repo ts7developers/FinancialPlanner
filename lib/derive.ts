@@ -2,8 +2,8 @@
 // in FinancialPlanTracker.jsx. Pure functions so the same math is reusable and testable
 // independent of React / Supabase.
 
-import { dayLabel, currentPeriod, isFT, periodKeyOf, type Period } from "./period";
-import { netFromPackage, hecsCompulsoryRepayment, FN_PER_YEAR, FN_FROM_MO } from "./tax";
+import { dayLabel, dateFromISO, currentPeriod, financialYearStart, isFT, periodKeyOf, type Period } from "./period";
+import { netFromPackage, hecsCompulsoryRepayment, incomeTaxAU, litoAU, FN_PER_YEAR, FN_FROM_MO } from "./tax";
 export { hecsCompulsoryRepayment } from "./tax";
 import type { Account } from "./theme";
 import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot } from "./types";
@@ -483,4 +483,106 @@ export function sumYTD(payslips: Payslip[], fyStartISO: string): YtdTotals {
       }),
       { gross: 0, paygwTax: 0, super: 0, net: 0 }
     );
+}
+
+/** First Home Super Saver Scheme eligibility caps (ATO, current since 1 July 2022). */
+export const FHSS_ANNUAL_CAP = 15000;
+export const FHSS_LIFETIME_CAP = 50000;
+
+export interface FhssSummary {
+  thisFYTotal: number; // raw logged total this FY, uncapped
+  thisFYEligible: number; // capped at the annual cap
+  lifetimeTotal: number; // raw logged total all-time, uncapped
+  lifetimeEligible: number; // capped at the lifetime cap (applied per-FY, in date order)
+  estimatedReleasable: number; // eligible contributions plus deemed earnings, before tax
+  taxFreeAmount: number; // eligible non-concessional principal — released tax-free
+  assessableAmount: number; // eligible concessional principal + ALL deemed earnings — taxed with a 30% offset
+  estimatedTax: number; // estimated tax on the assessable amount, at marginal rate less the 30% offset
+  estimatedNetReleasable: number; // what you'd actually receive after that tax
+}
+
+/**
+ * Summarises voluntary (salary-sacrifice/personal) contributions against the FHSS caps and
+ * estimates the releasable amount. Deemed earnings accrue on each eligible contribution from
+ * the start of the month it was made, compounding daily at `deemedRatePct` (the ATO's actual
+ * rate is the shortfall interest charge rate, which changes quarterly — set this to the
+ * current rate for a closer estimate). This is an approximation for planning purposes, not
+ * the authoritative ATO figure — get that from your myGov FHSS determination before relying
+ * on it. Compulsory employer contributions are not FHSS-eligible and aren't included here.
+ */
+export function fhssSummary(
+  contributions: { date: string; amount: number; taxDeductible: boolean }[],
+  todayISO: string,
+  deemedRatePct: number,
+  baseTaxableIncome: number
+): FhssSummary {
+  const byFY = new Map<string, { date: string; amount: number; taxDeductible: boolean }[]>();
+  contributions.forEach((c) => {
+    const fy = financialYearStart(c.date);
+    if (!byFY.has(fy)) byFY.set(fy, []);
+    byFY.get(fy)!.push(c);
+  });
+
+  const today = dateFromISO(todayISO);
+  const dayMs = 86400000;
+  const dailyRate = Math.pow(1 + deemedRatePct / 100, 1 / 365) - 1;
+
+  let lifetimeEligible = 0;
+  let estimatedReleasable = 0;
+  let taxFreePrincipal = 0;
+  let concessionalPrincipal = 0;
+  let totalEarnings = 0;
+
+  Array.from(byFY.keys())
+    .sort()
+    .forEach((fy) => {
+      let fyRunningTotal = 0;
+      byFY
+        .get(fy)!
+        .slice()
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .forEach((c) => {
+          const remainingAnnual = Math.max(0, FHSS_ANNUAL_CAP - fyRunningTotal);
+          const remainingLifetime = Math.max(0, FHSS_LIFETIME_CAP - lifetimeEligible);
+          const eligiblePortion = Math.max(0, Math.min(c.amount, remainingAnnual, remainingLifetime));
+          fyRunningTotal += c.amount;
+          lifetimeEligible += eligiblePortion;
+          if (c.taxDeductible) concessionalPrincipal += eligiblePortion;
+          else taxFreePrincipal += eligiblePortion;
+          if (eligiblePortion > 0) {
+            const d = dateFromISO(c.date);
+            const monthStart = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+            const days = Math.max(0, Math.round((today.getTime() - monthStart.getTime()) / dayMs));
+            const earnings = eligiblePortion * (Math.pow(1 + dailyRate, days) - 1);
+            totalEarnings += earnings;
+            estimatedReleasable += eligiblePortion + earnings;
+          }
+        });
+    });
+
+  const thisFY = financialYearStart(todayISO);
+  const thisFYTotal = (byFY.get(thisFY) ?? []).reduce((s, c) => s + c.amount, 0);
+  const lifetimeTotal = contributions.reduce((s, c) => s + c.amount, 0);
+
+  // Concessional principal + all deemed earnings (from every eligible contribution, whichever
+  // type) are assessable income on release, taxed at marginal rate with a 30% offset; the
+  // non-concessional principal itself comes out tax-free.
+  const assessableAmount = concessionalPrincipal + totalEarnings;
+  const taxWithout = Math.max(0, incomeTaxAU(baseTaxableIncome) - litoAU(baseTaxableIncome));
+  const taxWith = Math.max(0, incomeTaxAU(baseTaxableIncome + assessableAmount) - litoAU(baseTaxableIncome + assessableAmount));
+  const grossTax = Math.max(0, taxWith - taxWithout);
+  const estimatedTax = Math.max(0, grossTax - assessableAmount * 0.3);
+  const estimatedNetReleasable = taxFreePrincipal + assessableAmount - estimatedTax;
+
+  return {
+    thisFYTotal,
+    thisFYEligible: Math.min(thisFYTotal, FHSS_ANNUAL_CAP),
+    lifetimeTotal,
+    lifetimeEligible,
+    estimatedReleasable,
+    taxFreeAmount: taxFreePrincipal,
+    assessableAmount,
+    estimatedTax,
+    estimatedNetReleasable,
+  };
 }

@@ -103,6 +103,20 @@ export interface HoldingLot {
   created_at: string;
 }
 
+export interface SuperContribution {
+  id: string;
+  user_id: string;
+  date: string;
+  amount: number;
+  type: "salary_sacrifice" | "personal";
+  /** Concessional (claimed as a tax deduction, or always true for salary sacrifice) vs non-concessional. */
+  tax_deductible: boolean;
+  /** Whether this contribution was folded into the "superb" balance when logged (false for historical backfills already reflected in the current balance). */
+  affects_balance: boolean;
+  note: string | null;
+  created_at: string;
+}
+
 export type PayslipStatus = "uploaded" | "parsed" | "confirmed";
 
 export interface Payslip {

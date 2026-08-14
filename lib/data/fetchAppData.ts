@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip, Transfer, Holding, HoldingLot } from "@/lib/types";
+import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip, Transfer, Holding, HoldingLot, SuperContribution } from "@/lib/types";
 
 export interface AppData {
   profile: Profile;
@@ -13,6 +13,7 @@ export interface AppData {
   transfers: Transfer[];
   holdings: Holding[];
   holdingLots: HoldingLot[];
+  superContributions: SuperContribution[];
 }
 
 /** Loads everything the authed app shell needs for a user in one round trip. */
@@ -30,6 +31,7 @@ export async function fetchAppData(userId: string): Promise<AppData> {
     transfersRes,
     holdingsRes,
     holdingLotsRes,
+    superContributionsRes,
   ] = await Promise.all([
     supabase.from("profiles").select("*").eq("user_id", userId).single(),
     supabase.from("budget_categories").select("*").eq("user_id", userId).order("sort"),
@@ -41,6 +43,7 @@ export async function fetchAppData(userId: string): Promise<AppData> {
     supabase.from("transfers").select("*").eq("user_id", userId).order("date", { ascending: false }),
     supabase.from("holdings").select("*").eq("user_id", userId).order("code"),
     supabase.from("holding_lots").select("*").eq("user_id", userId).order("date", { ascending: false }),
+    supabase.from("super_contributions").select("*").eq("user_id", userId).order("date", { ascending: false }),
   ]);
 
   if (profileRes.error) throw profileRes.error;
@@ -57,5 +60,6 @@ export async function fetchAppData(userId: string): Promise<AppData> {
     transfers: (transfersRes.data ?? []) as Transfer[],
     holdings: (holdingsRes.data ?? []) as Holding[],
     holdingLots: (holdingLotsRes.data ?? []) as HoldingLot[],
+    superContributions: (superContributionsRes.data ?? []) as SuperContribution[],
   };
 }

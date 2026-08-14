@@ -17,6 +17,9 @@ import {
   averageSpend,
   buildActualSpendTrend,
   loggedByCategory,
+  fhssSummary,
+  FHSS_ANNUAL_CAP,
+  FHSS_LIFETIME_CAP,
 } from "@/lib/derive";
 import { buildPeriods, isFT } from "@/lib/period";
 import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
@@ -347,5 +350,85 @@ describe("netWorthPositiveAt", () => {
   it("returns null when net worth never turns positive", () => {
     const points = [{ key: "a", label: "A", liquid: 0, invested: 0, netWorth: -50 }];
     expect(netWorthPositiveAt(points)).toBeNull();
+  });
+});
+
+describe("fhssSummary", () => {
+  it("sums this-FY contributions and caps eligibility at the annual cap", () => {
+    const contributions = [
+      { date: "2026-08-01", amount: 10000, taxDeductible: true },
+      { date: "2026-09-01", amount: 8000, taxDeductible: true },
+    ];
+    const s = fhssSummary(contributions, "2026-09-15", 0, 60000);
+    expect(s.thisFYTotal).toBe(18000);
+    expect(s.thisFYEligible).toBe(FHSS_ANNUAL_CAP);
+  });
+
+  it("caps lifetime eligibility at the lifetime cap across financial years", () => {
+    const contributions = [
+      { date: "2024-08-01", amount: 15000, taxDeductible: true },
+      { date: "2025-08-01", amount: 15000, taxDeductible: true },
+      { date: "2026-08-01", amount: 15000, taxDeductible: true },
+      { date: "2027-08-01", amount: 15000, taxDeductible: true },
+    ];
+    const s = fhssSummary(contributions, "2027-09-01", 0, 60000);
+    expect(s.lifetimeTotal).toBe(60000);
+    expect(s.lifetimeEligible).toBe(FHSS_LIFETIME_CAP);
+  });
+
+  it("with a zero deemed rate, the releasable estimate equals the eligible principal", () => {
+    const contributions = [{ date: "2026-01-01", amount: 5000, taxDeductible: true }];
+    const s = fhssSummary(contributions, "2026-08-14", 0, 60000);
+    expect(s.estimatedReleasable).toBeCloseTo(5000, 5);
+  });
+
+  it("a positive deemed rate grows the releasable estimate above the principal", () => {
+    const contributions = [{ date: "2025-08-01", amount: 5000, taxDeductible: true }];
+    const s = fhssSummary(contributions, "2026-08-14", 7.4, 60000);
+    expect(s.estimatedReleasable).toBeGreaterThan(5000);
+  });
+
+  it("excludes the ineligible excess from earning deemed interest", () => {
+    const contributions = [{ date: "2026-08-01", amount: 20000, taxDeductible: true }];
+    const s = fhssSummary(contributions, "2026-08-14", 10, 60000);
+    // Only $15,000 is eligible; the estimate should track that principal, not the full $20,000.
+    expect(s.estimatedReleasable).toBeLessThan(20000);
+    expect(s.estimatedReleasable).toBeGreaterThanOrEqual(FHSS_ANNUAL_CAP);
+  });
+
+  it("a non-concessional (non-deductible) contribution releases its principal tax-free", () => {
+    const contributions = [{ date: "2026-01-01", amount: 5000, taxDeductible: false }];
+    const s = fhssSummary(contributions, "2026-08-14", 0, 60000);
+    expect(s.taxFreeAmount).toBeCloseTo(5000, 5);
+    expect(s.assessableAmount).toBeCloseTo(0, 5);
+    expect(s.estimatedTax).toBeCloseTo(0, 5);
+    expect(s.estimatedNetReleasable).toBeCloseTo(5000, 5);
+  });
+
+  it("a concessional (deductible) contribution's principal and earnings are assessable and taxed with the 30% offset", () => {
+    const contributions = [{ date: "2026-01-01", amount: 5000, taxDeductible: true }];
+    const s = fhssSummary(contributions, "2026-08-14", 5, 60000);
+    expect(s.taxFreeAmount).toBe(0);
+    expect(s.assessableAmount).toBeGreaterThan(5000); // principal + deemed earnings
+    expect(s.estimatedTax).toBeGreaterThanOrEqual(0);
+    expect(s.estimatedNetReleasable).toBeLessThan(s.estimatedReleasable);
+  });
+
+  it("splitting one nominal contribution into deductible + non-deductible portions nets out higher than treating it all as deductible, once marginal rate exceeds the 30% offset", () => {
+    // At exactly the 30% bracket, concessional tax nets to zero either way — use a higher
+    // income (37% bracket) where the offset no longer fully cancels the tax, so the split
+    // (less of it taxed) comes out ahead.
+    const baseIncome = 150000;
+    const allDeductible = fhssSummary([{ date: "2026-06-15", amount: 8000, taxDeductible: true }], "2026-08-14", 0, baseIncome);
+    const split = fhssSummary(
+      [
+        { date: "2026-06-15", amount: 7000, taxDeductible: true },
+        { date: "2026-06-15", amount: 1000, taxDeductible: false },
+      ],
+      "2026-08-14",
+      0,
+      baseIncome
+    );
+    expect(split.estimatedNetReleasable).toBeGreaterThan(allDeductible.estimatedNetReleasable);
   });
 });

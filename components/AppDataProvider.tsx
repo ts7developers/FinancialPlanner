@@ -13,7 +13,7 @@ import {
   type DerivedFinancials,
   type PlanPathPoint,
 } from "@/lib/derive";
-import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip, Transfer, Holding, HoldingLot } from "@/lib/types";
+import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip, Transfer, Holding, HoldingLot, SuperContribution } from "@/lib/types";
 
 interface NewTransaction {
   date: string;
@@ -34,6 +34,7 @@ interface AppDataContextValue {
   transfers: Transfer[];
   holdings: Holding[];
   holdingLots: HoldingLot[];
+  superContributions: SuperContribution[];
   periods: Period[];
   D: DerivedFinancials;
   planPath: PlanPathPoint[];
@@ -66,6 +67,15 @@ interface AppDataContextValue {
   refreshHoldingPrices: () => Promise<void>;
   addHoldingLot: (code: string, shares: number, price: number, date: string) => Promise<void>;
   deleteHoldingLot: (id: string) => Promise<void>;
+  addSuperContribution: (
+    date: string,
+    amount: number,
+    type: SuperContribution["type"],
+    taxDeductible: boolean,
+    affectsBalance: boolean,
+    note?: string
+  ) => Promise<void>;
+  deleteSuperContribution: (id: string) => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -87,6 +97,7 @@ export function AppDataProvider({
   initialTransfers,
   initialHoldings,
   initialHoldingLots,
+  initialSuperContributions,
   children,
 }: {
   initialProfile: Profile;
@@ -99,6 +110,7 @@ export function AppDataProvider({
   initialTransfers: Transfer[];
   initialHoldings: Holding[];
   initialHoldingLots: HoldingLot[];
+  initialSuperContributions: SuperContribution[];
   children: React.ReactNode;
 }) {
   const supabase = useMemo(() => createClient(), []);
@@ -114,6 +126,7 @@ export function AppDataProvider({
   const [transfers, setTransfers] = useState(initialTransfers);
   const [holdings, setHoldings] = useState(initialHoldings);
   const [holdingLots, setHoldingLots] = useState(initialHoldingLots);
+  const [superContributions, setSuperContributions] = useState(initialSuperContributions);
 
   const periods = useMemo(() => buildPeriods(profile.pay_anchor), [profile.pay_anchor]);
   const D = useMemo(() => deriveFinancials(profile, categories), [profile, categories]);
@@ -390,6 +403,32 @@ export function AppDataProvider({
     [supabase, holdingLots, holdings]
   );
 
+  const addSuperContribution = useCallback(
+    async (date: string, amount: number, type: SuperContribution["type"], taxDeductible: boolean, affectsBalance: boolean, note?: string) => {
+      if (!(amount > 0)) return;
+      const { data, error } = await supabase
+        .from("super_contributions")
+        .insert({ user_id: profile.user_id, date, amount, type, tax_deductible: taxDeductible, affects_balance: affectsBalance, note: note || null })
+        .select()
+        .single();
+      if (error) throw error;
+      setSuperContributions((cs) => [data as SuperContribution, ...cs]);
+      if (affectsBalance) await updateBalances({ superb: balances.superb + amount });
+    },
+    [supabase, profile.user_id, balances, updateBalances]
+  );
+
+  const deleteSuperContribution = useCallback(
+    async (id: string) => {
+      const contribution = superContributions.find((c) => c.id === id);
+      setSuperContributions((cs) => cs.filter((c) => c.id !== id));
+      if (contribution?.affects_balance) await updateBalances({ superb: balances.superb - contribution.amount });
+      const { error } = await supabase.from("super_contributions").delete().eq("id", id);
+      if (error) throw error;
+    },
+    [supabase, superContributions, balances, updateBalances]
+  );
+
   const value: AppDataContextValue = {
     profile,
     categories,
@@ -401,6 +440,7 @@ export function AppDataProvider({
     transfers,
     holdings,
     holdingLots,
+    superContributions,
     periods,
     D,
     planPath,
@@ -422,6 +462,8 @@ export function AppDataProvider({
     refreshHoldingPrices,
     addHoldingLot,
     deleteHoldingLot,
+    addSuperContribution,
+    deleteSuperContribution,
   };
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
