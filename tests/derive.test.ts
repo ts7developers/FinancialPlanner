@@ -298,7 +298,7 @@ describe("buildNetWorthProjection", () => {
     const [first] = buildNetWorthProjection(profile, D0, flatBalances, periods, profile.pay_anchor, 10, 0, flatScenario, 0, 1);
     const periodGrowth = Math.pow(1.1, 14 / 365) - 1;
     const pkg = isFT(periods[0].key, profile.ft_start) ? profile.package : profile.package * profile.pt_fraction;
-    const { cash } = netFromPackage(pkg, profile.super_rate, profile.hecs_threshold);
+    const { cash } = netFromPackage(pkg, profile.super_rate);
     const expectedSuperFn = (pkg - cash) / FN_PER_YEAR;
     expect(first.invested).toBeCloseTo(Math.round(1000 * (1 + periodGrowth) + expectedSuperFn), -1);
   });

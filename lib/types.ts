@@ -4,6 +4,7 @@ export interface Profile {
   package: number;
   super_rate: number;
   pt_fraction: number;
+  /** Legacy field — HECS repayment now uses the real ATO marginal schedule (lib/tax.ts) instead of a single editable threshold. Kept to avoid a migration; no longer read by any calculation. */
   hecs_threshold: number;
   pay_anchor: string; // ISO date
   ft_start: string; // ISO date

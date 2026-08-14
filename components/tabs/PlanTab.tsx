@@ -15,7 +15,6 @@ type ProfileInputs = {
   package: string;
   sg: string;
   ptFrac: string;
-  hecsThreshold: string;
   house: string;
   depPct: string;
   fhog: string;
@@ -32,7 +31,6 @@ function toInputs(profile: Profile): ProfileInputs {
     package: String(profile.package),
     sg: String(profile.super_rate * 100),
     ptFrac: String(profile.pt_fraction * 100),
-    hecsThreshold: String(profile.hecs_threshold),
     house: String(profile.house_target),
     depPct: String(profile.deposit_pct * 100),
     fhog: String(profile.fhog),
@@ -162,7 +160,6 @@ export default function PlanTab() {
             <PInput label="Salary package (incl. super)" prefix="$" value={inputs.package} onChange={(v) => set("package", v)} onBlur={() => commitNumber("package", inputs.package)} />
             <PInput label="Super rate" suffix="%" value={inputs.sg} onChange={(v) => set("sg", v)} onBlur={() => commitNumber("super_rate", inputs.sg, 100)} />
             <PInput label="Part-time fraction" suffix="%" value={inputs.ptFrac} onChange={(v) => set("ptFrac", v)} onBlur={() => commitNumber("pt_fraction", inputs.ptFrac, 100)} />
-            <PInput label="HECS repayment threshold" prefix="$" value={inputs.hecsThreshold} onChange={(v) => set("hecsThreshold", v)} onBlur={() => commitNumber("hecs_threshold", inputs.hecsThreshold)} />
             <PInput
               label="Tax paid so far this FY (opening balance)"
               prefix="$"
@@ -171,6 +168,9 @@ export default function PlanTab() {
               onBlur={() => commitNumber("tax_paid_opening", inputs.taxPaidOpening)}
             />
             <Derived rows={[["Cash salary (FT, / yr)", AUD(D.cashFT)], ["Net pay / month (FT)", AUD(D.netFTmo)]]} />
+            <div style={{ fontSize: 11.5, color: MUTE, marginTop: 10, lineHeight: 1.5 }}>
+              HECS-HELP withholding uses the real ATO marginal repayment schedule automatically — no threshold to set here.
+            </div>
           </Panel>
           <Panel title="Goals & house">
             <PInput label="House-and-land target" prefix="$" value={inputs.house} onChange={(v) => set("house", v)} onBlur={() => commitNumber("house_target", inputs.house)} />

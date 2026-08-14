@@ -3,7 +3,8 @@
 // independent of React / Supabase.
 
 import { dayLabel, currentPeriod, isFT, periodKeyOf, type Period } from "./period";
-import { netFromPackage, FN_PER_YEAR, FN_FROM_MO } from "./tax";
+import { netFromPackage, hecsCompulsoryRepayment, FN_PER_YEAR, FN_FROM_MO } from "./tax";
+export { hecsCompulsoryRepayment } from "./tax";
 import type { Account } from "./theme";
 import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot } from "./types";
 
@@ -24,10 +25,9 @@ export function deriveFinancials(profile: Profile, categories: BudgetCategoryRow
   const pkg = Number(profile.package) || 0;
   const sg = Number(profile.super_rate) || 0;
   const pf = Number(profile.pt_fraction) || 0;
-  const ht = Number(profile.hecs_threshold) || 0;
 
-  const ft = netFromPackage(pkg, sg, ht);
-  const pt = netFromPackage(pkg * pf, sg, ht);
+  const ft = netFromPackage(pkg, sg);
+  const pt = netFromPackage(pkg * pf, sg);
 
   const catMo = (id: string, year: number) => {
     const c = categories.find((c) => c.key === id);
@@ -77,20 +77,6 @@ export function buildPlanPath(profile: Profile, D: DerivedFinancials, periods: P
     dep += avail - toE;
     return { key: per.key, label: dayLabel(per.start), planDeposit: Math.round(dep) };
   });
-}
-
-/**
- * HECS-HELP compulsory repayment on annual repayment income, under the marginal system that
- * took effect 1 July 2025 (ATO 2026-27 thresholds: $69,528 / $129,717 / $186,050, indexed
- * annually — this snapshot won't track future indexation of the brackets themselves). Above
- * the top threshold the rate flips from marginal to a flat 10% of total repayment income.
- */
-export function hecsCompulsoryRepayment(repaymentIncome: number): number {
-  const T = repaymentIncome;
-  if (T < 69528) return 0;
-  if (T <= 129717) return (T - 69528) * 0.15;
-  if (T <= 186050) return 9028.35 + (T - 129717) * 0.17;
-  return T * 0.1;
 }
 
 export interface SalaryScenario {
@@ -154,7 +140,6 @@ export function buildNetWorthProjection(
   const hecsPeriodIndexation = Math.pow(1 + hecsIndexationPct / 100, 14 / 365) - 1;
   const emergencyTarget = Number(profile.emergency_target) || 0;
   const superRate = Number(profile.super_rate) || 0;
-  const hecsThreshold = Number(profile.hecs_threshold) || 0;
   const basePackage = Number(profile.package) || 0;
   const ptFraction = Number(profile.pt_fraction) || 0;
 
@@ -167,7 +152,7 @@ export function buildNetWorthProjection(
 
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per, i) => {
     const grownPackage = (isFT(per.key, profile.ft_start) ? basePackage : basePackage * ptFraction) * scenario.multiplierAt(i);
-    const { cash, net } = netFromPackage(grownPackage, superRate, hecsThreshold);
+    const { cash, net } = netFromPackage(grownPackage, superRate);
     const incomeFn = net / FN_PER_YEAR;
     const superFn = (grownPackage - cash) / FN_PER_YEAR;
 
