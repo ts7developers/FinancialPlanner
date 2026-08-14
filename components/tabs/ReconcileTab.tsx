@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, FileBarChart, Wand2 } from "lucide-react";
+import { Check, FileBarChart, Wand2, TrendingDown, TrendingUp } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { currentPeriod, financialYearStart, isFT, isoFromDate, periodLabel } from "@/lib/period";
-import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation, sumYTD, buildVarianceReport } from "@/lib/derive";
+import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation, sumYTD, buildVarianceReport, buildVarianceInsights } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, INK, GOLD_SOFT, FAV, UNFAV, inputStyle } from "@/lib/theme";
 import { Row, Cell2, VarTag, Stat } from "@/components/ui/atoms";
@@ -64,6 +64,7 @@ export default function ReconcileTab() {
 
   const varianceReport = buildVarianceReport(profile, categories, D, periods, loggedByCat, reconciliations);
   const varianceRows = varianceReport.rows.filter((r) => r.plannedTotal > 0 || r.actualTotal > 0).sort((a, b) => a.variance - b.variance);
+  const insights = buildVarianceInsights(categories, D, periods, loggedByCat, reconciliations);
 
   const commitIncome = () => {
     setReconciliation(period, { actual_income: incomeInput === "" ? null : Number(incomeInput) });
@@ -290,6 +291,28 @@ export default function ReconcileTab() {
               <Stat2 label="Expense variance" value={AUD(Math.abs(varianceReport.totalExpenseVariance))} sign={varianceReport.totalExpenseVariance} />
               <Stat2 label="Surplus variance" value={AUD(Math.abs(varianceReport.surplusVariance))} sign={varianceReport.surplusVariance} />
             </div>
+            {insights.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "0 18px 14px" }}>
+                {insights.map((ins) => (
+                  <div
+                    key={ins.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      fontSize: 12.5,
+                      background: ins.favorable ? "#EAF5EE" : "#FBEDE9",
+                      color: ins.favorable ? "#1E5C3B" : "#8A3320",
+                    }}
+                  >
+                    {ins.favorable ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
+                    {ins.message}
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "1.3fr 100px 100px 100px", padding: "7px 18px", fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600, borderTop: `1px solid ${LINE}` }}>
               <span>Category</span>
               <span style={{ textAlign: "right" }}>Budgeted</span>

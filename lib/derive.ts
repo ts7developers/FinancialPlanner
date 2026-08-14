@@ -229,7 +229,9 @@ export function loggedByCategory(transactions: Transaction[], anchor: string): R
     const k = periodKeyOf(t.date, anchor);
     if (!k) return;
     if (!m[k]) m[k] = {};
-    m[k][t.category_key] = (m[k][t.category_key] || 0) + (Number(t.amount) || 0);
+    // Round to the cent on every add — plain float summation drifts (e.g. 14.90+6+16.06
+    // renders as "36.959999999999994" in a number input, which reads as a data-entry error).
+    m[k][t.category_key] = Math.round(((m[k][t.category_key] || 0) + (Number(t.amount) || 0)) * 100) / 100;
   });
   return m;
 }
@@ -385,6 +387,63 @@ export function buildVarianceReport(
     totalActualSurplus,
     surplusVariance: totalActualSurplus - totalPlannedSurplus,
   };
+}
+
+export interface VarianceInsight {
+  id: string;
+  label: string;
+  favorable: boolean; // true = under budget streak, false = over budget streak
+  streakLength: number;
+  message: string;
+}
+
+/**
+ * Finds categories on a current run of consecutive over- or under-budget fortnights (at least
+ * `minStreak` in a row, ending at the most recently reconciled period), so a pattern is
+ * surfaced instead of buried in the summed variance-report totals. Only counts periods where
+ * that category actually had real data (a logged expense or manual override) — a fortnight
+ * with nothing touched isn't a data point either way.
+ */
+export function buildVarianceInsights(
+  categories: BudgetCategoryRow[],
+  D: DerivedFinancials,
+  periods: Period[],
+  loggedByCat: Record<string, Record<string, number>>,
+  reconciliations: Record<string, Reconciliation>,
+  minStreak = 3
+): VarianceInsight[] {
+  const history = new Map<string, boolean[]>(); // true = that period was over budget
+  categories.forEach((c) => history.set(c.key, []));
+
+  periods.forEach((per) => {
+    const rec = reconciliations[per.key];
+    const catRows = reconcileCategoryRows(categories, D, per.year, loggedByCat[per.key], rec?.actual_overrides ?? {});
+    catRows.forEach((r) => {
+      if (r.actual === null) return;
+      history.get(r.id)?.push(r.actual > r.plan);
+    });
+  });
+
+  const insights: VarianceInsight[] = [];
+  history.forEach((flags, id) => {
+    if (flags.length === 0) return;
+    const last = flags[flags.length - 1];
+    let streak = 1;
+    for (let i = flags.length - 2; i >= 0 && flags[i] === last; i--) streak++;
+    if (streak < minStreak) return;
+    const label = categories.find((c) => c.key === id)?.label ?? id;
+    insights.push({
+      id,
+      label,
+      favorable: !last,
+      streakLength: streak,
+      message: last
+        ? `${label} has run over budget ${streak} fortnights running.`
+        : `${label} has come in under budget ${streak} fortnights running.`,
+    });
+  });
+
+  return insights.sort((a, b) => b.streakLength - a.streakLength);
 }
 
 export interface NetPosition {

@@ -27,6 +27,7 @@ import {
   periodsToTarget,
   buildIncomeProjection,
   buildVarianceReport,
+  buildVarianceInsights,
 } from "@/lib/derive";
 import { buildPeriods, isFT } from "@/lib/period";
 import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
@@ -596,5 +597,56 @@ describe("buildVarianceReport", () => {
     expect(report.periodsIncluded).toBe(2);
     const groceriesRow = report.rows.find((r) => r.id === "groceries")!;
     expect(groceriesRow.actualTotal).toBe(250);
+  });
+});
+
+describe("buildVarianceInsights", () => {
+  const periods = buildPeriods(profile.pay_anchor);
+  const D = deriveFinancials(profile, categories);
+  const plan = D.catFN("groceries", periods[0].year);
+
+  it("finds no insight below the minimum streak", () => {
+    const loggedByCat = { [periods[0].key]: { groceries: plan + 100 }, [periods[1].key]: { groceries: plan + 100 } };
+    const insights = buildVarianceInsights(categories, D, periods, loggedByCat, {});
+    expect(insights).toHaveLength(0);
+  });
+
+  it("flags an over-budget streak of at least minStreak fortnights", () => {
+    const loggedByCat = {
+      [periods[0].key]: { groceries: plan + 100 },
+      [periods[1].key]: { groceries: plan + 100 },
+      [periods[2].key]: { groceries: plan + 100 },
+    };
+    const insights = buildVarianceInsights(categories, D, periods, loggedByCat, {});
+    expect(insights).toHaveLength(1);
+    expect(insights[0].favorable).toBe(false);
+    expect(insights[0].streakLength).toBe(3);
+  });
+
+  it("flags an under-budget streak as favorable", () => {
+    const loggedByCat = {
+      [periods[0].key]: { groceries: plan - 100 },
+      [periods[1].key]: { groceries: plan - 100 },
+      [periods[2].key]: { groceries: plan - 100 },
+    };
+    const insights = buildVarianceInsights(categories, D, periods, loggedByCat, {});
+    expect(insights[0].favorable).toBe(true);
+  });
+
+  it("only counts the streak ending at the most recent reconciled period", () => {
+    const loggedByCat = {
+      [periods[0].key]: { groceries: plan + 100 },
+      [periods[1].key]: { groceries: plan - 100 },
+      [periods[2].key]: { groceries: plan + 100 },
+    };
+    const insights = buildVarianceInsights(categories, D, periods, loggedByCat, {}, 2);
+    expect(insights).toHaveLength(0);
+  });
+
+  it("respects a custom minStreak", () => {
+    const loggedByCat = { [periods[0].key]: { groceries: plan + 100 }, [periods[1].key]: { groceries: plan + 100 } };
+    const insights = buildVarianceInsights(categories, D, periods, loggedByCat, {}, 2);
+    expect(insights).toHaveLength(1);
+    expect(insights[0].streakLength).toBe(2);
   });
 });
