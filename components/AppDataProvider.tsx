@@ -29,6 +29,7 @@ import type {
   RecurringExpense,
   RecurringFrequency,
 } from "@/lib/types";
+import type { PayslipExtraction } from "@/lib/payslipSchema";
 
 interface NewTransaction {
   date: string;
@@ -70,7 +71,8 @@ interface AppDataContextValue {
   takeSnapshot: () => Promise<void>;
   addPayslip: (payslip: Payslip) => void;
   updatePayslip: (id: string, patch: Partial<Payslip>) => void;
-  confirmPayslip: (id: string, periodKey: string, net: number) => Promise<void>;
+  /** Confirms with the (possibly user-edited) reviewed fields — persists them onto the payslip row and sums this fortnight's actual income across every confirmed payslip in it, so a second income source (e.g. a casual job) adds rather than overwrites. */
+  confirmPayslip: (id: string, periodKey: string, fields: PayslipExtraction) => Promise<void>;
   addTransfer: (
     from: keyof Omit<Balances, "user_id">,
     to: keyof Omit<Balances, "user_id">,
@@ -287,16 +289,29 @@ export function AppDataProvider({
   }, []);
 
   const confirmPayslip = useCallback(
-    async (id: string, periodKey: string, net: number) => {
+    async (id: string, periodKey: string, fields: PayslipExtraction) => {
       const alreadyConfirmed = payslips.find((p) => p.id === id)?.status === "confirmed";
       const confirmedAt = new Date().toISOString();
-      setPayslips((ps) => ps.map((p) => (p.id === id ? { ...p, status: "confirmed", confirmed_at: confirmedAt } : p)));
-      const { error } = await supabase.from("payslips").update({ status: "confirmed", confirmed_at: confirmedAt }).eq("id", id);
+      const patch = {
+        status: "confirmed" as const,
+        confirmed_at: confirmedAt,
+        gross: fields.gross,
+        paygw_tax: fields.paygw_tax,
+        super: fields.super,
+        net: fields.net,
+        help_hecs: fields.help_hecs,
+        allowances: fields.allowances,
+      };
+      setPayslips((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+      const { error } = await supabase.from("payslips").update(patch).eq("id", id);
       if (error) throw error;
-      await setReconciliation(periodKey, { actual_income: net });
+      // Sum every confirmed payslip's net for this fortnight rather than overwriting — supports
+      // a second income source landing in the same period (e.g. a casual job) alongside the main one.
+      const periodNet = payslips.filter((p) => p.period_key === periodKey && p.status === "confirmed" && p.id !== id).reduce((s, p) => s + (p.net || 0), 0) + fields.net;
+      await setReconciliation(periodKey, { actual_income: periodNet });
       // Only the first confirmation lands the pay in Everyday — re-confirming an already-posted
       // payslip (e.g. after correcting a figure) must not double-count it.
-      if (!alreadyConfirmed) await updateBalances(applyIncomeToBalance(balances, net));
+      if (!alreadyConfirmed) await updateBalances(applyIncomeToBalance(balances, fields.net));
     },
     [supabase, setReconciliation, payslips, balances, updateBalances]
   );

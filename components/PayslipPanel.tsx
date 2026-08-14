@@ -1,12 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Upload, Check } from "lucide-react";
+import { Upload, Check, FileEdit } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { createClient } from "@/lib/supabase/client";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, INK, FAV, inputStyle } from "@/lib/theme";
 import type { PayslipExtraction } from "@/lib/payslipSchema";
+import type { Payslip } from "@/lib/types";
 
 export default function PayslipPanel({ periodKey }: { periodKey: string }) {
   const { profile, payslips, addPayslip, updatePayslip, confirmPayslip } = useAppData();
@@ -15,7 +16,9 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
   const [error, setError] = useState("");
   const [review, setReview] = useState<{ payslipId: string; fields: PayslipExtraction } | null>(null);
 
-  const existing = payslips.find((p) => p.period_key === periodKey);
+  const periodPayslips = payslips.filter((p) => p.period_key === periodKey).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const confirmedPayslips = periodPayslips.filter((p) => p.status === "confirmed");
+  const confirmedTotal = confirmedPayslips.reduce((s, p) => s + (p.net || 0), 0);
 
   const handleFile = async (file: File) => {
     setBusy(true);
@@ -58,11 +61,27 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
     setReview((r) => (r ? { ...r, fields: { ...r.fields, [key]: value } } : r));
   };
 
+  const resumeReview = (p: Payslip) => {
+    setReview({
+      payslipId: p.id,
+      fields: {
+        gross: p.gross || 0,
+        paygw_tax: p.paygw_tax || 0,
+        super: p.super || 0,
+        net: p.net || 0,
+        help_hecs: p.help_hecs || 0,
+        allowances: p.allowances,
+        period_start: p.period_start,
+        period_end: p.period_end,
+      },
+    });
+  };
+
   const handleConfirm = async () => {
     if (!review) return;
     setBusy(true);
     try {
-      await confirmPayslip(review.payslipId, periodKey, review.fields.net);
+      await confirmPayslip(review.payslipId, periodKey, review.fields);
       setReview(null);
     } catch {
       setError("Could not save the confirmed payslip");
@@ -95,11 +114,12 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
         </div>
         <div style={{ fontSize: 12, color: MUTE, marginBottom: 10 }}>
           Check these figures before confirming — nothing is posted until you confirm.
+          {confirmedPayslips.length > 0 && " This adds on top of the pay already confirmed for this fortnight."}
         </div>
         {moneyField("Gross", "gross")}
         {moneyField("PAYG tax", "paygw_tax")}
         {moneyField("Super", "super")}
-        {moneyField("Net (posts as this period's actual income)", "net")}
+        {moneyField("Net (adds to this period's actual income)", "net")}
         {moneyField("HELP/HECS withheld", "help_hecs")}
         {f.allowances.length > 0 && (
           <div style={{ fontSize: 12, color: MUTE, marginTop: 8 }}>
@@ -129,12 +149,10 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
     <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15 }}>Payslip</div>
-          {existing?.status === "confirmed" ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, color: FAV, fontWeight: 600, marginTop: 4 }}>
-              <Check size={13} /> Confirmed — net {AUD(existing.net || 0)} posted to this fortnight and added to Everyday
-            </div>
-          ) : (
+          <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15 }}>
+            Payslip{periodPayslips.length > 1 ? "s" : ""}
+          </div>
+          {periodPayslips.length === 0 && (
             <div style={{ fontSize: 12.5, color: MUTE, marginTop: 4 }}>
               Upload this fortnight&apos;s payslip (PDF or photo) to auto-fill net pay.
             </div>
@@ -145,7 +163,7 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
           disabled={busy}
           style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: INK, border: `1px solid ${LINE}`, borderRadius: 8, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, fontFamily: "var(--font-space-grotesk), sans-serif" }}
         >
-          <Upload size={14} /> {busy ? "Working…" : existing ? "Replace" : "Upload"}
+          <Upload size={14} /> {busy ? "Working…" : periodPayslips.length > 0 ? "Add another" : "Upload"}
         </button>
         <input
           ref={fileInput}
@@ -158,6 +176,37 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
           }}
         />
       </div>
+      {periodPayslips.length > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${LINE}`, display: "flex", flexDirection: "column", gap: 8 }}>
+          {periodPayslips.map((p) => (
+            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5 }}>
+              {p.status === "confirmed" ? (
+                <span style={{ display: "flex", alignItems: "center", gap: 5, color: FAV, fontWeight: 600 }}>
+                  <Check size={13} /> Confirmed — net {AUD(p.net || 0)} added to Everyday
+                </span>
+              ) : p.status === "parsed" ? (
+                <>
+                  <span style={{ color: MUTE }}>Extracted — net {AUD(p.net || 0)}, not yet confirmed</span>
+                  <button
+                    onClick={() => resumeReview(p)}
+                    style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: GOLD, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
+                  >
+                    <FileEdit size={12} /> Review &amp; confirm
+                  </button>
+                </>
+              ) : (
+                <span style={{ color: MUTE }}>Uploaded — extracting…</span>
+              )}
+            </div>
+          ))}
+          {confirmedPayslips.length > 1 && (
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 13, borderTop: `1px solid ${LINE}`, paddingTop: 8 }}>
+              <span>Combined net this fortnight</span>
+              <span>{AUD(confirmedTotal)}</span>
+            </div>
+          )}
+        </div>
+      )}
       {error && <div style={{ fontSize: 12, color: "#C0492F", marginTop: 8 }}>{error}</div>}
     </div>
   );

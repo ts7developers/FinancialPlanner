@@ -26,6 +26,7 @@ import {
   fortnightCategoryBreakdown,
   periodsToTarget,
   buildIncomeProjection,
+  buildVarianceReport,
 } from "@/lib/derive";
 import { buildPeriods, isFT } from "@/lib/period";
 import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
@@ -551,5 +552,49 @@ describe("buildIncomeProjection", () => {
   it("grows pay period over period under the standard scenario", () => {
     const projection = buildIncomeProjection(profile, periods, profile.pay_anchor, standard, 30);
     expect(projection[29].gross).toBeGreaterThan(projection[0].gross);
+  });
+});
+
+describe("buildVarianceReport", () => {
+  const periods = buildPeriods(profile.pay_anchor);
+  const D = deriveFinancials(profile, categories);
+
+  it("includes no periods when nothing has been reconciled", () => {
+    const report = buildVarianceReport(profile, categories, D, periods, {}, {});
+    expect(report.periodsIncluded).toBe(0);
+    expect(report.totalPlannedExpenses).toBe(0);
+    expect(report.totalActualExpenses).toBe(0);
+  });
+
+  it("counts a period with only logged expenses, falling back to planned income", () => {
+    const key = periods[0].key;
+    const loggedByCat = { [key]: { groceries: 100 } };
+    const report = buildVarianceReport(profile, categories, D, periods, loggedByCat, {});
+    expect(report.periodsIncluded).toBe(1);
+    const groceriesRow = report.rows.find((r) => r.id === "groceries")!;
+    expect(groceriesRow.plannedTotal).toBeCloseTo(D.catFN("groceries", periods[0].year), 5);
+    expect(groceriesRow.actualTotal).toBe(100);
+    expect(report.totalActualIncome).toBe(report.totalPlannedIncome);
+    expect(report.incomeVariance).toBe(0);
+  });
+
+  it("uses the confirmed actual income when present", () => {
+    const key = periods[0].key;
+    const planInc = plannedIncomeFN(periods[0], profile, D);
+    const reconciliations: Record<string, Reconciliation> = {
+      [key]: { period_key: key, actual_income: planInc + 200, actual_overrides: {} },
+    };
+    const report = buildVarianceReport(profile, categories, D, periods, {}, reconciliations);
+    expect(report.periodsIncluded).toBe(1);
+    expect(report.incomeVariance).toBeCloseTo(200, 5);
+  });
+
+  it("sums across multiple reconciled periods", () => {
+    const [p0, p1] = periods;
+    const loggedByCat = { [p0.key]: { groceries: 100 }, [p1.key]: { groceries: 150 } };
+    const report = buildVarianceReport(profile, categories, D, periods, loggedByCat, {});
+    expect(report.periodsIncluded).toBe(2);
+    const groceriesRow = report.rows.find((r) => r.id === "groceries")!;
+    expect(groceriesRow.actualTotal).toBe(250);
   });
 });

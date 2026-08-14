@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check } from "lucide-react";
+import { Check, FileBarChart, Wand2 } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { currentPeriod, financialYearStart, isFT, isoFromDate, periodLabel } from "@/lib/period";
-import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation, sumYTD } from "@/lib/derive";
+import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation, sumYTD, buildVarianceReport } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, INK, GOLD_SOFT, inputStyle } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, NAVY, INK, GOLD_SOFT, FAV, UNFAV, inputStyle } from "@/lib/theme";
 import { Row, Cell2, VarTag, Stat } from "@/components/ui/atoms";
 import PayslipPanel from "@/components/PayslipPanel";
 
@@ -62,6 +62,9 @@ export default function ReconcileTab() {
     catRows
   );
 
+  const varianceReport = buildVarianceReport(profile, categories, D, periods, loggedByCat, reconciliations);
+  const varianceRows = varianceReport.rows.filter((r) => r.plannedTotal > 0 || r.actualTotal > 0).sort((a, b) => a.variance - b.variance);
+
   const commitIncome = () => {
     setReconciliation(period, { actual_income: incomeInput === "" ? null : Number(incomeInput) });
     flash();
@@ -75,6 +78,19 @@ export default function ReconcileTab() {
     setOverridesInput(nextOverrides);
     setReconciliation(period, { actual_overrides: nextOverrides });
     flash();
+  };
+
+  const autofillableCount = catRows.filter((r) => r.logged > 0 && (overridesInput[r.id] === undefined || overridesInput[r.id] === "")).length;
+  const autofillFromExpenses = () => {
+    const nextOverrides = { ...overridesInput };
+    catRows.forEach((r) => {
+      if (r.logged > 0 && (overridesInput[r.id] === undefined || overridesInput[r.id] === "")) {
+        nextOverrides[r.id] = String(r.logged);
+      }
+    });
+    setOverridesInput(nextOverrides);
+    setReconciliation(period, { actual_overrides: nextOverrides });
+    flash("Autofilled from Expenses");
   };
 
   return (
@@ -95,6 +111,28 @@ export default function ReconcileTab() {
         <span style={{ fontSize: 12, color: MUTE, padding: "3px 10px", background: "#EFE9D9", borderRadius: 999 }}>
           {isFT(perObj.key, profile.ft_start) ? "Full-time" : "Part-time"}
         </span>
+        <button
+          onClick={autofillFromExpenses}
+          disabled={autofillableCount === 0}
+          title={autofillableCount === 0 ? "Nothing new logged on Expenses for this fortnight" : `Lock in ${autofillableCount} categor${autofillableCount === 1 ? "y" : "ies"} from Expenses`}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: autofillableCount === 0 ? "transparent" : GOLD,
+            color: autofillableCount === 0 ? MUTE : INK,
+            border: autofillableCount === 0 ? `1px solid ${LINE}` : "none",
+            borderRadius: 8,
+            padding: "6px 12px",
+            fontSize: 12.5,
+            fontWeight: 600,
+            cursor: autofillableCount === 0 ? "default" : "pointer",
+            opacity: autofillableCount === 0 ? 0.6 : 1,
+            fontFamily: "var(--font-space-grotesk), sans-serif",
+          }}
+        >
+          <Wand2 size={13} /> Autofill from Expenses{autofillableCount > 0 ? ` (${autofillableCount})` : ""}
+        </button>
         {summary.anyActual && (
           <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#2E7D5B", fontWeight: 600 }}>
             <Check size={14} /> Reconciled
@@ -229,6 +267,63 @@ export default function ReconcileTab() {
         <div style={{ fontSize: 12.5, color: "#C4CDE0", maxWidth: 300, lineHeight: 1.5 }}>
           A <b style={{ color: "#7BE0AE" }}>favourable</b> variance means you spent less than planned this pay — extra to push to the deposit.
         </div>
+      </div>
+
+      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>
+        <div style={{ padding: "18px 18px 4px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>
+            <FileBarChart size={16} color={GOLD} /> Variance report
+          </div>
+          <div style={{ fontSize: 12, color: MUTE, marginTop: 2 }}>
+            Budget vs actual, summed across every fortnight you&apos;ve reconciled so far.
+          </div>
+        </div>
+        {varianceReport.periodsIncluded === 0 ? (
+          <div style={{ padding: 24, fontSize: 13, color: MUTE, textAlign: "center" }}>
+            Nothing reconciled yet. Log expenses on <b style={{ color: NAVY }}>Expenses</b> or confirm a payslip above, and this report builds itself up fortnight by fortnight.
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", padding: "10px 18px 14px" }}>
+              <Stat2 label="Fortnights reconciled" value={String(varianceReport.periodsIncluded)} />
+              <Stat2 label="Income variance" value={AUD(Math.abs(varianceReport.incomeVariance))} sign={varianceReport.incomeVariance} />
+              <Stat2 label="Expense variance" value={AUD(Math.abs(varianceReport.totalExpenseVariance))} sign={varianceReport.totalExpenseVariance} />
+              <Stat2 label="Surplus variance" value={AUD(Math.abs(varianceReport.surplusVariance))} sign={varianceReport.surplusVariance} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 100px 100px 100px", padding: "7px 18px", fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600, borderTop: `1px solid ${LINE}` }}>
+              <span>Category</span>
+              <span style={{ textAlign: "right" }}>Budgeted</span>
+              <span style={{ textAlign: "right" }}>Actual</span>
+              <span style={{ textAlign: "right" }}>Variance</span>
+            </div>
+            {varianceRows.map((r) => (
+              <div key={r.id} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "1.3fr 100px 100px 100px", alignItems: "center", padding: "8px 18px", borderTop: `1px solid ${LINE}`, fontSize: 13 }}>
+                <span>{r.label}</span>
+                <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: MUTE }}>{AUD(r.plannedTotal)}</span>
+                <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: MUTE }}>{AUD(r.actualTotal)}</span>
+                <span style={{ textAlign: "right" }}>
+                  <VarTag v={r.variance} />
+                </span>
+              </div>
+            ))}
+            <div style={{ fontSize: 11, color: MUTE, padding: "10px 18px 14px", borderTop: `1px solid ${LINE}` }}>
+              A category with nothing logged still counts its full budgeted amount as favourable variance — same rule as the per-fortnight table above.
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Stat2({ label, value, sign }: { label: string; value: string; sign?: number }) {
+  const color = sign === undefined ? NAVY : sign >= 0 ? FAV : UNFAV;
+  return (
+    <div style={{ background: "#FBF9F2", border: `1px solid ${LINE}`, borderRadius: 10, padding: "9px 14px", minWidth: 140 }}>
+      <div style={{ fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600 }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontSize: 17, fontWeight: 600, color, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
+        {sign !== undefined && sign !== 0 ? (sign > 0 ? "+" : "−") : ""}
+        {value}
       </div>
     </div>
   );

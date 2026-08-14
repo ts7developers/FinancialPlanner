@@ -13,7 +13,7 @@ const TABS = [
   { href: "/accounts", label: "Accounts", icon: Landmark },
   { href: "/savings", label: "Savings", icon: LineChart },
   { href: "/super", label: "Super", icon: PiggyBank },
-  { href: "/plan", label: "Plan", icon: SlidersHorizontal },
+  { href: "/plan", label: "Budget", icon: SlidersHorizontal },
 ];
 
 export default function TabNav({ isMobile }: { isMobile: boolean }) {

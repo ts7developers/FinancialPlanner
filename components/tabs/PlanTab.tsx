@@ -118,7 +118,7 @@ export default function PlanTab() {
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
         <div>
-          <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 18 }}>Plan assumptions</div>
+          <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 18 }}>Budget assumptions</div>
           <div style={{ fontSize: 12.5, color: MUTE }}>
             Edit these and the whole app recalculates. {flashMsg && <b style={{ color: GOLD }}>{flashMsg}</b>}
           </div>

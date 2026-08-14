@@ -313,7 +313,7 @@ export default function ExpensesTab() {
         )}
         {dateBeforeAnchor && (
           <div style={{ fontSize: 12, color: "#C0492F", marginTop: 10 }}>
-            This date is before your pay cycle starts (see <b>Plan</b>) — it&apos;ll still update balances, but won&apos;t auto-fill into Reconcile or the plan-vs-actual charts.
+            This date is before your pay cycle starts (see <b>Budget</b>) — it&apos;ll still update balances, but won&apos;t auto-fill into Reconcile or the plan-vs-actual charts.
           </div>
         )}
         {flashMsg && <div style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginTop: 10 }}>{flashMsg}</div>}
@@ -453,7 +453,7 @@ export default function ExpensesTab() {
         </div>
         {recDateBeforeAnchor && (
           <div style={{ fontSize: 12, color: "#C0492F", marginTop: 10 }}>
-            This due date is before your pay cycle starts (see <b>Plan</b>) — logging it will still update balances, but won&apos;t auto-fill into Reconcile.
+            This due date is before your pay cycle starts (see <b>Budget</b>) — logging it will still update balances, but won&apos;t auto-fill into Reconcile.
           </div>
         )}
       </div>

@@ -297,6 +297,96 @@ export function summarizeReconciliation(
   return { planInc, actInc, totPlanExp, totActExp, anyActual, expVar, planSurplus, actSurplus, surplusVar };
 }
 
+export interface VarianceReportRow {
+  id: string;
+  label: string;
+  plannedTotal: number;
+  actualTotal: number;
+  variance: number; // plannedTotal - actualTotal — positive means under budget (favorable)
+}
+
+export interface VarianceReport {
+  rows: VarianceReportRow[];
+  periodsIncluded: number;
+  totalPlannedIncome: number;
+  totalActualIncome: number;
+  incomeVariance: number; // actual - planned — positive means earned more than planned
+  totalPlannedExpenses: number;
+  totalActualExpenses: number;
+  totalExpenseVariance: number; // planned - actual — positive means spent less than planned
+  totalPlannedSurplus: number;
+  totalActualSurplus: number;
+  surplusVariance: number; // actual - planned — positive means banked more than planned
+}
+
+/**
+ * Aggregates plan-vs-actual across every fortnight that's had anything reconciled (a logged
+ * expense, a manual override, or a confirmed income figure) — same row-level rules as
+ * `reconcileCategoryRows`/`summarizeReconciliation`, just summed across periods instead of
+ * shown one at a time.
+ */
+export function buildVarianceReport(
+  profile: Profile,
+  categories: BudgetCategoryRow[],
+  D: DerivedFinancials,
+  periods: Period[],
+  loggedByCat: Record<string, Record<string, number>>,
+  reconciliations: Record<string, Reconciliation>
+): VarianceReport {
+  const rowAcc = new Map<string, { label: string; plannedTotal: number; actualTotal: number }>();
+  categories.forEach((c) => rowAcc.set(c.key, { label: c.label, plannedTotal: 0, actualTotal: 0 }));
+
+  let periodsIncluded = 0;
+  let totalPlannedIncome = 0;
+  let totalActualIncome = 0;
+
+  periods.forEach((per) => {
+    const rec = reconciliations[per.key];
+    const catRows = reconcileCategoryRows(categories, D, per.year, loggedByCat[per.key], rec?.actual_overrides ?? {});
+    const anyActual = catRows.some((r) => r.actual !== null) || (rec?.actual_income ?? null) !== null;
+    if (!anyActual) return;
+
+    periodsIncluded++;
+    const planInc = plannedIncomeFN(per, profile, D);
+    totalPlannedIncome += planInc;
+    totalActualIncome += rec?.actual_income ?? planInc;
+
+    catRows.forEach((r) => {
+      const acc = rowAcc.get(r.id);
+      if (!acc) return;
+      acc.plannedTotal += r.plan;
+      acc.actualTotal += r.actual ?? 0;
+    });
+  });
+
+  const rows: VarianceReportRow[] = Array.from(rowAcc.entries()).map(([id, v]) => ({
+    id,
+    label: v.label,
+    plannedTotal: v.plannedTotal,
+    actualTotal: v.actualTotal,
+    variance: v.plannedTotal - v.actualTotal,
+  }));
+
+  const totalPlannedExpenses = rows.reduce((s, r) => s + r.plannedTotal, 0);
+  const totalActualExpenses = rows.reduce((s, r) => s + r.actualTotal, 0);
+  const totalPlannedSurplus = totalPlannedIncome - totalPlannedExpenses;
+  const totalActualSurplus = totalActualIncome - totalActualExpenses;
+
+  return {
+    rows,
+    periodsIncluded,
+    totalPlannedIncome,
+    totalActualIncome,
+    incomeVariance: totalActualIncome - totalPlannedIncome,
+    totalPlannedExpenses,
+    totalActualExpenses,
+    totalExpenseVariance: totalPlannedExpenses - totalActualExpenses,
+    totalPlannedSurplus,
+    totalActualSurplus,
+    surplusVariance: totalActualSurplus - totalPlannedSurplus,
+  };
+}
+
 export interface NetPosition {
   assets: number;
   liabilities: number;

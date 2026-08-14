@@ -30,7 +30,7 @@ export default function AppHeader() {
             </h1>
             {!isMobile && (
               <div style={{ fontSize: 13, color: "#B9C2D6", marginTop: 2 }}>
-                Reconciled each fortnight, when you get paid. Plan is the budget; your numbers are the actuals.
+                Reconciled each fortnight, when you get paid. Budget sets the plan; your numbers are the actuals.
               </div>
             )}
           </div>

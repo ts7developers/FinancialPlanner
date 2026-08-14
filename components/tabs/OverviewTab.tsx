@@ -158,7 +158,7 @@ export default function OverviewTab() {
           <Progress label="Emergency fund" value={num(balances.emergency)} target={num(profile.emergency_target)} colorFrom={FAV} />
           <Progress label="House deposit (cash + FHSS)" value={combinedDeposit} target={D.dep5} />
           <div style={{ fontSize: 11.5, color: MUTE, borderTop: `1px solid ${LINE}`, paddingTop: 10 }}>
-            Edit the baseline on <b style={{ color: NAVY }}>Plan</b>; log balances on <b style={{ color: NAVY }}>Accounts</b> and hit <b style={{ color: NAVY }}>Snapshot</b> to plot a dot. Full FHSS
+            Edit the baseline on <b style={{ color: NAVY }}>Budget</b>; log balances on <b style={{ color: NAVY }}>Accounts</b> and hit <b style={{ color: NAVY }}>Snapshot</b> to plot a dot. Full FHSS
             breakdown and fortnight-by-fortnight projection on <b style={{ color: NAVY }}>Savings</b>.
           </div>
         </div>
@@ -189,7 +189,7 @@ export default function OverviewTab() {
             ) : (
               <>doesn&apos;t reach it within this projection at the current raise assumption</>
             )}
-            . Rough guide only, not a lender pre-approval — edit assumptions on <b style={{ color: NAVY }}>Plan</b>.
+            . Rough guide only, not a lender pre-approval — edit assumptions on <b style={{ color: NAVY }}>Budget</b>.
           </div>
         </div>
       </div>
