@@ -54,6 +54,10 @@ export default function ReconcileTab() {
     flash();
   };
   const commitActual = (catId: string, value: string) => {
+    // Untouched fields display the auto-filled logged total but never got an onChange, so
+    // overridesInput[catId] is still undefined here — skip writing an override so the row
+    // keeps auto-tracking new transactions logged against this category for the period.
+    if (overridesInput[catId] === undefined) return;
     const nextOverrides = { ...overridesInput, [catId]: value };
     setOverridesInput(nextOverrides);
     setReconciliation(period, { actual_overrides: nextOverrides });
@@ -160,16 +164,16 @@ export default function ReconcileTab() {
             actualEl={
               <div>
                 <input
-                  style={inputStyle}
+                  style={{ ...inputStyle, color: overridesInput[r.id] === undefined && r.logged > 0 ? "#2E7D5B" : inputStyle.color }}
                   type="number"
                   inputMode="decimal"
-                  placeholder={(r.logged > 0 ? r.logged : r.plan).toFixed(0)}
-                  value={overridesInput[r.id] ?? ""}
+                  placeholder={r.plan.toFixed(0)}
+                  value={overridesInput[r.id] ?? (r.logged > 0 ? String(r.logged) : "")}
                   onChange={(e) => setOverridesInput((o) => ({ ...o, [r.id]: e.target.value }))}
                   onBlur={(e) => commitActual(r.id, e.target.value)}
                 />
                 {r.logged > 0 && !r.hasManual && (
-                  <div style={{ fontSize: 10, color: "#2E7D5B", textAlign: "right", marginTop: 2 }}>{AUD(r.logged)} from Expenses</div>
+                  <div style={{ fontSize: 10, color: "#2E7D5B", textAlign: "right", marginTop: 2 }}>auto-filled from Expenses</div>
                 )}
               </div>
             }
