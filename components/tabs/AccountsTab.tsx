@@ -323,6 +323,7 @@ export default function AccountsTab() {
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontWeight: 600, width: 56, flexShrink: 0 }}>{h.code}</span>
                   <input
+                    key={`${h.id}-${h.shares}`}
                     type="number"
                     inputMode="decimal"
                     defaultValue={h.shares}

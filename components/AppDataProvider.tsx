@@ -290,11 +290,19 @@ export function AppDataProvider({
 
   const deleteHolding = useCallback(
     async (id: string) => {
+      const holding = holdings.find((h) => h.id === id);
       setHoldings((hs) => hs.filter((h) => h.id !== id));
+      if (holding) setHoldingLots((ls) => ls.filter((l) => l.code !== holding.code));
       const { error } = await supabase.from("holdings").delete().eq("id", id);
       if (error) throw error;
+      if (holding) {
+        // Drop its buy history too — otherwise re-adding the same code later would resurrect
+        // a stale average cost from lots the holding no longer has any connection to.
+        const { error: lotsErr } = await supabase.from("holding_lots").delete().eq("user_id", profile.user_id).eq("code", holding.code);
+        if (lotsErr) throw lotsErr;
+      }
     },
-    [supabase]
+    [supabase, holdings, profile.user_id]
   );
 
   const refreshHoldingPrices = useCallback(async () => {
@@ -362,13 +370,24 @@ export function AppDataProvider({
     [supabase, profile.user_id, holdings]
   );
 
+  // Reverses what addHoldingLot did: removes the lot and subtracts its shares back off that
+  // code's holding, so deleting a mistaken buy entry doesn't leave the share count inflated.
   const deleteHoldingLot = useCallback(
     async (id: string) => {
+      const lot = holdingLots.find((l) => l.id === id);
       setHoldingLots((ls) => ls.filter((l) => l.id !== id));
       const { error } = await supabase.from("holding_lots").delete().eq("id", id);
       if (error) throw error;
+
+      const holding = lot && holdings.find((h) => h.code === lot.code);
+      if (lot && holding) {
+        const newShareTotal = Math.max(0, holding.shares - lot.shares);
+        setHoldings((hs) => hs.map((h) => (h.id === holding.id ? { ...h, shares: newShareTotal } : h)));
+        const { error: shareErr } = await supabase.from("holdings").update({ shares: newShareTotal }).eq("id", holding.id);
+        if (shareErr) throw shareErr;
+      }
     },
-    [supabase]
+    [supabase, holdingLots, holdings]
   );
 
   const value: AppDataContextValue = {

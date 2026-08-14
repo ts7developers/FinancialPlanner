@@ -6,8 +6,11 @@ import {
   buildSpendTrend,
   buildBorrowingCapacity,
   borrowingCapacityYearReached,
+  buildNetWorthProjection,
+  netWorthPositiveAt,
   computeHoldingPL,
   deriveFinancials,
+  plannedIncomeFN,
 } from "@/lib/derive";
 import { buildPeriods } from "@/lib/period";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
@@ -185,5 +188,60 @@ describe("borrowingCapacityYearReached", () => {
   it("returns null when capacity never reaches the loan needed", () => {
     const points = [{ year: 2026, income: 1, capLow: 100, capHigh: 150, loanNeeded: 500 }];
     expect(borrowingCapacityYearReached(points)).toBeNull();
+  });
+});
+
+describe("buildNetWorthProjection", () => {
+  const periods = buildPeriods(profile.pay_anchor);
+  const D = deriveFinancials(profile, categories);
+  const startBalances: Balances = { ...balances, emergency: 0, anzplus: 0, shares: 1000, superb: 1000, cc: 0, hecs: 0 };
+
+  it("starts from today's real balances, not the plan baseline", () => {
+    const [first] = buildNetWorthProjection(profile, D, startBalances, periods, profile.pay_anchor, 0, 0, 1);
+    // Zero growth, zero extra: liquid should just be the period's surplus (income - expenses).
+    const income = plannedIncomeFN(periods[0], profile, D);
+    const surplus = Math.max(0, income - D.expFN(periods[0].year));
+    expect(first.liquid).toBeCloseTo(surplus, 0);
+  });
+
+  it("compounds shares/super at the given annual growth rate and adds the fortnightly super contribution", () => {
+    const zeroExpenseCategories: BudgetCategoryRow[] = [{ id: "c1", user_id: "u1", key: "groceries", label: "Groceries", amount_2026: 0, amount_2027: 0, sort: 0 }];
+    const D0 = deriveFinancials(profile, zeroExpenseCategories);
+    const flatBalances: Balances = { ...startBalances, shares: 1000, superb: 0 };
+    const [first] = buildNetWorthProjection(profile, D0, flatBalances, periods, profile.pay_anchor, 10, 0, 1);
+    const periodGrowth = Math.pow(1.1, 14 / 365) - 1;
+    expect(first.invested).toBeCloseTo(Math.round(1000 * (1 + periodGrowth) + D0.superFTfn), -1);
+  });
+
+  it("extra fortnightly savings flows straight into liquid balance", () => {
+    const zeroIncomeProfile: Profile = { ...profile, package: 0 };
+    const D0 = deriveFinancials(zeroIncomeProfile, categories);
+    const [first] = buildNetWorthProjection(zeroIncomeProfile, D0, startBalances, periods, profile.pay_anchor, 0, 100, 1);
+    expect(first.liquid).toBe(100);
+  });
+
+  it("holds credit card and HECS flat rather than modeling repayment", () => {
+    const withDebt: Balances = { ...startBalances, cc: 200, hecs: 40000 };
+    const points = buildNetWorthProjection(profile, D, withDebt, periods, profile.pay_anchor, 5, 0, 3);
+    points.forEach((p, i) => {
+      expect(p.netWorth).toBeCloseTo(p.liquid + p.invested - 200 - 40000, -1);
+      void i;
+    });
+  });
+});
+
+describe("netWorthPositiveAt", () => {
+  it("returns the label of the first period with non-negative net worth", () => {
+    const points = [
+      { key: "a", label: "A", liquid: 0, invested: 0, netWorth: -500 },
+      { key: "b", label: "B", liquid: 0, invested: 0, netWorth: -10 },
+      { key: "c", label: "C", liquid: 0, invested: 0, netWorth: 200 },
+    ];
+    expect(netWorthPositiveAt(points)).toBe("C");
+  });
+
+  it("returns null when net worth never turns positive", () => {
+    const points = [{ key: "a", label: "A", liquid: 0, invested: 0, netWorth: -50 }];
+    expect(netWorthPositiveAt(points)).toBeNull();
   });
 });

@@ -79,6 +79,66 @@ export function buildPlanPath(profile: Profile, D: DerivedFinancials, periods: P
   });
 }
 
+export interface NetWorthPoint {
+  key: string;
+  label: string;
+  liquid: number; // emergency fund + house deposit (cash, no growth assumed)
+  invested: number; // shares + super, compounding at the assumed rate
+  netWorth: number; // liquid + invested - cc - hecs
+}
+
+/**
+ * Projects net worth forward from today's real balances (not the plan baseline used by
+ * `buildPlanPath`) — surplus each fortnight tops up the emergency fund then the deposit,
+ * shares/super compound at `annualGrowthPct`, super also gets its usual employer
+ * contribution. Credit card and HECS are held flat: a real repayment/indexation schedule for
+ * either is out of scope here, so this stays a rough, informational estimate — not advice.
+ */
+export function buildNetWorthProjection(
+  profile: Profile,
+  D: DerivedFinancials,
+  balances: Balances,
+  periods: Period[],
+  todayISO: string,
+  annualGrowthPct: number,
+  extraPerFortnight: number,
+  horizonPeriods = 20
+): NetWorthPoint[] {
+  const startIdx = currentPeriod(periods, todayISO).idx;
+  const periodGrowth = Math.pow(1 + annualGrowthPct / 100, 14 / 365) - 1;
+  const emergencyTarget = Number(profile.emergency_target) || 0;
+
+  let emergency = Number(balances.emergency) || 0;
+  let deposit = Number(balances.anzplus) || 0;
+  let shares = Number(balances.shares) || 0;
+  let superb = Number(balances.superb) || 0;
+  const cc = Number(balances.cc) || 0;
+  const hecs = Number(balances.hecs) || 0;
+
+  return periods.slice(startIdx, startIdx + horizonPeriods).map((per) => {
+    const income = plannedIncomeFN(per, profile, D);
+    const surplus = Math.max(0, income - D.expFN(per.year)) + extraPerFortnight;
+    const toEmergency = Math.max(0, Math.min(surplus, emergencyTarget - emergency));
+    emergency += toEmergency;
+    deposit += surplus - toEmergency;
+    shares *= 1 + periodGrowth;
+    superb = superb * (1 + periodGrowth) + D.superFTfn;
+
+    return {
+      key: per.key,
+      label: dayLabel(per.start),
+      liquid: Math.round(emergency + deposit),
+      invested: Math.round(shares + superb),
+      netWorth: Math.round(emergency + deposit + shares + superb - cc - hecs),
+    };
+  });
+}
+
+/** First period label where the projection's net worth reaches zero or above, or null if it never does. */
+export function netWorthPositiveAt(points: NetWorthPoint[]): string | null {
+  return points.find((p) => p.netWorth >= 0)?.label ?? null;
+}
+
 /** Sums transaction amounts by period key, then by category key. */
 export function loggedByCategory(transactions: Transaction[], anchor: string): Record<string, Record<string, number>> {
   const m: Record<string, Record<string, number>> = {};

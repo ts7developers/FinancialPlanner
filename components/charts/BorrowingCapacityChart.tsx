@@ -2,7 +2,7 @@
 
 import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, type TooltipValueType } from "recharts";
 import { AUD } from "@/lib/money";
-import { LINE, MUTE, GOLD, NAVY, FAV } from "@/lib/theme";
+import { LINE, MUTE, GOLD, NAVY, FAV, chartTooltipStyle } from "@/lib/theme";
 import type { BorrowingCapacityPoint } from "@/lib/derive";
 
 export default function BorrowingCapacityChart({ data, loanNeeded }: { data: BorrowingCapacityPoint[]; loanNeeded: number }) {
@@ -12,13 +12,28 @@ export default function BorrowingCapacityChart({ data, loanNeeded }: { data: Bor
         <CartesianGrid stroke="#EFEBDD" vertical={false} />
         <XAxis dataKey="year" tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={{ stroke: LINE }} />
         <YAxis tickFormatter={(v) => `$${v / 1000}k`} tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={false} width={48} />
-        <Tooltip
-          formatter={(v: TooltipValueType | undefined) => (v == null ? "—" : AUD(Number(v)))}
-          contentStyle={{ borderRadius: 10, border: `1px solid ${LINE}`, fontSize: 12, fontFamily: "Inter" }}
-        />
+        <Tooltip formatter={(v: TooltipValueType | undefined) => (v == null ? "—" : AUD(Number(v)))} contentStyle={chartTooltipStyle} />
         <ReferenceLine y={loanNeeded} stroke={GOLD} strokeDasharray="5 4" strokeWidth={1.5} />
-        <Line type="monotone" dataKey="capLow" name="Capacity (low)" stroke={NAVY} strokeWidth={2} dot={{ r: 3 }} />
-        <Line type="monotone" dataKey="capHigh" name="Capacity (high)" stroke={FAV} strokeWidth={2} dot={{ r: 3 }} />
+        <Line
+          type="monotone"
+          dataKey="capLow"
+          name="Capacity (low)"
+          stroke={NAVY}
+          strokeWidth={2}
+          dot={{ r: 3 }}
+          activeDot={{ r: 4, stroke: "#fff", strokeWidth: 2 }}
+          animationDuration={600}
+        />
+        <Line
+          type="monotone"
+          dataKey="capHigh"
+          name="Capacity (high)"
+          stroke={FAV}
+          strokeWidth={2}
+          dot={{ r: 3 }}
+          activeDot={{ r: 4, stroke: "#fff", strokeWidth: 2 }}
+          animationDuration={600}
+        />
       </ComposedChart>
     </ResponsiveContainer>
   );

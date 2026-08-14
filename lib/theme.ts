@@ -41,6 +41,15 @@ export const selStyle: CSSProperties = {
   background: "#FCFBF7",
 };
 
+export const chartTooltipStyle: CSSProperties = {
+  borderRadius: 12,
+  border: `1px solid ${LINE}`,
+  fontSize: 12,
+  fontFamily: "Inter",
+  boxShadow: "0 8px 24px rgba(22,32,58,.12)",
+  padding: "8px 12px",
+};
+
 export const inputStyle: CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
