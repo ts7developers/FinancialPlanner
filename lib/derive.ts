@@ -196,6 +196,47 @@ export function netWorthPositiveAt(points: NetWorthPoint[]): string | null {
   return points.find((p) => p.netWorth >= 0)?.label ?? null;
 }
 
+export interface PeriodTotal {
+  key: string;
+  total: number;
+}
+
+/** Total logged spend per period, from `loggedByCategory`'s output. */
+export function periodTotals(loggedByCat: Record<string, Record<string, number>>): PeriodTotal[] {
+  return Object.entries(loggedByCat).map(([key, cats]) => ({
+    key,
+    total: Object.values(cats).reduce((s, v) => s + v, 0),
+  }));
+}
+
+/** Average total spend per period, over periods that have at least one logged transaction. */
+export function averageSpend(totals: PeriodTotal[]): number {
+  if (totals.length === 0) return 0;
+  return totals.reduce((s, t) => s + t.total, 0) / totals.length;
+}
+
+export interface ActualSpendPoint {
+  key: string;
+  label: string;
+  total: number;
+}
+
+/** Actual logged spend per period (no plan comparison) for the trailing `windowSize` periods up to today. */
+export function buildActualSpendTrend(
+  periods: Period[],
+  loggedByCat: Record<string, Record<string, number>>,
+  todayISO: string,
+  windowSize = 8
+): ActualSpendPoint[] {
+  const curIdx = currentPeriod(periods, todayISO).idx;
+  const start = Math.max(0, curIdx - windowSize + 1);
+  return periods.slice(start, curIdx + 1).map((p) => ({
+    key: p.key,
+    label: dayLabel(p.start),
+    total: Object.values(loggedByCat[p.key] || {}).reduce((s, v) => s + v, 0),
+  }));
+}
+
 /** Sums transaction amounts by period key, then by category key. */
 export function loggedByCategory(transactions: Transaction[], anchor: string): Record<string, Record<string, number>> {
   const m: Record<string, Record<string, number>> = {};

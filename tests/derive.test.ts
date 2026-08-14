@@ -13,6 +13,10 @@ import {
   computeHoldingPL,
   deriveFinancials,
   plannedIncomeFN,
+  periodTotals,
+  averageSpend,
+  buildActualSpendTrend,
+  loggedByCategory,
 } from "@/lib/derive";
 import { buildPeriods, isFT } from "@/lib/period";
 import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
@@ -124,6 +128,46 @@ const profile: Profile = { user_id: "u1", display_name: null, ...DEFAULT_PROFILE
 const categories: BudgetCategoryRow[] = [
   { id: "c1", user_id: "u1", key: "groceries", label: "Groceries", amount_2026: 500, amount_2027: 500, sort: 0 },
 ];
+
+describe("periodTotals / averageSpend", () => {
+  it("sums each period's categories and averages across periods with any spend", () => {
+    const loggedByCat = {
+      "2026-08-24": { groceries: 100, fuel: 50 },
+      "2026-09-07": { groceries: 200 },
+    };
+    const totals = periodTotals(loggedByCat);
+    expect(totals).toEqual(
+      expect.arrayContaining([
+        { key: "2026-08-24", total: 150 },
+        { key: "2026-09-07", total: 200 },
+      ])
+    );
+    expect(averageSpend(totals)).toBeCloseTo(175, 5);
+  });
+
+  it("averageSpend of no periods is 0, not NaN", () => {
+    expect(averageSpend([])).toBe(0);
+  });
+});
+
+describe("buildActualSpendTrend", () => {
+  it("sums logged transactions into a per-period total with no plan comparison", () => {
+    const periods = buildPeriods(profile.pay_anchor);
+    const transactions = [
+      { id: "1", user_id: "u1", date: periods[0].key, description: null, amount: 40, category_key: "groceries", account: "Everyday", created_at: "" },
+      { id: "2", user_id: "u1", date: periods[0].key, description: null, amount: 10, category_key: "fuel", account: "Everyday", created_at: "" },
+    ];
+    const loggedByCat = loggedByCategory(transactions, profile.pay_anchor);
+    const [first] = buildActualSpendTrend(periods, loggedByCat, profile.pay_anchor, 1);
+    expect(first.total).toBe(50);
+  });
+
+  it("windows to the trailing N periods ending at today, like buildSpendTrend", () => {
+    const periods = buildPeriods(profile.pay_anchor);
+    const trend = buildActualSpendTrend(periods, {}, periods[5].key, 3);
+    expect(trend.map((p) => p.key)).toEqual([periods[3].key, periods[4].key, periods[5].key]);
+  });
+});
 
 describe("buildSpendTrend", () => {
   const periods = buildPeriods(profile.pay_anchor);

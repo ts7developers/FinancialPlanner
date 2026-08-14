@@ -2,15 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus, Trash2 } from "lucide-react";
+import dynamic from "next/dynamic";
+import { Plus, Trash2, Wallet, Receipt, ListChecks, Flame } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { periodKeyOf, periodLabel } from "@/lib/period";
+import { periodKeyOf, periodLabel, isoFromDate } from "@/lib/period";
 import { TXN_CATEGORIES } from "@/lib/categories";
+import { periodTotals, averageSpend, buildActualSpendTrend, type PieSlice } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, INK, NAVY, selStyle } from "@/lib/theme";
-import { Field, Toast } from "@/components/ui/atoms";
+import { ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, INK, NAVY, PIE_COLORS, selStyle } from "@/lib/theme";
+import { Field, Toast, Metric } from "@/components/ui/atoms";
+import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { Transaction } from "@/lib/types";
+
+const ActualSpendTrendChart = dynamic(() => import("@/components/charts/ActualSpendTrendChart"), { ssr: false, loading: () => <ChartSkeleton height={200} /> });
+const MoneyGoesChart = dynamic(() => import("@/components/charts/MoneyGoesChart"), { ssr: false, loading: () => <ChartSkeleton height={160} /> });
 
 function todayLocalISO() {
   const d = new Date();
@@ -34,7 +40,7 @@ export default function ExpensesTab() {
   const isMobile = useIsMobile();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { profile, transactions, periods, addTransaction, deleteTransaction, undoDeleteTransaction } = useAppData();
+  const { profile, transactions, periods, loggedByCat, addTransaction, deleteTransaction, undoDeleteTransaction } = useAppData();
 
   const [form, setForm] = useState(() => ({
     date: "",
@@ -109,6 +115,16 @@ export default function ExpensesTab() {
     acc,
     total: filteredTxns.filter((t) => t.account === acc).reduce((s, t) => s + (Number(t.amount) || 0), 0),
   })).filter((x) => x.total > 0);
+
+  const avgPerPeriod = averageSpend(periodTotals(loggedByCat));
+  const avgTxn = transactions.length > 0 ? transactions.reduce((s, t) => s + (Number(t.amount) || 0), 0) / transactions.length : 0;
+  const spendTrend = buildActualSpendTrend(periods, loggedByCat, isoFromDate(new Date()));
+  const categoryTotals: PieSlice[] = TXN_CATEGORIES.map((c) => ({
+    name: c.label,
+    value: filteredTxns.filter((t) => t.category_key === c.id).reduce((s, t) => s + (Number(t.amount) || 0), 0),
+  })).filter((d) => d.value > 0);
+  const categoryTotal = categoryTotals.reduce((s, d) => s + d.value, 0);
+  const biggestCategory = categoryTotals.slice().sort((a, b) => b.value - a.value)[0];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -232,6 +248,44 @@ export default function ExpensesTab() {
           </div>
         )}
         {flashMsg && <div style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginTop: 10 }}>{flashMsg}</div>}
+      </div>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Metric icon={Wallet} label="Avg / fortnight" value={AUD(avgPerPeriod)} sub="across periods you've logged in" />
+        <Metric icon={Receipt} label="Avg transaction" value={AUD(avgTxn, 2)} sub={`${transactions.length} logged all-time`} />
+        <Metric icon={ListChecks} label="Transactions (this view)" value={String(filteredTxns.length)} sub={txnFilter === "all" ? "all fortnights" : "this fortnight"} />
+        <Metric icon={Flame} label="Biggest category (this view)" value={biggestCategory ? AUD(biggestCategory.value) : "—"} sub={biggestCategory ? biggestCategory.name : "nothing logged"} />
+      </div>
+
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+        <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: "18px 18px 6px", flex: "1 1 380px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexWrap: "wrap", gap: 4 }}>
+            <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Spend trend</div>
+            <div style={{ fontSize: 12, color: MUTE }}>gold line = your average, last {spendTrend.length} fortnights</div>
+          </div>
+          <ActualSpendTrendChart data={spendTrend} average={avgPerPeriod} />
+        </div>
+        <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18, flex: "1 1 300px" }}>
+          <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 8 }}>By category (this view)</div>
+          {categoryTotals.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: MUTE }}>Nothing logged for this filter.</div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <MoneyGoesChart data={categoryTotals} size={150} />
+              <div style={{ flex: 1, minWidth: 140, display: "flex", flexDirection: "column", gap: 4 }}>
+                {categoryTotals
+                  .slice()
+                  .sort((a, b) => b.value - a.value)
+                  .map((d, i) => (
+                    <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: MUTE }}>
+                      <span style={{ width: 9, height: 9, borderRadius: 2, background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0 }} />
+                      {d.name} <span style={{ marginLeft: "auto", color: NAVY, fontVariantNumeric: "tabular-nums" }}>{categoryTotal > 0 ? ((d.value / categoryTotal) * 100).toFixed(0) : 0}%</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
