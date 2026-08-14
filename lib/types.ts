@@ -15,6 +15,8 @@ export interface Profile {
   buying_costs: number;
   cc_opening: number;
   tax_paid_opening: number;
+  partner_income: number;
+  income_growth_pct: number;
 }
 
 export interface BudgetCategoryRow {

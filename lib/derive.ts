@@ -2,7 +2,7 @@
 // in FinancialPlanTracker.jsx. Pure functions so the same math is reusable and testable
 // independent of React / Supabase.
 
-import { dayLabel, isFT, periodKeyOf, type Period } from "./period";
+import { dayLabel, currentPeriod, isFT, periodKeyOf, type Period } from "./period";
 import { netFromPackage, FN_PER_YEAR, FN_FROM_MO } from "./tax";
 import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip } from "./types";
 
@@ -201,6 +201,73 @@ export interface YtdTotals {
   paygwTax: number;
   super: number;
   net: number;
+}
+
+export interface SpendTrendPoint {
+  key: string;
+  label: string;
+  planned: number;
+  actual: number | null; // null when the period has no logged transactions or manual overrides yet
+}
+
+/** Plan-vs-actual total expenses for the trailing `windowSize` periods up to today, for spotting drift over time. */
+export function buildSpendTrend(
+  periods: Period[],
+  categories: BudgetCategoryRow[],
+  D: DerivedFinancials,
+  loggedByCat: Record<string, Record<string, number>>,
+  reconciliations: Record<string, Reconciliation>,
+  todayISO: string,
+  windowSize = 8
+): SpendTrendPoint[] {
+  const curIdx = currentPeriod(periods, todayISO).idx;
+  const start = Math.max(0, curIdx - windowSize + 1);
+  return periods.slice(start, curIdx + 1).map((p) => {
+    const rows = reconcileCategoryRows(categories, D, p.year, loggedByCat[p.key], reconciliations[p.key]?.actual_overrides ?? {});
+    const planned = rows.reduce((s, r) => s + r.plan, 0);
+    const anyActual = rows.some((r) => r.actual !== null);
+    const actual = anyActual ? rows.reduce((s, r) => s + (r.actual ?? 0), 0) : null;
+    return { key: p.key, label: dayLabel(p.start), planned, actual };
+  });
+}
+
+export interface BorrowingCapacityPoint {
+  year: number;
+  income: number;
+  capLow: number;
+  capHigh: number;
+  loanNeeded: number;
+}
+
+/** Rough serviceability multiples (of household cash income) used for the baseline figures in the spec. */
+export const BORROW_MULT_LOW = 5.6;
+export const BORROW_MULT_HIGH = 6.6;
+
+/**
+ * A rule-of-thumb borrowing-capacity projection — not lender pre-approval. Household income
+ * is this person's cash salary (FT) plus any partner income, compounding at `income_growth_pct`
+ * per year; capacity is that income times a low/high multiple, compared against the loan still
+ * needed to hit the house target after the 5% deposit.
+ */
+export function buildBorrowingCapacity(
+  profile: Profile,
+  D: DerivedFinancials,
+  startYear: number,
+  horizonYears = 8
+): BorrowingCapacityPoint[] {
+  const income0 = D.cashFT + (Number(profile.partner_income) || 0);
+  const growth = 1 + (Number(profile.income_growth_pct) || 0) / 100;
+  const loanNeeded = Math.max(0, (Number(profile.house_target) || 0) - D.dep5);
+  return Array.from({ length: horizonYears }, (_, i) => {
+    const income = income0 * Math.pow(growth, i);
+    return { year: startYear + i, income, capLow: income * BORROW_MULT_LOW, capHigh: income * BORROW_MULT_HIGH, loanNeeded };
+  });
+}
+
+/** First year the low-end capacity estimate covers the loan needed, or null if it never does within the projection. */
+export function borrowingCapacityYearReached(points: BorrowingCapacityPoint[]): number | null {
+  const hit = points.find((p) => p.capLow >= p.loanNeeded);
+  return hit ? hit.year : null;
 }
 
 /** Sums confirmed payslips whose period_start falls within the AU financial year starting fyStartISO. */

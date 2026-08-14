@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Copy, RotateCcw, CalendarClock } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
+import { BORROW_MULT_LOW, BORROW_MULT_HIGH } from "@/lib/derive";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
 import { AUD } from "@/lib/money";
 import { NAVY, MUTE, GOLD, LINE, inputStyle } from "@/lib/theme";
@@ -22,6 +23,8 @@ type ProfileInputs = {
   emergency: string;
   openDeposit: string;
   taxPaidOpening: string;
+  partnerIncome: string;
+  incomeGrowth: string;
 };
 
 function toInputs(profile: Profile): ProfileInputs {
@@ -37,6 +40,8 @@ function toInputs(profile: Profile): ProfileInputs {
     emergency: String(profile.emergency_target),
     openDeposit: String(profile.open_deposit),
     taxPaidOpening: String(profile.tax_paid_opening),
+    partnerIncome: String(profile.partner_income),
+    incomeGrowth: String(profile.income_growth_pct),
   };
 }
 
@@ -98,6 +103,8 @@ export default function PlanTab() {
       `Emergency target: $${profile.emergency_target}`,
       `Opening deposit: $${profile.open_deposit}`,
       `Tax paid so far this FY: $${profile.tax_paid_opening}`,
+      `Partner's annual income: $${profile.partner_income}`,
+      `Assumed annual raise: ${profile.income_growth_pct}%`,
       "Monthly expenses (2026 / 2027):",
       ...categories.map((c) => `  ${c.label}: $${c.amount_2026} / $${c.amount_2027}`),
     ].join("\n");
@@ -173,6 +180,35 @@ export default function PlanTab() {
             <PInput label="Emergency fund target" prefix="$" value={inputs.emergency} onChange={(v) => set("emergency", v)} onBlur={() => commitNumber("emergency_target", inputs.emergency)} />
             <PInput label="Opening deposit (ANZ Plus)" prefix="$" value={inputs.openDeposit} onChange={(v) => set("openDeposit", v)} onBlur={() => commitNumber("open_deposit", inputs.openDeposit)} />
             <Derived rows={[["Deposit at 5%", AUD(D.dep5)], ["Net cash to save", AUD(D.netCash)]]} />
+          </Panel>
+          <Panel title="Borrowing capacity">
+            <PInput
+              label="Partner's annual income"
+              prefix="$"
+              value={inputs.partnerIncome}
+              onChange={(v) => set("partnerIncome", v)}
+              onBlur={() => commitNumber("partner_income", inputs.partnerIncome)}
+            />
+            <PInput
+              label="Assumed annual raise"
+              suffix="%"
+              value={inputs.incomeGrowth}
+              onChange={(v) => set("incomeGrowth", v)}
+              onBlur={() => commitNumber("income_growth_pct", inputs.incomeGrowth, 100)}
+            />
+            <Derived
+              rows={[
+                ["Household cash income now", AUD(D.cashFT + (Number(profile.partner_income) || 0))],
+                [
+                  "Est. capacity now",
+                  `${AUD((D.cashFT + (Number(profile.partner_income) || 0)) * BORROW_MULT_LOW)}–${AUD((D.cashFT + (Number(profile.partner_income) || 0)) * BORROW_MULT_HIGH)}`,
+                ],
+              ]}
+            />
+            <div style={{ fontSize: 11.5, color: MUTE, marginTop: 10, lineHeight: 1.5 }}>
+              Rough guide only ({BORROW_MULT_LOW}–{BORROW_MULT_HIGH}× household cash income), not a lender
+              pre-approval. See the projection on <b style={{ color: NAVY }}>Overview</b>.
+            </div>
           </Panel>
         </div>
         <div style={{ flex: "1 1 380px" }}>

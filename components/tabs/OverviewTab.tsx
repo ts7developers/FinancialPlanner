@@ -5,6 +5,8 @@ import {
   ComposedChart,
   Line,
   Scatter,
+  Bar,
+  BarChart,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -20,15 +22,15 @@ import { Wallet, PiggyBank, Home, TrendingUp, Receipt, ScrollText, Camera, Landm
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { currentPeriod, financialYearStart, isoFromDate } from "@/lib/period";
-import { buildPieData, sumYTD } from "@/lib/derive";
+import { buildPieData, sumYTD, buildSpendTrend, buildBorrowingCapacity, borrowingCapacityYearReached, BORROW_MULT_LOW, BORROW_MULT_HIGH } from "@/lib/derive";
 import { AUD, num } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, FAV, PIE_COLORS } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, PIE_COLORS } from "@/lib/theme";
 import { Metric, Progress } from "@/components/ui/atoms";
 import Link from "next/link";
 
 export default function OverviewTab() {
   const isMobile = useIsMobile();
-  const { profile, categories, balances, planPath, snapshots, periods, payslips, D } = useAppData();
+  const { profile, categories, balances, planPath, snapshots, periods, payslips, loggedByCat, reconciliations, D } = useAppData();
 
   const today = isoFromDate(new Date());
   const yr = currentPeriod(periods, today).year;
@@ -42,6 +44,11 @@ export default function OverviewTab() {
 
   const pieData = buildPieData(categories, D, yr);
   const pieTotal = pieData.reduce((s, d) => s + d.value, 0);
+
+  const spendTrend = buildSpendTrend(periods, categories, D, loggedByCat, reconciliations, today);
+  const borrowPoints = buildBorrowingCapacity(profile, D, new Date().getUTCFullYear());
+  const borrowReachYear = borrowingCapacityYearReached(borrowPoints);
+  const loanNeeded = borrowPoints[0]?.loanNeeded ?? 0;
 
   const steps: [string, string, string, typeof Receipt][] = [
     ["Log", "/expenses", "each purchase as it happens", Receipt],
@@ -163,6 +170,65 @@ export default function OverviewTab() {
           <Progress label="House deposit (5%)" value={num(balances.anzplus)} target={D.dep5} />
           <div style={{ fontSize: 11.5, color: MUTE, borderTop: `1px solid ${LINE}`, paddingTop: 10 }}>
             Edit the baseline on <b style={{ color: NAVY }}>Plan</b>; log balances on <b style={{ color: NAVY }}>Accounts</b> and hit <b style={{ color: NAVY }}>Snapshot</b> to plot a dot.
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+        <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: "18px 18px 6px", flex: "1 1 380px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexWrap: "wrap", gap: 4 }}>
+            <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Spending trend</div>
+            <div style={{ fontSize: 12, color: MUTE }}>plan vs actual, last {spendTrend.length} fortnights</div>
+          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={spendTrend} margin={{ top: 8, right: 10, left: 6, bottom: 0 }}>
+              <CartesianGrid stroke="#EFEBDD" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={{ stroke: LINE }} />
+              <YAxis tickFormatter={(v) => `$${v / 1000}k`} tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={false} width={44} />
+              <Tooltip
+                formatter={(v: TooltipValueType | undefined) => (v == null ? "not reconciled" : AUD(Number(v)))}
+                contentStyle={{ borderRadius: 10, border: `1px solid ${LINE}`, fontSize: 12, fontFamily: "Inter" }}
+              />
+              <Bar dataKey="planned" name="Planned" fill={LINE} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="actual" name="Actual" radius={[4, 4, 0, 0]}>
+                {spendTrend.map((d, i) => (
+                  <Cell key={i} fill={d.actual == null ? "#EFEBDD" : d.actual <= d.planned ? FAV : UNFAV} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: "18px 18px 6px", flex: "1 1 380px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexWrap: "wrap", gap: 4 }}>
+            <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Borrowing capacity (estimate)</div>
+            <div style={{ fontSize: 12, color: MUTE }}>
+              {BORROW_MULT_LOW}–{BORROW_MULT_HIGH}× household cash income
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            <ComposedChart data={borrowPoints} margin={{ top: 8, right: 10, left: 6, bottom: 0 }}>
+              <CartesianGrid stroke="#EFEBDD" vertical={false} />
+              <XAxis dataKey="year" tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={{ stroke: LINE }} />
+              <YAxis tickFormatter={(v) => `$${v / 1000}k`} tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={false} width={48} />
+              <Tooltip
+                formatter={(v: TooltipValueType | undefined) => (v == null ? "—" : AUD(Number(v)))}
+                contentStyle={{ borderRadius: 10, border: `1px solid ${LINE}`, fontSize: 12, fontFamily: "Inter" }}
+              />
+              <ReferenceLine y={loanNeeded} stroke={GOLD} strokeDasharray="5 4" strokeWidth={1.5} />
+              <Line type="monotone" dataKey="capLow" name="Capacity (low)" stroke={NAVY} strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="capHigh" name="Capacity (high)" stroke={FAV} strokeWidth={2} dot={{ r: 3 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+          <div style={{ fontSize: 11.5, color: MUTE, padding: "2px 0 12px" }}>
+            gold line = loan needed for house target ·{" "}
+            {borrowReachYear ? (
+              <>
+                on track to cover it by <b style={{ color: NAVY }}>{borrowReachYear}</b>
+              </>
+            ) : (
+              <>doesn&apos;t reach it within this projection at the current raise assumption</>
+            )}
+            . Rough guide only, not a lender pre-approval — edit assumptions on <b style={{ color: NAVY }}>Plan</b>.
           </div>
         </div>
       </div>

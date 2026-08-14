@@ -17,4 +17,6 @@ export const DEFAULT_PROFILE_SETTINGS = {
   buying_costs: 3000,
   cc_opening: 190.6,
   tax_paid_opening: 0,
+  partner_income: 0,
+  income_growth_pct: 0,
 };
