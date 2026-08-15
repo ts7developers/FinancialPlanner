@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { Wallet, Landmark, PiggyBank, TrendingUp, Receipt, Sparkles, SplitSquareHorizontal } from "lucide-react";
+import { Wallet, Landmark, PiggyBank, TrendingUp, Receipt, Sparkles, SplitSquareHorizontal, Gift, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { financialYearStart, isFT, isoFromDate, periodKeyOf, periodLabel } from "@/lib/period";
-import { sumYTD, buildIncomeProjection, buildFortnightSplit, fortnightCategoryBreakdown, SALARY_SCENARIOS } from "@/lib/derive";
+import { sumYTD, sumMiscIncomeYTD, buildIncomeProjection, buildFortnightSplit, fortnightCategoryBreakdown, SALARY_SCENARIOS } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, FAV } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, selStyle } from "@/lib/theme";
 import { Metric, Field } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { IncomeTrendPoint } from "@/components/charts/IncomeTrendChart";
@@ -26,13 +26,47 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function IncomeTab() {
   const isMobile = useIsMobile();
-  const { profile, payslips, periods, categories, balances, D } = useAppData();
+  const { profile, payslips, periods, categories, balances, D, miscIncome, addMiscIncome, deleteMiscIncome } = useAppData();
   const [scenarioId, setScenarioId] = useState("flat");
+  const [miscDate, setMiscDate] = useState("");
+  const [miscDesc, setMiscDesc] = useState("");
+  const [miscAmount, setMiscAmount] = useState("");
+  const [miscBusy, setMiscBusy] = useState(false);
+  const [miscFlash, setMiscFlash] = useState("");
 
   const today = isoFromDate(new Date());
   const ytd = sumYTD(payslips, financialYearStart(today));
+  const miscYTD = sumMiscIncomeYTD(miscIncome, financialYearStart(today));
   const confirmed = payslips.filter((p) => p.status === "confirmed").sort((a, b) => (a.period_key || "").localeCompare(b.period_key || ""));
   const avgNet = confirmed.length > 0 ? ytd.net / confirmed.length : 0;
+
+  useEffect(() => {
+    // Client-only: the server has no notion of the user's local calendar day.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMiscDate((d) => d || today);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const miscFlashMsg = (m = "Logged") => {
+    setMiscFlash(m);
+    setTimeout(() => setMiscFlash(""), 1300);
+  };
+
+  const onAddMisc = async () => {
+    if (!(Number(miscAmount) > 0) || !miscDate) {
+      miscFlashMsg("Add a date and amount");
+      return;
+    }
+    setMiscBusy(true);
+    try {
+      await addMiscIncome(miscDate, miscDesc, Number(miscAmount));
+      setMiscDesc("");
+      setMiscAmount("");
+      miscFlashMsg("Added to Everyday");
+    } finally {
+      setMiscBusy(false);
+    }
+  };
 
   const trend: IncomeTrendPoint[] = confirmed.slice(-13).map((p) => {
     const per = periods.find((x) => x.key === p.period_key);
@@ -65,7 +99,7 @@ export default function IncomeTab() {
         <Metric icon={Wallet} label="Gross (FY YTD)" value={AUD(ytd.gross)} sub="from confirmed payslips" />
         <Metric icon={Landmark} label="PAYG tax (FY YTD)" value={AUD(ytd.paygwTax + (Number(profile.tax_paid_opening) || 0))} sub={profile.tax_paid_opening > 0 ? `incl. ${AUD(profile.tax_paid_opening)} opening` : undefined} />
         <Metric icon={PiggyBank} label="Super (FY YTD)" value={AUD(ytd.super)} sub="employer contributions" accent={FAV} />
-        <Metric icon={TrendingUp} label="Net (FY YTD)" value={AUD(ytd.net)} sub={`avg ${AUD(avgNet, 2)} / pay`} accent={FAV} />
+        <Metric icon={TrendingUp} label="Net (FY YTD)" value={AUD(ytd.net + miscYTD)} sub={miscYTD > 0 ? `incl. ${AUD(miscYTD)} misc` : `avg ${AUD(avgNet, 2)} / pay`} accent={FAV} />
       </div>
 
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
@@ -109,6 +143,62 @@ export default function IncomeTab() {
           Recomputes tax/HECS withholding and the FT/PT split at each fortnight rather than just scaling today&apos;s pay — same salary-growth
           scenarios as <b style={{ color: NAVY }}>Savings</b>. A rough guide, not a guarantee.
         </div>
+      </div>
+
+      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 4 }}>
+          <Gift size={16} color={GOLD} /> Misc income
+        </div>
+        <div style={{ fontSize: 12, color: MUTE, marginBottom: 12 }}>
+          A tax refund, gift, reimbursement, side gig — anything that isn&apos;t a payslip. Lands in Everyday immediately and adds to that fortnight&apos;s actual income.
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <Field label="Date">
+            <input type="date" value={miscDate} onChange={(e) => setMiscDate(e.target.value)} style={{ ...selStyle, width: 150 }} />
+          </Field>
+          <Field label="Description" grow>
+            <input type="text" placeholder="e.g. Tax refund" value={miscDesc} onChange={(e) => setMiscDesc(e.target.value)} style={{ ...selStyle, width: "100%", textAlign: "left" }} />
+          </Field>
+          <Field label="Amount">
+            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span style={{ color: MUTE, fontSize: 13 }}>$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="0.00"
+                value={miscAmount}
+                onChange={(e) => setMiscAmount(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && onAddMisc()}
+                style={{ ...selStyle, width: 100, textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+              />
+            </div>
+          </Field>
+          <button
+            onClick={onAddMisc}
+            disabled={miscBusy}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: miscBusy ? "default" : "pointer", opacity: miscBusy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
+          >
+            <Plus size={14} /> Add
+          </button>
+        </div>
+        {miscFlash && <div style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginTop: 10 }}>{miscFlash}</div>}
+        {miscIncome.length > 0 && (
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${LINE}`, display: "flex", flexDirection: "column", gap: 2 }}>
+            {miscIncome.map((m) => (
+              <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "6px 0" }}>
+                <span style={{ color: MUTE }}>
+                  {m.date} {m.description ? `· ${m.description}` : ""}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{AUD(m.amount, 2)}</span>
+                  <button onClick={() => deleteMiscIncome(m.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>

@@ -134,6 +134,16 @@ export interface RecurringExpense {
   created_at: string;
 }
 
+/** A one-off income entry that isn't a payslip (tax refund, gift, reimbursement, side gig, etc). */
+export interface MiscIncome {
+  id: string;
+  user_id: string;
+  date: string;
+  description: string | null;
+  amount: number;
+  created_at: string;
+}
+
 export type PayslipStatus = "uploaded" | "parsed" | "confirmed";
 
 export interface Payslip {

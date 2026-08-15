@@ -12,6 +12,7 @@ import {
   applyExpenseToBalance,
   applyIncomeToBalance,
   nextOccurrence,
+  actualIncomeForPeriod,
   type DerivedFinancials,
   type PlanPathPoint,
 } from "@/lib/derive";
@@ -29,6 +30,7 @@ import type {
   SuperContribution,
   RecurringExpense,
   RecurringFrequency,
+  MiscIncome,
 } from "@/lib/types";
 import type { PayslipExtraction } from "@/lib/payslipSchema";
 
@@ -53,6 +55,7 @@ interface AppDataContextValue {
   holdingLots: HoldingLot[];
   superContributions: SuperContribution[];
   recurringExpenses: RecurringExpense[];
+  miscIncome: MiscIncome[];
   periods: Period[];
   D: DerivedFinancials;
   planPath: PlanPathPoint[];
@@ -110,6 +113,9 @@ interface AppDataContextValue {
   toggleRecurringExpense: (id: string) => Promise<void>;
   /** Posts today's occurrence as a real transaction (so it flows through the usual balance/reconciliation path) and rolls next_due forward one cadence. */
   logRecurringExpense: (id: string) => Promise<void>;
+  /** One-off income (tax refund, gift, side gig, etc) — lands in Everyday immediately and adds to that fortnight's actual income on Reconcile. */
+  addMiscIncome: (date: string, description: string, amount: number) => Promise<void>;
+  deleteMiscIncome: (id: string) => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -133,6 +139,7 @@ export function AppDataProvider({
   initialHoldingLots,
   initialSuperContributions,
   initialRecurringExpenses,
+  initialMiscIncome,
   children,
 }: {
   initialProfile: Profile;
@@ -147,6 +154,7 @@ export function AppDataProvider({
   initialHoldingLots: HoldingLot[];
   initialSuperContributions: SuperContribution[];
   initialRecurringExpenses: RecurringExpense[];
+  initialMiscIncome: MiscIncome[];
   children: React.ReactNode;
 }) {
   const supabase = useMemo(() => createClient(), []);
@@ -164,6 +172,7 @@ export function AppDataProvider({
   const [holdingLots, setHoldingLots] = useState(initialHoldingLots);
   const [superContributions, setSuperContributions] = useState(initialSuperContributions);
   const [recurringExpenses, setRecurringExpenses] = useState(initialRecurringExpenses);
+  const [miscIncome, setMiscIncome] = useState(initialMiscIncome);
 
   const periods = useMemo(() => buildPeriods(profile.pay_anchor), [profile.pay_anchor]);
   const D = useMemo(() => deriveFinancials(profile, categories), [profile, categories]);
@@ -332,18 +341,59 @@ export function AppDataProvider({
         help_hecs: fields.help_hecs,
         allowances: fields.allowances,
       };
-      setPayslips((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+      const effectivePayslips = payslips.map((p) => (p.id === id ? { ...p, ...patch } : p));
+      setPayslips(effectivePayslips);
       const { error } = await supabase.from("payslips").update(patch).eq("id", id);
       if (error) throw error;
-      // Sum every confirmed payslip's net for this fortnight rather than overwriting — supports
-      // a second income source landing in the same period (e.g. a casual job) alongside the main one.
-      const periodNet = payslips.filter((p) => p.period_key === periodKey && p.status === "confirmed" && p.id !== id).reduce((s, p) => s + (p.net || 0), 0) + fields.net;
-      await setReconciliation(periodKey, { actual_income: periodNet });
+      // Sums every confirmed payslip's net plus any misc income for this fortnight rather than
+      // overwriting — supports a second income source landing in the same period (e.g. a casual
+      // job, or a tax refund) alongside the main one.
+      const periodTotal = actualIncomeForPeriod(effectivePayslips, miscIncome, periodKey, profile.pay_anchor);
+      await setReconciliation(periodKey, { actual_income: periodTotal > 0 ? periodTotal : null });
       // Only the first confirmation lands the pay in Everyday — re-confirming an already-posted
       // payslip (e.g. after correcting a figure) must not double-count it.
       if (!alreadyConfirmed) await updateBalances(applyIncomeToBalance(balances, fields.net));
     },
-    [supabase, setReconciliation, payslips, balances, updateBalances]
+    [supabase, setReconciliation, payslips, miscIncome, profile.pay_anchor, balances, updateBalances]
+  );
+
+  const addMiscIncome = useCallback(
+    async (date: string, description: string, amount: number) => {
+      if (!(amount > 0)) return;
+      const { data, error } = await supabase
+        .from("misc_income")
+        .insert({ user_id: profile.user_id, date, description: description.trim() || null, amount })
+        .select()
+        .single();
+      if (error) throw error;
+      const effectiveMiscIncome = [data as MiscIncome, ...miscIncome];
+      setMiscIncome(effectiveMiscIncome);
+      await updateBalances(applyIncomeToBalance(balances, amount));
+      const periodKey = periodKeyOf(date, profile.pay_anchor);
+      if (periodKey) {
+        const periodTotal = actualIncomeForPeriod(payslips, effectiveMiscIncome, periodKey, profile.pay_anchor);
+        await setReconciliation(periodKey, { actual_income: periodTotal > 0 ? periodTotal : null });
+      }
+    },
+    [supabase, profile.user_id, profile.pay_anchor, balances, updateBalances, payslips, miscIncome, setReconciliation]
+  );
+
+  const deleteMiscIncome = useCallback(
+    async (id: string) => {
+      const entry = miscIncome.find((m) => m.id === id);
+      if (!entry) return;
+      const effectiveMiscIncome = miscIncome.filter((m) => m.id !== id);
+      setMiscIncome(effectiveMiscIncome);
+      const { error } = await supabase.from("misc_income").delete().eq("id", id);
+      if (error) throw error;
+      await updateBalances(applyIncomeToBalance(balances, entry.amount, -1));
+      const periodKey = periodKeyOf(entry.date, profile.pay_anchor);
+      if (periodKey) {
+        const periodTotal = actualIncomeForPeriod(payslips, effectiveMiscIncome, periodKey, profile.pay_anchor);
+        await setReconciliation(periodKey, { actual_income: periodTotal > 0 ? periodTotal : null });
+      }
+    },
+    [supabase, miscIncome, balances, updateBalances, payslips, profile.pay_anchor, setReconciliation]
   );
 
   const addTransfer = useCallback(
@@ -580,6 +630,7 @@ export function AppDataProvider({
     holdingLots,
     superContributions,
     recurringExpenses,
+    miscIncome,
     periods,
     D,
     planPath,
@@ -609,6 +660,8 @@ export function AppDataProvider({
     deleteRecurringExpense,
     toggleRecurringExpense,
     logRecurringExpense,
+    addMiscIncome,
+    deleteMiscIncome,
   };
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

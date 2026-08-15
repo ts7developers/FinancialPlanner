@@ -28,11 +28,13 @@ import {
   buildIncomeProjection,
   buildVarianceReport,
   buildVarianceInsights,
+  sumMiscIncomeYTD,
+  actualIncomeForPeriod,
 } from "@/lib/derive";
 import { buildPeriods, isFT } from "@/lib/period";
 import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
-import type { Balances, BudgetCategoryRow, HoldingLot, Profile, Reconciliation } from "@/lib/types";
+import type { Balances, BudgetCategoryRow, HoldingLot, MiscIncome, Payslip, Profile, Reconciliation } from "@/lib/types";
 
 const balances: Balances = {
   user_id: "u1",
@@ -648,5 +650,60 @@ describe("buildVarianceInsights", () => {
     const insights = buildVarianceInsights(categories, D, periods, loggedByCat, {}, 2);
     expect(insights).toHaveLength(1);
     expect(insights[0].streakLength).toBe(2);
+  });
+});
+
+function makePayslip(overrides: Partial<Payslip>): Payslip {
+  return {
+    id: "p1",
+    user_id: "u1",
+    period_key: "2026-08-24",
+    file_path: null,
+    status: "confirmed",
+    gross: null,
+    paygw_tax: null,
+    super: null,
+    net: null,
+    help_hecs: null,
+    allowances: [],
+    period_start: null,
+    period_end: null,
+    created_at: "2026-08-24T00:00:00Z",
+    confirmed_at: "2026-08-24T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeMiscIncome(overrides: Partial<MiscIncome>): MiscIncome {
+  return { id: "m1", user_id: "u1", date: "2026-08-24", description: null, amount: 0, created_at: "2026-08-24T00:00:00Z", ...overrides };
+}
+
+describe("sumMiscIncomeYTD", () => {
+  it("sums entries within the financial year, excluding earlier ones", () => {
+    const entries = [makeMiscIncome({ date: "2026-08-01", amount: 100 }), makeMiscIncome({ id: "m2", date: "2025-06-01", amount: 500 })];
+    expect(sumMiscIncomeYTD(entries, "2026-07-01")).toBe(100);
+  });
+});
+
+describe("actualIncomeForPeriod", () => {
+  const anchor = "2026-08-24";
+
+  it("sums confirmed payslips for the period, ignoring unconfirmed ones", () => {
+    const payslips = [
+      makePayslip({ id: "p1", period_key: "2026-08-24", status: "confirmed", net: 1000 }),
+      makePayslip({ id: "p2", period_key: "2026-08-24", status: "parsed", net: 500 }),
+      makePayslip({ id: "p3", period_key: "2026-09-07", status: "confirmed", net: 300 }),
+    ];
+    expect(actualIncomeForPeriod(payslips, [], "2026-08-24", anchor)).toBe(1000);
+  });
+
+  it("adds misc income landing in the same period", () => {
+    const payslips = [makePayslip({ period_key: "2026-08-24", status: "confirmed", net: 1000 })];
+    const misc = [makeMiscIncome({ date: "2026-08-30", amount: 200 }), makeMiscIncome({ id: "m2", date: "2026-09-10", amount: 999 })];
+    expect(actualIncomeForPeriod(payslips, misc, "2026-08-24", anchor)).toBe(1200);
+  });
+
+  it("is 0 for a period with nothing confirmed or logged", () => {
+    expect(actualIncomeForPeriod([], [], "2026-08-24", anchor)).toBe(0);
   });
 });

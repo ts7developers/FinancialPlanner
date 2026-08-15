@@ -6,7 +6,7 @@ import { dayLabel, dateFromISO, isoFromDate, currentPeriod, financialYearStart, 
 import { netFromPackage, hecsCompulsoryRepayment, incomeTaxAU, litoAU, FN_PER_YEAR, FN_FROM_MO } from "./tax";
 export { hecsCompulsoryRepayment } from "./tax";
 import type { Account } from "./theme";
-import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot, RecurringFrequency } from "./types";
+import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot, RecurringFrequency, MiscIncome } from "./types";
 
 export interface DerivedFinancials {
   netFTfn: number;
@@ -632,6 +632,22 @@ export function sumYTD(payslips: Payslip[], fyStartISO: string): YtdTotals {
       }),
       { gross: 0, paygwTax: 0, super: 0, net: 0 }
     );
+}
+
+/** Sums misc income (tax refunds, gifts, side gigs, etc) whose date falls within the AU financial year starting fyStartISO. */
+export function sumMiscIncomeYTD(miscIncome: MiscIncome[], fyStartISO: string): number {
+  return miscIncome.filter((m) => m.date >= fyStartISO).reduce((s, m) => s + (Number(m.amount) || 0), 0);
+}
+
+/**
+ * A fortnight's actual income for Reconcile: every confirmed payslip's net plus every misc
+ * income entry landing in that period, added together rather than one overwriting the other —
+ * the same rule multiple payslips already follow (e.g. a second casual job's pay).
+ */
+export function actualIncomeForPeriod(payslips: Payslip[], miscIncome: MiscIncome[], periodKey: string, anchor: string): number {
+  const payslipTotal = payslips.filter((p) => p.period_key === periodKey && p.status === "confirmed").reduce((s, p) => s + (p.net || 0), 0);
+  const miscTotal = miscIncome.filter((m) => periodKeyOf(m.date, anchor) === periodKey).reduce((s, m) => s + (Number(m.amount) || 0), 0);
+  return payslipTotal + miscTotal;
 }
 
 /** First Home Super Saver Scheme eligibility caps (ATO, current since 1 July 2022). */
