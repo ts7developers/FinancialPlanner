@@ -1,8 +1,43 @@
 // Presentational atoms — ported verbatim (styling + behaviour) from FinancialPlanTracker.jsx.
 
-import type { LucideIcon } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, type LucideIcon } from "lucide-react";
 import { CARD, LINE, MUTE, GOLD, GOLD_SOFT, NAVY, INK, FAV, UNFAV } from "@/lib/theme";
 import { AUD } from "@/lib/money";
+
+/** A card whose body starts hidden (or shown, via `defaultOpen`) behind a clickable header — for secondary/detail sections that would otherwise make a busy tab even longer. The header stays visible either way, so a `subtitle` summary is never lost when collapsed. */
+export function Collapsible({
+  title,
+  icon: Icon,
+  subtitle,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  icon?: LucideIcon;
+  subtitle?: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: 18, background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16, color: NAVY }}>
+            {Icon && <Icon size={16} color={GOLD} />} {title}
+          </div>
+          {subtitle && <div style={{ fontSize: 12, color: MUTE, marginTop: 2 }}>{subtitle}</div>}
+        </div>
+        <ChevronDown size={18} color={MUTE} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .2s", flexShrink: 0 }} />
+      </button>
+      {open && <div style={{ padding: "0 0 18px" }}>{children}</div>}
+    </div>
+  );
+}
 
 export function Row({
   label,

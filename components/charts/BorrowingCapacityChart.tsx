@@ -1,7 +1,7 @@
 "use client";
 
-import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, type TooltipValueType } from "recharts";
-import { AUD } from "@/lib/money";
+import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, type TooltipValueType } from "recharts";
+import { AUD, AUDAxis } from "@/lib/money";
 import { LINE, MUTE, GOLD, NAVY, FAV, chartTooltipStyle } from "@/lib/theme";
 import type { BorrowingCapacityPoint } from "@/lib/derive";
 
@@ -11,9 +11,10 @@ export default function BorrowingCapacityChart({ data, loanNeeded }: { data: Bor
       <ComposedChart data={data} margin={{ top: 8, right: 10, left: 6, bottom: 0 }}>
         <CartesianGrid stroke="#EFEBDD" vertical={false} />
         <XAxis dataKey="year" tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={{ stroke: LINE }} />
-        <YAxis tickFormatter={(v) => `$${v / 1000}k`} tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={false} width={48} />
+        <YAxis tickFormatter={AUDAxis} tick={{ fontSize: 11, fill: MUTE }} tickLine={false} axisLine={false} width={48} />
         <Tooltip formatter={(v: TooltipValueType | undefined) => (v == null ? "—" : AUD(Number(v)))} contentStyle={chartTooltipStyle} />
-        <ReferenceLine y={loanNeeded} stroke={GOLD} strokeDasharray="5 4" strokeWidth={1.5} />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        <ReferenceLine y={loanNeeded} stroke={GOLD} strokeDasharray="5 4" strokeWidth={1.5} label={{ value: "Loan needed", position: "insideTopLeft", fontSize: 11, fill: GOLD }} />
         <Line
           type="monotone"
           dataKey="capLow"

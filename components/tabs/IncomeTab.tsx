@@ -10,7 +10,7 @@ import { financialYearStart, isFT, isoFromDate, periodKeyOf, periodLabel } from 
 import { sumYTD, sumMiscIncomeYTD, buildIncomeProjection, buildFortnightSplit, fortnightCategoryBreakdown, SALARY_SCENARIOS } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, selStyle } from "@/lib/theme";
-import { Metric, Field } from "@/components/ui/atoms";
+import { Metric, Field, Collapsible } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { IncomeTrendPoint } from "@/components/charts/IncomeTrendChart";
 
@@ -35,10 +35,15 @@ export default function IncomeTab() {
   const [miscFlash, setMiscFlash] = useState("");
 
   const today = isoFromDate(new Date());
-  const ytd = sumYTD(payslips, financialYearStart(today));
-  const miscYTD = sumMiscIncomeYTD(miscIncome, financialYearStart(today));
+  const fyStart = financialYearStart(today);
+  const ytd = sumYTD(payslips, fyStart);
+  const miscYTD = sumMiscIncomeYTD(miscIncome, fyStart);
   const confirmed = payslips.filter((p) => p.status === "confirmed").sort((a, b) => (a.period_key || "").localeCompare(b.period_key || ""));
-  const avgNet = confirmed.length > 0 ? ytd.net / confirmed.length : 0;
+  // Same FY-scoping rule as sumYTD (period_start within the current financial year) — dividing
+  // FY-only net by an all-time confirmed count would understate "avg / pay" for anyone with
+  // payslips confirmed in a prior financial year.
+  const confirmedThisFY = confirmed.filter((p) => p.period_start && p.period_start >= fyStart);
+  const avgNet = confirmedThisFY.length > 0 ? ytd.net / confirmedThisFY.length : 0;
 
   useEffect(() => {
     // Client-only: the server has no notion of the user's local calendar day.
@@ -79,7 +84,7 @@ export default function IncomeTab() {
   const projection = buildIncomeProjection(profile, periods, today, scenario, PROJECTION_HORIZON);
   const projectionTrend: IncomeTrendPoint[] = projection.map((p) => ({ label: p.label, gross: p.gross, net: p.net }));
   const nextPay = projection[0];
-  const projectedAnnualNet = projection.reduce((s, p) => s + p.net, 0) * (26 / PROJECTION_HORIZON);
+  const projectedAnnualNet = projection.length > 0 ? (projection.reduce((s, p) => s + p.net, 0) / projection.length) * 26 : 0;
   const ftNotYetStarted = !isFT(today, profile.ft_start);
 
   const split = buildFortnightSplit(profile, D, categories, balances, periods, today, 10);
@@ -201,15 +206,11 @@ export default function IncomeTab() {
         )}
       </div>
 
-      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>
-        <div style={{ padding: "18px 18px 4px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>
-            <SplitSquareHorizontal size={16} color={GOLD} /> Fortnight-by-fortnight split
-          </div>
-          <div style={{ fontSize: 12, color: MUTE, marginTop: 2 }}>
-            Where each payslip is planned to go: budgeted categories first, then the emergency fund until it&apos;s full, then the house deposit.
-          </div>
-        </div>
+      <Collapsible
+        title="Fortnight-by-fortnight split"
+        icon={SplitSquareHorizontal}
+        subtitle="Where each payslip is planned to go: budgeted categories first, then the emergency fund until it's full, then the house deposit."
+      >
         <div style={{ marginTop: 10 }}>
           {isMobile ? (
             <div>
@@ -267,7 +268,7 @@ export default function IncomeTab() {
         <div style={{ fontSize: 11, color: MUTE, padding: "10px 18px 14px" }}>
           Feeds the &ldquo;at current rate&rdquo; deposit estimate on <b style={{ color: NAVY }}>Savings</b>.
         </div>
-      </div>
+      </Collapsible>
 
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: "18px 18px 6px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexWrap: "wrap", gap: 4 }}>
@@ -283,11 +284,7 @@ export default function IncomeTab() {
         )}
       </div>
 
-      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "14px 18px", borderBottom: `1px solid ${LINE}` }}>
-          <Receipt size={16} color={GOLD} />
-          <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Payslip history</div>
-        </div>
+      <Collapsible title="Payslip history" icon={Receipt} subtitle={history.length === 0 ? "Nothing uploaded yet." : `${history.length} payslip${history.length === 1 ? "" : "s"} logged.`}>
         {history.length === 0 ? (
           <div style={{ padding: 24, fontSize: 13, color: MUTE, textAlign: "center" }}>
             Nothing uploaded yet. Upload a payslip for any fortnight from <Link href="/reconcile" style={{ color: NAVY, fontWeight: 600 }}>Reconcile</Link>.
@@ -325,7 +322,7 @@ export default function IncomeTab() {
         <div style={{ fontSize: 11.5, color: MUTE, padding: "10px 18px 14px" }}>
           Upload and confirm payslips from <b style={{ color: NAVY }}>Reconcile</b> — each one auto-fills that fortnight&apos;s actual income and lands the net pay in your Everyday balance. This page is the read-only ledger and trend.
         </div>
-      </div>
+      </Collapsible>
 
       <div style={{ fontSize: 11.5, color: MUTE }}>
         {periodKeyOf(today, profile.pay_anchor) === null && (

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Plus, Trash2, Wallet, Receipt, ListChecks, Flame, Repeat, Pause, Play, Zap } from "lucide-react";
+import { Plus, Trash2, Wallet, Receipt, ListChecks, Flame, Repeat, Pause, Play, Zap, ChevronDown } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { periodKeyOf, periodLabel, isoFromDate } from "@/lib/period";
@@ -88,6 +88,7 @@ export default function ExpensesTab() {
     nextDue: "",
   }));
   const [recBusy, setRecBusy] = useState<string | null>(null);
+  const [showMoreRecurring, setShowMoreRecurring] = useState(false);
 
   useEffect(() => {
     // Must run client-only: the server has no notion of the user's local calendar day,
@@ -187,12 +188,22 @@ export default function ExpensesTab() {
   const avgPerPeriod = averageSpend(periodTotals(loggedByCat));
   const avgTxn = transactions.length > 0 ? transactions.reduce((s, t) => s + (Number(t.amount) || 0), 0) / transactions.length : 0;
   const spendTrend = buildActualSpendTrend(periods, loggedByCat, isoFromDate(new Date()));
-  const categoryTotals: PieSlice[] = catOptions.map((c) => ({
-    name: c.label,
-    value: filteredTxns.filter((t) => t.category_key === c.key).reduce((s, t) => s + (Number(t.amount) || 0), 0),
-  })).filter((d) => d.value > 0);
+  // The chart's own average, over exactly the fortnights it displays — not avgPerPeriod (all
+  // periods ever logged in), which the "gold line = your average, last N fortnights" caption
+  // would otherwise misrepresent whenever the two windows disagree.
+  const spendTrendAvg = spendTrend.length > 0 ? spendTrend.reduce((s, p) => s + p.total, 0) / spendTrend.length : 0;
+  // Sorted once here (not re-sorted separately for the legend) so the pie's slice colours and
+  // the legend's swatches share the same index — sorting twice independently previously left
+  // them mismatched, colouring the legend as if it were still in the unsorted order.
+  const categoryTotals: PieSlice[] = catOptions
+    .map((c) => ({
+      name: c.label,
+      value: filteredTxns.filter((t) => t.category_key === c.key).reduce((s, t) => s + (Number(t.amount) || 0), 0),
+    }))
+    .filter((d) => d.value > 0)
+    .sort((a, b) => b.value - a.value);
   const categoryTotal = categoryTotals.reduce((s, d) => s + d.value, 0);
-  const biggestCategory = categoryTotals.slice().sort((a, b) => b.value - a.value)[0];
+  const biggestCategory = categoryTotals[0];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -364,7 +375,17 @@ export default function ExpensesTab() {
           </div>
         )}
 
-        {upcomingRecurring.length > 0 && (
+        {(upcomingRecurring.length > 0 || pausedRecurring.length > 0) && (
+          <button
+            onClick={() => setShowMoreRecurring((v) => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", color: MUTE, fontSize: 12, fontWeight: 600, padding: "4px 0", marginBottom: showMoreRecurring ? 6 : 0 }}
+          >
+            <ChevronDown size={13} style={{ transform: showMoreRecurring ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+            {showMoreRecurring ? "Hide" : "Show"} {upcomingRecurring.length + pausedRecurring.length} more (upcoming / paused)
+          </button>
+        )}
+
+        {showMoreRecurring && upcomingRecurring.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: pausedRecurring.length ? 14 : 0 }}>
             {upcomingRecurring.map((r) => (
               <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: `1px solid ${LINE}`, fontSize: 13 }}>
@@ -384,7 +405,7 @@ export default function ExpensesTab() {
           </div>
         )}
 
-        {pausedRecurring.length > 0 && (
+        {showMoreRecurring && pausedRecurring.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 14 }}>
             {pausedRecurring.map((r) => (
               <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: `1px solid ${LINE}`, fontSize: 13, opacity: 0.55 }}>
@@ -475,7 +496,7 @@ export default function ExpensesTab() {
             <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Spend trend</div>
             <div style={{ fontSize: 12, color: MUTE }}>gold line = your average, last {spendTrend.length} fortnights</div>
           </div>
-          <ActualSpendTrendChart data={spendTrend} average={avgPerPeriod} />
+          <ActualSpendTrendChart data={spendTrend} average={spendTrendAvg} />
         </div>
         <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18, flex: "1 1 300px" }}>
           <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 8 }}>By category (this view)</div>
@@ -485,15 +506,12 @@ export default function ExpensesTab() {
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <MoneyGoesChart data={categoryTotals} size={150} />
               <div style={{ flex: 1, minWidth: 140, display: "flex", flexDirection: "column", gap: 4 }}>
-                {categoryTotals
-                  .slice()
-                  .sort((a, b) => b.value - a.value)
-                  .map((d, i) => (
-                    <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: MUTE }}>
-                      <span style={{ width: 9, height: 9, borderRadius: 2, background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0 }} />
-                      {d.name} <span style={{ marginLeft: "auto", color: NAVY, fontVariantNumeric: "tabular-nums" }}>{categoryTotal > 0 ? ((d.value / categoryTotal) * 100).toFixed(0) : 0}%</span>
-                    </div>
-                  ))}
+                {categoryTotals.map((d, i) => (
+                  <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: MUTE }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 2, background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0 }} />
+                    {d.name} <span style={{ marginLeft: "auto", color: NAVY, fontVariantNumeric: "tabular-nums" }}>{categoryTotal > 0 ? ((d.value / categoryTotal) * 100).toFixed(0) : 0}%</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

@@ -135,6 +135,9 @@ export default function OverviewTab() {
           <div style={{ fontSize: 12, color: MUTE }}>gold line = 5% goal · dots = your snapshots</div>
         </div>
         <DepositChart data={chartData} goal={D.dep5} isMobile={isMobile} />
+        <div style={{ fontSize: 11, color: MUTE, padding: "2px 0 12px" }}>
+          Dots are cash (ANZ Plus) only, from each <b style={{ color: NAVY }}>Accounts</b> snapshot — &ldquo;Deposit saved&rdquo; above also includes FHSS-eligible super, so the two won&apos;t match exactly.
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>

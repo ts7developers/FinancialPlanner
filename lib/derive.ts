@@ -4,6 +4,7 @@
 
 import { dayLabel, dateFromISO, isoFromDate, currentPeriod, financialYearStart, isFT, periodKeyOf, periodLabel, type Period } from "./period";
 import { netFromPackage, hecsCompulsoryRepayment, incomeTaxAU, litoAU, FN_PER_YEAR, FN_FROM_MO } from "./tax";
+import { OTHER_CATEGORY_KEY } from "./categories";
 export { hecsCompulsoryRepayment } from "./tax";
 import type { Account } from "./theme";
 import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot, RecurringFrequency, MiscIncome } from "./types";
@@ -253,7 +254,7 @@ export function reconcileCategoryRows(
   loggedForPeriod: Record<string, number> | undefined,
   overrides: Record<string, string>
 ): CategoryReconRow[] {
-  return categories.map((c) => {
+  const rows = categories.map((c) => {
     const plan = D.catFN(c.key, year);
     const logged = loggedForPeriod?.[c.key] || 0;
     const manual = overrides[c.key];
@@ -269,6 +270,20 @@ export function reconcileCategoryRows(
       variance: actual === null ? null : plan - actual,
     };
   });
+
+  // "Other" isn't a real budget row (no planned amount), but real money gets logged against
+  // it on Expenses — without this it's invisible everywhere that sums these rows (Reconcile's
+  // ledger, the variance report, Overview's plan-vs-actual chart). Only show it once there's
+  // actually something logged, so untouched periods don't grow an empty extra line.
+  const otherLogged = loggedForPeriod?.[OTHER_CATEGORY_KEY] || 0;
+  const otherManual = overrides[OTHER_CATEGORY_KEY];
+  const otherHasManual = otherManual !== undefined && otherManual !== "";
+  if (otherLogged > 0 || otherHasManual) {
+    const actual = otherHasManual ? Number(otherManual) : otherLogged;
+    rows.push({ id: OTHER_CATEGORY_KEY, label: "Other", plan: 0, logged: otherLogged, hasManual: otherHasManual, actual, variance: -actual });
+  }
+
+  return rows;
 }
 
 export interface ReconcileSummary {
@@ -354,8 +369,9 @@ export function buildVarianceReport(
     totalActualIncome += rec?.actual_income ?? planInc;
 
     catRows.forEach((r) => {
-      const acc = rowAcc.get(r.id);
-      if (!acc) return;
+      // Categories are pre-seeded above; "Other" isn't a real budget row, so it only appears
+      // here once a period has actually logged something against it — add it on demand.
+      const acc = rowAcc.get(r.id) ?? rowAcc.set(r.id, { label: r.label, plannedTotal: 0, actualTotal: 0 }).get(r.id)!;
       acc.plannedTotal += r.plan;
       acc.actualTotal += r.actual ?? 0;
     });
@@ -557,6 +573,7 @@ export interface SpendTrendPoint {
   label: string;
   planned: number;
   actual: number | null; // null when the period has no logged transactions or manual overrides yet
+  isCurrent: boolean; // the in-progress fortnight — its "actual" is partial, not comparable as favourable/unfavourable yet
 }
 
 /** Plan-vs-actual total expenses for the trailing `windowSize` periods up to today, for spotting drift over time. */
@@ -576,7 +593,7 @@ export function buildSpendTrend(
     const planned = rows.reduce((s, r) => s + r.plan, 0);
     const anyActual = rows.some((r) => r.actual !== null);
     const actual = anyActual ? rows.reduce((s, r) => s + (r.actual ?? 0), 0) : null;
-    return { key: p.key, label: dayLabel(p.start), planned, actual };
+    return { key: p.key, label: dayLabel(p.start), planned, actual, isCurrent: p.idx === curIdx };
   });
 }
 

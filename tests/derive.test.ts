@@ -30,6 +30,7 @@ import {
   buildVarianceInsights,
   sumMiscIncomeYTD,
   actualIncomeForPeriod,
+  reconcileCategoryRows,
 } from "@/lib/derive";
 import { buildPeriods, isFT } from "@/lib/period";
 import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
@@ -209,6 +210,42 @@ describe("buildSpendTrend", () => {
   it("windows to the trailing N periods ending at today", () => {
     const trend = buildSpendTrend(periods, categories, D, {}, {}, periods[5].key, 3);
     expect(trend.map((p) => p.key)).toEqual([periods[3].key, periods[4].key, periods[5].key]);
+  });
+
+  it("flags only the last (in-progress) period as current", () => {
+    const trend = buildSpendTrend(periods, categories, D, {}, {}, periods[5].key, 3);
+    expect(trend.map((p) => p.isCurrent)).toEqual([false, false, true]);
+  });
+
+  it("includes spend logged to the unbudgeted 'Other' catch-all in the actual total", () => {
+    const key = periods[0].key;
+    const loggedByCat = { [key]: { groceries: 120, other: 60 } };
+    const [first] = buildSpendTrend(periods, categories, D, loggedByCat, {}, profile.pay_anchor, 1);
+    expect(first.actual).toBe(180);
+  });
+});
+
+describe("reconcileCategoryRows", () => {
+  const D = deriveFinancials(profile, categories);
+
+  it("omits 'Other' when nothing has been logged against it", () => {
+    const rows = reconcileCategoryRows(categories, D, 2026, { groceries: 100 }, {});
+    expect(rows.find((r) => r.id === "other")).toBeUndefined();
+  });
+
+  it("adds an 'Other' row with $0 planned once something is logged against it", () => {
+    const rows = reconcileCategoryRows(categories, D, 2026, { groceries: 100, other: 45 }, {});
+    const other = rows.find((r) => r.id === "other");
+    expect(other).toBeDefined();
+    expect(other!.plan).toBe(0);
+    expect(other!.actual).toBe(45);
+    expect(other!.variance).toBe(-45);
+  });
+
+  it("surfaces a manual override on 'Other' even with nothing logged", () => {
+    const rows = reconcileCategoryRows(categories, D, 2026, undefined, { other: "30" });
+    const other = rows.find((r) => r.id === "other");
+    expect(other?.actual).toBe(30);
   });
 });
 
@@ -599,6 +636,16 @@ describe("buildVarianceReport", () => {
     expect(report.periodsIncluded).toBe(2);
     const groceriesRow = report.rows.find((r) => r.id === "groceries")!;
     expect(groceriesRow.actualTotal).toBe(250);
+  });
+
+  it("includes spend logged to 'Other' in the totals instead of dropping it silently", () => {
+    const key = periods[0].key;
+    const loggedByCat = { [key]: { groceries: 100, other: 60 } };
+    const report = buildVarianceReport(profile, categories, D, periods, loggedByCat, {});
+    const otherRow = report.rows.find((r) => r.id === "other")!;
+    expect(otherRow).toBeDefined();
+    expect(otherRow.actualTotal).toBe(60);
+    expect(report.totalActualExpenses).toBe(160);
   });
 });
 

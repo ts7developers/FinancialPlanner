@@ -9,7 +9,7 @@ import { currentPeriod, financialYearStart, isFT, isoFromDate, periodLabel } fro
 import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation, sumYTD, buildVarianceReport, buildVarianceInsights } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, INK, GOLD_SOFT, FAV, UNFAV, inputStyle } from "@/lib/theme";
-import { Row, Cell2, VarTag, Stat } from "@/components/ui/atoms";
+import { Row, Cell2, VarTag, Stat, Collapsible } from "@/components/ui/atoms";
 import PayslipPanel from "@/components/PayslipPanel";
 
 export default function ReconcileTab() {
@@ -270,22 +270,23 @@ export default function ReconcileTab() {
         </div>
       </div>
 
-      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>
-        <div style={{ padding: "18px 18px 4px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>
-            <FileBarChart size={16} color={GOLD} /> Variance report
-          </div>
-          <div style={{ fontSize: 12, color: MUTE, marginTop: 2 }}>
-            Budget vs actual, summed across every fortnight you&apos;ve reconciled so far.
-          </div>
-        </div>
+      <Collapsible
+        title="Variance report"
+        icon={FileBarChart}
+        defaultOpen={insights.length > 0}
+        subtitle={
+          varianceReport.periodsIncluded === 0
+            ? "Nothing reconciled yet — builds itself up fortnight by fortnight."
+            : `${varianceReport.periodsIncluded} fortnight${varianceReport.periodsIncluded === 1 ? "" : "s"} reconciled · expense variance ${varianceReport.totalExpenseVariance >= 0 ? "+" : "−"}${AUD(Math.abs(varianceReport.totalExpenseVariance))}${insights.length > 0 ? ` · ${insights.length} pattern${insights.length === 1 ? "" : "s"} flagged` : ""}`
+        }
+      >
         {varianceReport.periodsIncluded === 0 ? (
-          <div style={{ padding: 24, fontSize: 13, color: MUTE, textAlign: "center" }}>
+          <div style={{ padding: "0 18px 24px", fontSize: 13, color: MUTE, textAlign: "center" }}>
             Nothing reconciled yet. Log expenses on <b style={{ color: NAVY }}>Expenses</b> or confirm a payslip above, and this report builds itself up fortnight by fortnight.
           </div>
         ) : (
           <>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", padding: "10px 18px 14px" }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", padding: "0 18px 14px" }}>
               <Stat2 label="Fortnights reconciled" value={String(varianceReport.periodsIncluded)} />
               <Stat2 label="Income variance" value={AUD(Math.abs(varianceReport.incomeVariance))} sign={varianceReport.incomeVariance} />
               <Stat2 label="Expense variance" value={AUD(Math.abs(varianceReport.totalExpenseVariance))} sign={varianceReport.totalExpenseVariance} />
@@ -334,7 +335,7 @@ export default function ReconcileTab() {
             </div>
           </>
         )}
-      </div>
+      </Collapsible>
     </div>
   );
 }

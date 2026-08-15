@@ -234,7 +234,7 @@ export default function PlanTab() {
               suffix="%"
               value={inputs.incomeGrowth}
               onChange={(v) => set("incomeGrowth", v)}
-              onBlur={() => commitNumber("income_growth_pct", inputs.incomeGrowth, 100)}
+              onBlur={() => commitNumber("income_growth_pct", inputs.incomeGrowth)}
             />
             <Derived
               rows={[
