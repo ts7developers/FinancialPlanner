@@ -39,6 +39,7 @@ export default function SavingsTab() {
   const [newGoalTarget, setNewGoalTarget] = useState("");
   const [goalBusy, setGoalBusy] = useState(false);
   const [goalAmountInputs, setGoalAmountInputs] = useState<Record<string, string>>({});
+  const [goalFlash, setGoalFlash] = useState("");
   const [growthPct, setGrowthPct] = useState("7");
   const [extraFn, setExtraFn] = useState("0");
   const [hecsIndexPct, setHecsIndexPct] = useState("3");
@@ -120,6 +121,15 @@ export default function SavingsTab() {
     return point ? point.label : `beyond ${ccProjection.length} fortnights`;
   };
 
+  const flashGoalError = (err: unknown) => {
+    const msg =
+      err instanceof Error && err.message.includes("Could not find the table")
+        ? "Goals aren't set up yet — run migration 0012_goals.sql, then try again."
+        : "Something went wrong saving that goal — try again.";
+    setGoalFlash(msg);
+    setTimeout(() => setGoalFlash(""), 6000);
+  };
+
   const onAddGoal = async () => {
     if (!newGoalLabel.trim() || !(Number(newGoalTarget) > 0)) return;
     setGoalBusy(true);
@@ -127,24 +137,41 @@ export default function SavingsTab() {
       await addGoal(newGoalLabel, Number(newGoalTarget));
       setNewGoalLabel("");
       setNewGoalTarget("");
+    } catch (err) {
+      flashGoalError(err);
     } finally {
       setGoalBusy(false);
     }
   };
 
-  const onDeleteGoal = (id: string, label: string) => {
+  const onDeleteGoal = async (id: string, label: string) => {
     if (!window.confirm(`Delete the goal "${label}"? This doesn't touch any real balance — it just stops tracking toward it.`)) return;
-    deleteGoal(id);
+    try {
+      await deleteGoal(id);
+    } catch (err) {
+      flashGoalError(err);
+    }
   };
 
-  const moveGoalPriority = (id: string, direction: -1 | 1) => {
+  const onUpdateGoalAmount = async (id: string, value: string) => {
+    try {
+      await updateGoal(id, { current_amount: Number(value) || 0 });
+    } catch (err) {
+      flashGoalError(err);
+    }
+  };
+
+  const moveGoalPriority = async (id: string, direction: -1 | 1) => {
     const sorted = goals.slice().sort((a, b) => a.priority - b.priority);
     const idx = sorted.findIndex((g) => g.id === id);
     const swapWith = sorted[idx + direction];
     if (!swapWith) return;
     const current = sorted[idx];
-    updateGoal(current.id, { priority: swapWith.priority });
-    updateGoal(swapWith.id, { priority: current.priority });
+    try {
+      await Promise.all([updateGoal(current.id, { priority: swapWith.priority }), updateGoal(swapWith.id, { priority: current.priority })]);
+    } catch (err) {
+      flashGoalError(err);
+    }
   };
 
   const balanceHistory = buildBalanceHistory(snapshots, periods);
@@ -224,6 +251,9 @@ export default function SavingsTab() {
           </div>
           <div style={{ fontSize: 12, color: MUTE }}>funded after the emergency fund, before the deposit — in priority order</div>
         </div>
+        {goalFlash && (
+          <div style={{ background: "#FBEDE9", color: "#8A3320", borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>{goalFlash}</div>
+        )}
         {goals.length === 0 ? (
           <div style={{ fontSize: 12.5, color: MUTE, marginBottom: 14 }}>
             Nothing set up yet — add a trip, a car, or any other savings target and it&apos;ll get its own slice of fortnightly surplus.
@@ -262,7 +292,7 @@ export default function SavingsTab() {
                         inputMode="decimal"
                         value={goalAmountInputs[g.id] ?? String(g.current_amount)}
                         onChange={(e) => setGoalAmountInputs((gi) => ({ ...gi, [g.id]: e.target.value }))}
-                        onBlur={(e) => updateGoal(g.id, { current_amount: Number(e.target.value) || 0 })}
+                        onBlur={(e) => onUpdateGoalAmount(g.id, e.target.value)}
                         title="Update how much you've actually saved toward this goal"
                         style={{ ...selStyle, width: 90, textAlign: "right", fontSize: 12 }}
                       />
