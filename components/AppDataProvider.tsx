@@ -319,7 +319,7 @@ export function AppDataProvider({
     const { data, error } = await supabase
       .from("snapshots")
       .upsert(
-        { user_id: profile.user_id, period_key: key, deposit: balances.anzplus, emergency: balances.emergency },
+        { user_id: profile.user_id, period_key: key, deposit: balances.anzplus, emergency: balances.emergency, cc: balances.cc, hecs: balances.hecs },
         { onConflict: "user_id,period_key" }
       )
       .select()

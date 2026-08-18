@@ -59,6 +59,8 @@ export interface Snapshot {
   taken_at: string;
   deposit: number;
   emergency: number;
+  cc: number;
+  hecs: number;
 }
 
 export interface Balances {

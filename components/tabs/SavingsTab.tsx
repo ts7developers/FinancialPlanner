@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { TrendingUp, Sparkles, Home, CreditCard, Target, ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
@@ -17,6 +18,7 @@ import {
   adaptiveCategoryRates,
   adaptiveExpenseTotal,
   withAdaptiveExpenses,
+  buildBalanceHistory,
   DEFAULT_FHSS_DEEMED_RATE,
 } from "@/lib/derive";
 import { AUD } from "@/lib/money";
@@ -26,12 +28,13 @@ import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { NetWorthChartRow } from "@/components/charts/NetWorthChart";
 
 const NetWorthChart = dynamic(() => import("@/components/charts/NetWorthChart"), { ssr: false, loading: () => <ChartSkeleton height={300} /> });
+const BalanceHistoryChart = dynamic(() => import("@/components/charts/BalanceHistoryChart"), { ssr: false, loading: () => <ChartSkeleton height={260} /> });
 
 const HORIZON_PERIODS = 78; // roughly 3 years of fortnights
 
 export default function SavingsTab() {
   const isMobile = useIsMobile();
-  const { profile, balances, periods, categories, superContributions, recurringExpenses, goals, addGoal, updateGoal, deleteGoal, loggedByCat, reconciliations, D } = useAppData();
+  const { profile, balances, periods, categories, superContributions, recurringExpenses, goals, addGoal, updateGoal, deleteGoal, loggedByCat, reconciliations, snapshots, D } = useAppData();
   const [newGoalLabel, setNewGoalLabel] = useState("");
   const [newGoalTarget, setNewGoalTarget] = useState("");
   const [goalBusy, setGoalBusy] = useState(false);
@@ -143,6 +146,8 @@ export default function SavingsTab() {
     updateGoal(current.id, { priority: swapWith.priority });
     updateGoal(swapWith.id, { priority: current.priority });
   };
+
+  const balanceHistory = buildBalanceHistory(snapshots, periods);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -401,6 +406,24 @@ export default function SavingsTab() {
         <NetWorthChart data={chartRows} comparisonLabel={comparisonScenario.label} isMobile={isMobile} />
         <div style={{ fontSize: 11.5, color: MUTE, padding: "2px 0 12px" }}>
           Starts from your current balances on <b style={{ color: NAVY }}>Accounts</b>, not the original plan baseline — so it reflects where you actually are today.
+        </div>
+      </div>
+
+      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: "18px 18px 6px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexWrap: "wrap", gap: 4 }}>
+          <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Balance history</div>
+          <div style={{ fontSize: 12, color: MUTE }}>from your Accounts snapshots</div>
+        </div>
+        {balanceHistory.length < 2 ? (
+          <div style={{ padding: "24px 0 32px", fontSize: 13, color: MUTE, textAlign: "center" }}>
+            Take at least two snapshots on <Link href="/accounts" style={{ color: NAVY, fontWeight: 600 }}>Accounts</Link> to see the deposit, emergency fund,
+            credit card and HECS balances trend over time.
+          </div>
+        ) : (
+          <BalanceHistoryChart data={balanceHistory} isMobile={isMobile} />
+        )}
+        <div style={{ fontSize: 11.5, color: MUTE, padding: "2px 0 12px" }}>
+          The only history this app keeps of your actual credit card and HECS balances — everywhere else only shows the current figure.
         </div>
       </div>
     </div>

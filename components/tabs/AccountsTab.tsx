@@ -461,10 +461,12 @@ export default function AccountsTab() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {snapshots.map((s) => (
-              <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", fontSize: 13, padding: "7px 4px", borderBottom: `1px solid ${LINE}`, fontVariantNumeric: "tabular-nums" }}>
+              <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr 1fr 1fr", fontSize: 13, padding: "7px 4px", borderBottom: `1px solid ${LINE}`, fontVariantNumeric: "tabular-nums" }}>
                 <span style={{ color: MUTE }}>Fortnight of {dayLabel(dateFromISO(s.period_key))}</span>
                 <span>Deposit {AUD(s.deposit)}</span>
                 <span>Emergency {AUD(s.emergency)}</span>
+                <span style={{ color: UNFAV }}>CC {AUD(Number(s.cc) || 0)}</span>
+                <span style={{ color: MUTE }}>HECS {AUD(Number(s.hecs) || 0)}</span>
               </div>
             ))}
           </div>

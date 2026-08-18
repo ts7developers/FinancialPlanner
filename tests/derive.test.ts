@@ -8,6 +8,7 @@ import {
   borrowingCapacityYearReached,
   buildNetWorthProjection,
   netWorthPositiveAt,
+  buildBalanceHistory,
   hecsCompulsoryRepayment,
   SALARY_SCENARIOS,
   computeHoldingPL,
@@ -446,6 +447,27 @@ describe("netWorthPositiveAt", () => {
   it("returns null when net worth never turns positive", () => {
     const points = [{ key: "a", label: "A", liquid: 0, invested: 0, netWorth: -50 }];
     expect(netWorthPositiveAt(points)).toBeNull();
+  });
+});
+
+describe("buildBalanceHistory", () => {
+  const periods = buildPeriods(profile.pay_anchor);
+
+  it("sorts snapshots into period order and maps each field", () => {
+    const snapshots = [
+      { id: "2", user_id: "u1", period_key: periods[1].key, taken_at: "", deposit: 2000, emergency: 500, cc: 100, hecs: 39000 },
+      { id: "1", user_id: "u1", period_key: periods[0].key, taken_at: "", deposit: 1000, emergency: 300, cc: 200, hecs: 40000 },
+    ];
+    const history = buildBalanceHistory(snapshots, periods);
+    expect(history.map((h) => h.key)).toEqual([periods[0].key, periods[1].key]);
+    expect(history[0]).toMatchObject({ deposit: 1000, emergency: 300, creditCard: 200, hecs: 40000 });
+    expect(history[1]).toMatchObject({ deposit: 2000, emergency: 500, creditCard: 100, hecs: 39000 });
+  });
+
+  it("falls back to the raw period key's date portion when the period can't be found", () => {
+    const snapshots = [{ id: "1", user_id: "u1", period_key: "2099-01-01", taken_at: "", deposit: 1, emergency: 1, cc: 1, hecs: 1 }];
+    const history = buildBalanceHistory(snapshots, periods);
+    expect(history[0].label).toBe("01-01");
   });
 });
 

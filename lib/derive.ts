@@ -7,7 +7,7 @@ import { netFromPackage, hecsCompulsoryRepayment, incomeTaxAU, litoAU, FN_PER_YE
 import { OTHER_CATEGORY_KEY } from "./categories";
 export { hecsCompulsoryRepayment } from "./tax";
 import type { Account } from "./theme";
-import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot, RecurringFrequency, RecurringExpense, MiscIncome, Goal } from "./types";
+import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot, RecurringFrequency, RecurringExpense, MiscIncome, Goal, Snapshot } from "./types";
 
 export interface DerivedFinancials {
   netFTfn: number;
@@ -197,6 +197,37 @@ export function buildNetWorthProjection(
 /** First period label where the projection's net worth reaches zero or above, or null if it never does. */
 export function netWorthPositiveAt(points: NetWorthPoint[]): string | null {
   return points.find((p) => p.netWorth >= 0)?.label ?? null;
+}
+
+export interface BalanceHistoryPoint {
+  key: string;
+  label: string;
+  deposit: number;
+  emergency: number;
+  creditCard: number;
+  hecs: number;
+}
+
+/**
+ * Every "Snapshot" taken on Accounts, reshaped for charting in period order — the only history
+ * this app captures of the credit card and HECS balances (both otherwise only ever visible as a
+ * single current number), alongside the deposit/emergency history the Overview chart already uses.
+ */
+export function buildBalanceHistory(snapshots: Snapshot[], periods: Period[]): BalanceHistoryPoint[] {
+  return snapshots
+    .slice()
+    .sort((a, b) => a.period_key.localeCompare(b.period_key))
+    .map((s) => {
+      const per = periods.find((p) => p.key === s.period_key);
+      return {
+        key: s.period_key,
+        label: per ? dayLabel(per.start) : s.period_key.slice(5),
+        deposit: Number(s.deposit) || 0,
+        emergency: Number(s.emergency) || 0,
+        creditCard: Number(s.cc) || 0,
+        hecs: Number(s.hecs) || 0,
+      };
+    });
 }
 
 export interface PeriodTotal {
