@@ -25,6 +25,7 @@ import {
   buildFortnightSplit,
   fortnightCategoryBreakdown,
   sinkingFundBreakdown,
+  creditCardPayoffPeriod,
   periodsToTarget,
   buildIncomeProjection,
   buildVarianceReport,
@@ -248,6 +249,21 @@ describe("reconcileCategoryRows", () => {
     const other = rows.find((r) => r.id === "other");
     expect(other?.actual).toBe(30);
   });
+
+  it("rolls spend logged against a since-deleted category into 'Other' instead of dropping it", () => {
+    // "gym" isn't in `categories` (deleted on Budget after this fortnight's spend was logged) —
+    // the money was real and should still show up somewhere, not vanish from the report.
+    const rows = reconcileCategoryRows(categories, D, 2026, { groceries: 100, gym: 38 }, {});
+    expect(rows.find((r) => r.id === "gym")).toBeUndefined();
+    const other = rows.find((r) => r.id === "other");
+    expect(other?.actual).toBe(38);
+  });
+
+  it("combines orphaned spend with genuine 'Other' spend in the same fortnight", () => {
+    const rows = reconcileCategoryRows(categories, D, 2026, { gym: 38, other: 12 }, {});
+    const other = rows.find((r) => r.id === "other");
+    expect(other?.actual).toBe(50);
+  });
 });
 
 describe("buildBorrowingCapacity", () => {
@@ -361,11 +377,22 @@ describe("buildNetWorthProjection", () => {
     expect(first.liquid).toBe(100);
   });
 
-  it("holds credit card flat — no repayment schedule modelled", () => {
+  it("pays the credit card down from surplus before topping up the emergency fund or deposit", () => {
     const withDebt: Balances = { ...startBalances, cc: 200 };
-    const points = buildNetWorthProjection(profile, D, withDebt, periods, profile.pay_anchor, 5, 0, flatScenario, 3, 3);
-    points.forEach((p) => {
-      expect(p.netWorth).toBeCloseTo(p.liquid + p.invested - 200 - 0, -1);
+    const [first] = buildNetWorthProjection(profile, D, withDebt, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 1);
+    const income = plannedIncomeFN(periods[0], profile, D);
+    const surplus = Math.max(0, income - D.expFN(periods[0].year));
+    const toCC = Math.min(surplus, 200);
+    // netWorth subtracts whatever credit card is left after this period's paydown, not the flat opening balance.
+    expect(first.netWorth).toBeCloseTo(first.liquid + first.invested - (200 - toCC), -1);
+  });
+
+  it("stops paying down the credit card once it's cleared, same as buildFortnightSplit", () => {
+    const smallDebt: Balances = { ...startBalances, cc: 1 };
+    const points = buildNetWorthProjection(profile, D, smallDebt, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 3);
+    // A $1 debt is trivially cleared in period 0 — every later period's netWorth should stop subtracting it.
+    points.slice(1).forEach((p) => {
+      expect(p.netWorth).toBeCloseTo(p.liquid + p.invested, -1);
     });
   });
 
@@ -555,6 +582,25 @@ describe("buildFortnightSplit", () => {
     const without = buildFortnightSplit(profile, D, categories, noCCFullEmergency, [], periods, profile.pay_anchor, 1);
     expect(withSinking[0].sinkingTotal).toBeCloseTo(780 / 26, 5);
     expect(withSinking[0].toDeposit).toBeCloseTo(without[0].toDeposit - 780 / 26, 5);
+  });
+});
+
+describe("creditCardPayoffPeriod", () => {
+  const periods = buildPeriods(profile.pay_anchor);
+  const D = deriveFinancials(profile, categories);
+
+  it("finds the first period whose simulated credit-card balance reaches zero", () => {
+    const smallDebt = { ...balances, cc: 50, emergency: profile.emergency_target };
+    const split = buildFortnightSplit(profile, D, categories, smallDebt, [], periods, profile.pay_anchor, 3);
+    const payoff = creditCardPayoffPeriod(split);
+    expect(payoff).not.toBeNull();
+    expect(payoff!.key).toBe(split[0].key);
+  });
+
+  it("returns null when the debt outlasts the whole projection", () => {
+    const hugeDebt = { ...balances, cc: 1_000_000 };
+    const split = buildFortnightSplit(profile, D, categories, hugeDebt, [], periods, profile.pay_anchor, 3);
+    expect(creditCardPayoffPeriod(split)).toBeNull();
   });
 });
 

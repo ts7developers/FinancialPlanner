@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Copy, RotateCcw, CalendarClock, Trash2, Plus } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
-import { BORROW_MULT_LOW, BORROW_MULT_HIGH } from "@/lib/derive";
+import { BORROW_MULT_LOW, BORROW_MULT_HIGH, sinkingFundTotal } from "@/lib/derive";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
 import { AUD } from "@/lib/money";
 import { NAVY, MUTE, GOLD, LINE, INK, inputStyle, selStyle } from "@/lib/theme";
@@ -44,7 +44,9 @@ function toInputs(profile: Profile): ProfileInputs {
 }
 
 export default function PlanTab() {
-  const { profile, categories, D, updateProfile, updateCategory, addCategory, deleteCategory } = useAppData();
+  const { profile, categories, recurringExpenses, D, updateProfile, updateCategory, addCategory, deleteCategory } = useAppData();
+  const recurringFortnightTotal = sinkingFundTotal(recurringExpenses);
+  const activeRecurringCount = recurringExpenses.filter((r) => r.active).length;
   const [inputs, setInputs] = useState<ProfileInputs>(() => toInputs(profile));
   const [catInputs, setCatInputs] = useState<Record<string, { label: string; a26: string; a27: string }>>(() =>
     Object.fromEntries(categories.map((c) => [c.key, { label: c.label, a26: String(c.amount_2026), a27: String(c.amount_2027) }]))
@@ -304,6 +306,13 @@ export default function PlanTab() {
               <span style={{ textAlign: "right" }}>{AUD(D.expFN(2027))}</span>
               <span />
             </div>
+            {activeRecurringCount > 0 && (
+              <div style={{ marginTop: 12, padding: "10px 12px", background: "#F4EFE1", borderRadius: 8, fontSize: 12, color: NAVY, lineHeight: 1.5 }}>
+                Plus <b>{AUD(recurringFortnightTotal, 2)}/fn</b> set aside for {activeRecurringCount} recurring bill{activeRecurringCount === 1 ? "" : "s"} on{" "}
+                <b>Expenses</b> (rego, insurance, subscriptions) — not counted in the totals above, so check nothing&apos;s budgeted in both
+                places at once.
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${LINE}`, alignItems: "flex-end" }}>
               <Field label="New category" grow>
                 <input

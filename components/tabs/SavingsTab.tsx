@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import { TrendingUp, Sparkles, Home } from "lucide-react";
+import { TrendingUp, Sparkles, Home, CreditCard } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { isoFromDate } from "@/lib/period";
@@ -13,10 +13,11 @@ import {
   fhssSummary,
   buildFortnightSplit,
   periodsToTarget,
+  creditCardPayoffPeriod,
   DEFAULT_FHSS_DEEMED_RATE,
 } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, FAV, selStyle } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
 import { Metric, Field, Progress } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { NetWorthChartRow } from "@/components/charts/NetWorthChart";
@@ -90,6 +91,14 @@ export default function SavingsTab() {
           ? periods[currentIdx + etaPeriods].label
           : `beyond ${Math.round(((currentIdx + etaPeriods) * 14) / 365)} years`;
 
+  const ccBalance = Number(balances.cc) || 0;
+  // Long horizon just for this ETA (a slow payoff can take a while) — separate from `split`,
+  // which stays short since it also drives the averages above.
+  const ccProjection = buildFortnightSplit(profile, D, categories, balances, recurringExpenses, periods, today, 52);
+  const ccPayoffPoint = creditCardPayoffPeriod(ccProjection);
+  const ccStuck = ccBalance > 0 && !ccPayoffPoint && ccProjection.every((p) => p.toCreditCard === 0);
+  const ccEtaLabel = ccBalance <= 0 ? "nothing owing" : ccPayoffPoint ? ccPayoffPoint.label : ccStuck ? "no surplus to put toward it" : `beyond ${ccProjection.length} fortnights`;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div>
@@ -133,6 +142,30 @@ export default function SavingsTab() {
           breakdown on <b style={{ color: NAVY }}>Income</b>. Estimate only — not financial advice.
         </div>
       </div>
+
+      {ccBalance > 0 && (
+        <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15 }}>
+              <CreditCard size={16} color={UNFAV} /> Credit card
+            </div>
+            <div style={{ fontSize: 12, color: MUTE }}>paid down first, before emergency fund or deposit</div>
+          </div>
+          <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 12.5 }}>
+            <span style={{ color: MUTE }}>
+              Owing <b style={{ color: UNFAV }}>{AUD(ccBalance)}</b>
+            </span>
+            <span style={{ color: MUTE }}>
+              Paid off by <b style={{ color: NAVY }}>{ccEtaLabel}</b>
+            </span>
+          </div>
+          <div style={{ fontSize: 11, color: MUTE, marginTop: 10, lineHeight: 1.5 }}>
+            Every fortnight&apos;s leftover surplus goes here first — see the &ldquo;→ CC&rdquo; column in the fortnight-by-fortnight
+            breakdown on <b style={{ color: NAVY }}>Income</b>. Feeds into the net worth projection below too, so paying it off
+            faster (or slower, if expenses run high) shows up there directly.
+          </div>
+        </div>
+      )}
 
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12 }}>
@@ -181,8 +214,9 @@ export default function SavingsTab() {
           &ldquo;Standard accountant progression&rdquo; compounds your package ~9% p.a. for the first 5 years (typical AU
           graduate-to-intermediate accountant growth, per SEEK/Hays salary guides) then ~3.5% p.a. after — a rough
           guide, not a guarantee. HECS reduces via the real compulsory-repayment schedule (marginal rates above
-          $69,528 repayment income) and indexes at the rate above. Credit card is held flat. Shares and super compound
-          at the investment-growth rate; super also keeps its usual employer contribution. Not financial advice.
+          $69,528 repayment income) and indexes at the rate above. Credit card is paid down from surplus first, same as
+          the fortnight-by-fortnight waterfall on Income. Shares and super compound at the investment-growth rate;
+          super also keeps its usual employer contribution. Not financial advice.
         </div>
       </div>
 

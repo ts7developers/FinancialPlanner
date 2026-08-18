@@ -128,7 +128,9 @@ export default function ExpensesTab() {
     flash("Expense logged");
   };
 
-  const catLabel = (id: string) => catOptions.find((c) => c.key === id)?.label || id;
+  // Falls back for a category deleted on Budget since this transaction was logged — the spend
+  // itself is untouched (and still counted under "Other" on Reconcile), just unlabelled here.
+  const catLabel = (id: string) => catOptions.find((c) => c.key === id)?.label || "Deleted category";
   const quickCats = topCategories(transactions);
   const dateBeforeAnchor = form.date !== "" && periodKeyOf(form.date, profile.pay_anchor) === null;
   const recDateBeforeAnchor = recForm.nextDue !== "" && periodKeyOf(recForm.nextDue, profile.pay_anchor) === null;

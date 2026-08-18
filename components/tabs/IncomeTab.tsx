@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { financialYearStart, isFT, isoFromDate, periodKeyOf, periodLabel } from "@/lib/period";
-import { sumYTD, sumMiscIncomeYTD, buildIncomeProjection, buildFortnightSplit, fortnightCategoryBreakdown, sinkingFundBreakdown, SALARY_SCENARIOS } from "@/lib/derive";
+import { sumYTD, sumMiscIncomeYTD, buildIncomeProjection, buildFortnightSplit, fortnightCategoryBreakdown, sinkingFundBreakdown, creditCardPayoffPeriod, SALARY_SCENARIOS } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
 import { Metric, Field, Collapsible } from "@/components/ui/atoms";
@@ -91,6 +91,9 @@ export default function IncomeTab() {
   const splitCurrentIdx = split.length > 0 ? periods.findIndex((p) => p.key === split[0].key) : -1;
   const categoryBreakdown = fortnightCategoryBreakdown(categories, D, splitCurrentIdx >= 0 ? periods[splitCurrentIdx].year : new Date().getUTCFullYear());
   const sinkingFunds = sinkingFundBreakdown(recurringExpenses);
+  const ccBalance = Number(balances.cc) || 0;
+  const ccPayoffPoint = creditCardPayoffPeriod(split.length >= 26 ? split : buildFortnightSplit(profile, D, categories, balances, recurringExpenses, periods, today, 52));
+  const ccEtaLabel = ccBalance <= 0 ? "nothing owing" : ccPayoffPoint ? ccPayoffPoint.label : "beyond this projection";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -290,7 +293,13 @@ export default function IncomeTab() {
           </div>
         )}
         <div style={{ fontSize: 11, color: MUTE, padding: "10px 18px 14px" }}>
-          Credit card is paid down first from whatever&apos;s left after expenses and set-asides, before the emergency fund or deposit get anything. Feeds the &ldquo;at current rate&rdquo; deposit estimate on <b style={{ color: NAVY }}>Savings</b>.
+          Credit card is paid down first from whatever&apos;s left after expenses and set-asides, before the emergency fund or deposit get anything
+          {ccBalance > 0 && (
+            <>
+              {" "}— at that rate, paid off by <b style={{ color: NAVY }}>{ccEtaLabel}</b>
+            </>
+          )}
+          . Feeds the &ldquo;at current rate&rdquo; deposit estimate and net worth projection on <b style={{ color: NAVY }}>Savings</b>.
         </div>
       </Collapsible>
 

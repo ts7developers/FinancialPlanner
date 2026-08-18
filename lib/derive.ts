@@ -119,10 +119,11 @@ export interface NetWorthPoint {
  * Projects net worth forward from today's real balances (not the plan baseline used by
  * `buildPlanPath`) under a given salary-growth `scenario`. Each period: the package grows per
  * the scenario, net pay is recomputed from that grown package (so tax/HECS withholding scale
- * with it too), surplus tops up the emergency fund then the deposit, shares/super compound at
- * `annualGrowthPct` (super also keeps its usual employer contribution), and HECS reduces by
- * the compulsory repayment on the grown income while indexing at `hecsIndexationPct`. Credit
- * card is held flat — no repayment schedule modelled for it. A rough guide, not advice.
+ * with it too), surplus pays down the credit card before it tops up the emergency fund then the
+ * deposit — same priority order as `buildFortnightSplit`'s fortnight-by-fortnight waterfall, so
+ * the two projections agree — shares/super compound at `annualGrowthPct` (super also keeps its
+ * usual employer contribution), and HECS reduces by the compulsory repayment on the grown income
+ * while indexing at `hecsIndexationPct`. A rough guide, not advice.
  */
 export function buildNetWorthProjection(
   profile: Profile,
@@ -148,7 +149,7 @@ export function buildNetWorthProjection(
   let deposit = Number(balances.anzplus) || 0;
   let shares = Number(balances.shares) || 0;
   let superb = Number(balances.superb) || 0;
-  const cc = Number(balances.cc) || 0;
+  let cc = Number(balances.cc) || 0;
   let hecs = Number(balances.hecs) || 0;
 
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per, i) => {
@@ -157,7 +158,10 @@ export function buildNetWorthProjection(
     const incomeFn = net / FN_PER_YEAR;
     const superFn = (grownPackage - cash) / FN_PER_YEAR;
 
-    const surplus = Math.max(0, incomeFn - D.expFN(per.year)) + extraPerFortnight;
+    let surplus = Math.max(0, incomeFn - D.expFN(per.year)) + extraPerFortnight;
+    const toCC = Math.max(0, Math.min(surplus, cc));
+    surplus -= toCC;
+    cc = Math.max(0, cc - toCC);
     const toEmergency = Math.max(0, Math.min(surplus, emergencyTarget - emergency));
     emergency += toEmergency;
     deposit += surplus - toEmergency;
@@ -275,7 +279,15 @@ export function reconcileCategoryRows(
   // it on Expenses — without this it's invisible everywhere that sums these rows (Reconcile's
   // ledger, the variance report, Overview's plan-vs-actual chart). Only show it once there's
   // actually something logged, so untouched periods don't grow an empty extra line.
-  const otherLogged = loggedForPeriod?.[OTHER_CATEGORY_KEY] || 0;
+  //
+  // Also catches spend logged against a category that's since been deleted on Budget — the
+  // transaction itself is untouched, but without this it silently drops out of every report
+  // that sums these rows (it's still real money spent, just no longer reachable via `categories`).
+  const knownKeys = new Set(categories.map((c) => c.key));
+  const orphanedLogged = Object.entries(loggedForPeriod || {})
+    .filter(([key]) => key !== OTHER_CATEGORY_KEY && !knownKeys.has(key))
+    .reduce((s, [, v]) => s + v, 0);
+  const otherLogged = (loggedForPeriod?.[OTHER_CATEGORY_KEY] || 0) + orphanedLogged;
   const otherManual = overrides[OTHER_CATEGORY_KEY];
   const otherHasManual = otherManual !== undefined && otherManual !== "";
   if (otherLogged > 0 || otherHasManual) {
@@ -478,6 +490,10 @@ export function netPosition(balances: Balances): NetPosition {
 /** Accounts stored as "amount owing" — moving money here pays the balance down, not up. */
 export const LIABILITY_ACCOUNTS = new Set<keyof Omit<Balances, "user_id">>(["cc", "hecs"]);
 
+/** Rounds a balance to the cent — plain float addition/subtraction drifts (e.g. 500.61 + 10
+ * lands on 510.60999999999996), which then persists to the DB and renders as a garbled figure. */
+const roundCents = (n: number) => Math.round(n * 100) / 100;
+
 /**
  * The balance patch for moving `amount` from one tracked account to another — e.g. payday:
  * Everyday -> pay off Credit card, top up Emergency fund / ANZ Plus deposit. Funding a
@@ -491,8 +507,8 @@ export function applyTransfer(
 ): Partial<Omit<Balances, "user_id">> {
   const toDelta = LIABILITY_ACCOUNTS.has(to) ? -amount : amount;
   return {
-    [from]: balances[from] - amount,
-    [to]: balances[to] + toDelta,
+    [from]: roundCents(balances[from] - amount),
+    [to]: roundCents(balances[to] + toDelta),
   };
 }
 
@@ -519,12 +535,12 @@ export function applyExpenseToBalance(
   const key = ACCOUNT_BALANCE_KEY[account as Account];
   if (!key) return null;
   const delta = sign * amount * (LIABILITY_ACCOUNTS.has(key) ? 1 : -1);
-  return { [key]: balances[key] + delta };
+  return { [key]: roundCents(balances[key] + delta) };
 }
 
 /** Balance patch for landing confirmed pay in the everyday account, or reversing it via `sign: -1`. */
 export function applyIncomeToBalance(balances: Balances, amount: number, sign: 1 | -1 = 1): Partial<Omit<Balances, "user_id">> {
-  return { everyday: balances.everyday + sign * amount };
+  return { everyday: roundCents(balances.everyday + sign * amount) };
 }
 
 export interface HoldingPL {
@@ -962,6 +978,16 @@ export function fortnightCategoryBreakdown(categories: BudgetCategoryRow[], D: D
     .slice()
     .sort((a, b) => a.sort - b.sort)
     .map((c) => ({ label: c.label, amount: D.catFN(c.key, year) }));
+}
+
+/**
+ * First point in a `buildFortnightSplit` projection at which the simulated credit-card balance
+ * reaches zero, or null if the debt outlasts the whole projection (either it's simply too big
+ * for the horizon, or nothing's actually left over each pay to put toward it once expenses and
+ * set-asides come out — check `toCreditCard` across the projection to tell the two apart).
+ */
+export function creditCardPayoffPeriod(split: FortnightSplitPoint[]): FortnightSplitPoint | null {
+  return split.find((p) => p.creditCardBalance <= 0) ?? null;
 }
 
 /** Fortnights until `current` reaches `target` at a constant `perPeriod` savings rate — 0 if already there, null if the rate can't get there. */
