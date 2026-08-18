@@ -7,9 +7,9 @@ import Link from "next/link";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { financialYearStart, isFT, isoFromDate, periodKeyOf, periodLabel } from "@/lib/period";
-import { sumYTD, sumMiscIncomeYTD, buildIncomeProjection, buildFortnightSplit, fortnightCategoryBreakdown, SALARY_SCENARIOS } from "@/lib/derive";
+import { sumYTD, sumMiscIncomeYTD, buildIncomeProjection, buildFortnightSplit, fortnightCategoryBreakdown, sinkingFundBreakdown, SALARY_SCENARIOS } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, selStyle } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
 import { Metric, Field, Collapsible } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { IncomeTrendPoint } from "@/components/charts/IncomeTrendChart";
@@ -26,7 +26,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function IncomeTab() {
   const isMobile = useIsMobile();
-  const { profile, payslips, periods, categories, balances, D, miscIncome, addMiscIncome, deleteMiscIncome } = useAppData();
+  const { profile, payslips, periods, categories, balances, D, miscIncome, addMiscIncome, deleteMiscIncome, recurringExpenses } = useAppData();
   const [scenarioId, setScenarioId] = useState("flat");
   const [miscDate, setMiscDate] = useState("");
   const [miscDesc, setMiscDesc] = useState("");
@@ -87,9 +87,10 @@ export default function IncomeTab() {
   const projectedAnnualNet = projection.length > 0 ? (projection.reduce((s, p) => s + p.net, 0) / projection.length) * 26 : 0;
   const ftNotYetStarted = !isFT(today, profile.ft_start);
 
-  const split = buildFortnightSplit(profile, D, categories, balances, periods, today, 10);
+  const split = buildFortnightSplit(profile, D, categories, balances, recurringExpenses, periods, today, 10);
   const splitCurrentIdx = split.length > 0 ? periods.findIndex((p) => p.key === split[0].key) : -1;
   const categoryBreakdown = fortnightCategoryBreakdown(categories, D, splitCurrentIdx >= 0 ? periods[splitCurrentIdx].year : new Date().getUTCFullYear());
+  const sinkingFunds = sinkingFundBreakdown(recurringExpenses);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -209,7 +210,7 @@ export default function IncomeTab() {
       <Collapsible
         title="Fortnight-by-fortnight split"
         icon={SplitSquareHorizontal}
-        subtitle="Where each payslip is planned to go: budgeted categories first, then the emergency fund until it's full, then the house deposit."
+        subtitle="Where each payslip is planned to go: budgeted categories and set-asides first, then the credit card, then the emergency fund until it's full, then the house deposit."
       >
         <div style={{ marginTop: 10 }}>
           {isMobile ? (
@@ -220,8 +221,10 @@ export default function IncomeTab() {
                     <span>{p.label}</span>
                     <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(p.netPay)}</span>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: MUTE, marginTop: 4 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px", fontSize: 11.5, color: MUTE, marginTop: 4 }}>
                     <span>Expenses {AUD(p.categoriesTotal)}</span>
+                    {p.sinkingTotal > 0 && <span>Set-aside {AUD(p.sinkingTotal)}</span>}
+                    {p.toCreditCard > 0 && <span style={{ color: UNFAV }}>→ Credit card {AUD(p.toCreditCard)}</span>}
                     {p.toEmergency > 0 && <span>→ Emergency {AUD(p.toEmergency)}</span>}
                     <span>→ Deposit {AUD(p.toDeposit)}</span>
                   </div>
@@ -229,22 +232,26 @@ export default function IncomeTab() {
               ))}
             </div>
           ) : (
-            <div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 100px 100px 100px 110px", padding: "7px 18px", fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600 }}>
+            <div style={{ overflowX: "auto" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px 100px 90px 90px 100px", padding: "7px 18px", fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600, minWidth: 780 }}>
                 <span>Fortnight</span>
                 <span style={{ textAlign: "right" }}>Net pay</span>
                 <span style={{ textAlign: "right" }}>Expenses</span>
+                <span style={{ textAlign: "right" }}>Set-aside</span>
+                <span style={{ textAlign: "right" }}>→ CC</span>
                 <span style={{ textAlign: "right" }}>→ Emergency</span>
                 <span style={{ textAlign: "right" }}>→ Deposit</span>
                 <span style={{ textAlign: "right" }}>Deposit bal.</span>
               </div>
               {split.map((p) => (
-                <div key={p.key} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "1fr 100px 100px 100px 100px 110px", alignItems: "center", padding: "8px 18px", borderTop: `1px solid ${LINE}`, fontSize: 13 }}>
+                <div key={p.key} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px 100px 90px 90px 100px", alignItems: "center", padding: "8px 18px", borderTop: `1px solid ${LINE}`, fontSize: 13, minWidth: 780 }}>
                   <span>
                     {p.label} <span style={{ color: "#C7C2B4", fontSize: 11 }}>{p.isFT ? "FT" : "PT"}</span>
                   </span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{AUD(p.netPay)}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: MUTE }}>{AUD(p.categoriesTotal)}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.sinkingTotal > 0 ? MUTE : "#C7C2B4" }}>{p.sinkingTotal > 0 ? AUD(p.sinkingTotal) : "—"}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toCreditCard > 0 ? UNFAV : "#C7C2B4", fontWeight: p.toCreditCard > 0 ? 500 : 400 }}>{p.toCreditCard > 0 ? AUD(p.toCreditCard) : "—"}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toEmergency > 0 ? FAV : "#C7C2B4" }}>{p.toEmergency > 0 ? AUD(p.toEmergency) : "—"}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: FAV, fontWeight: 500 }}>{AUD(p.toDeposit)}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{AUD(p.depositBalance)}</span>
@@ -265,8 +272,25 @@ export default function IncomeTab() {
               ))}
           </div>
         </div>
+        {sinkingFunds.length > 0 && (
+          <div style={{ padding: "14px 18px", borderTop: `1px solid ${LINE}` }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>
+              Set aside per pay for yearly/irregular bills ({AUD(sinkingFunds.reduce((s, c) => s + c.perFortnight, 0))} total)
+            </div>
+            <div style={{ fontSize: 11, color: MUTE, marginBottom: 8 }}>
+              Rego, insurance and other recurring expenses outside the monthly budget — set this aside each pay (e.g. in a separate ANZ Plus sub-account) so the lump sum is ready when it&apos;s due.
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px" }}>
+              {sinkingFunds.map((s) => (
+                <span key={s.label} style={{ fontSize: 12, color: MUTE }}>
+                  {s.label} <span style={{ color: "#C7C2B4" }}>({s.frequency})</span> <b style={{ color: NAVY }}>{AUD(s.perFortnight, 2)}/fn</b>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ fontSize: 11, color: MUTE, padding: "10px 18px 14px" }}>
-          Feeds the &ldquo;at current rate&rdquo; deposit estimate on <b style={{ color: NAVY }}>Savings</b>.
+          Credit card is paid down first from whatever&apos;s left after expenses and set-asides, before the emergency fund or deposit get anything. Feeds the &ldquo;at current rate&rdquo; deposit estimate on <b style={{ color: NAVY }}>Savings</b>.
         </div>
       </Collapsible>
 

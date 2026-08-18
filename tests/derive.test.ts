@@ -24,6 +24,7 @@ import {
   daysUntil,
   buildFortnightSplit,
   fortnightCategoryBreakdown,
+  sinkingFundBreakdown,
   periodsToTarget,
   buildIncomeProjection,
   buildVarianceReport,
@@ -521,25 +522,55 @@ describe("buildFortnightSplit", () => {
   const periods = buildPeriods(profile.pay_anchor);
   const D = deriveFinancials(profile, categories);
 
-  it("routes surplus to the emergency fund first, up to its target, starting from real balances", () => {
-    const split = buildFortnightSplit(profile, D, categories, balances, periods, profile.pay_anchor, 3);
+  it("pays down the credit card before the emergency fund, starting from real balances", () => {
+    const split = buildFortnightSplit(profile, D, categories, balances, [], periods, profile.pay_anchor, 3);
     expect(split).toHaveLength(3);
     const first = split[0];
     expect(first.categoriesTotal).toBeCloseTo(D.expFN(periods[0].year), 5);
     const surplus = first.netPay - first.categoriesTotal;
-    expect(first.toEmergency).toBeCloseTo(Math.min(surplus, (profile.emergency_target || 0) - balances.emergency), 5);
+    const toCC = Math.min(surplus, balances.cc);
+    expect(first.toCreditCard).toBeCloseTo(toCC, 5);
+    const afterCC = surplus - toCC;
+    expect(first.toEmergency).toBeCloseTo(Math.min(afterCC, (profile.emergency_target || 0) - balances.emergency), 5);
   });
 
   it("stops topping up the emergency fund once it's already at its target", () => {
-    const fullEmergency = { ...balances, emergency: profile.emergency_target };
-    const split = buildFortnightSplit(profile, D, categories, fullEmergency, periods, profile.pay_anchor, 1);
+    const fullEmergency = { ...balances, emergency: profile.emergency_target, cc: 0 };
+    const split = buildFortnightSplit(profile, D, categories, fullEmergency, [], periods, profile.pay_anchor, 1);
     expect(split[0].toEmergency).toBe(0);
     expect(split[0].toDeposit).toBeCloseTo(split[0].netPay - split[0].categoriesTotal, 5);
   });
 
   it("accumulates the running deposit balance period over period", () => {
-    const split = buildFortnightSplit(profile, D, categories, balances, periods, profile.pay_anchor, 2);
+    const split = buildFortnightSplit(profile, D, categories, balances, [], periods, profile.pay_anchor, 2);
     expect(split[1].depositBalance).toBe(Math.round(balances.anzplus + split[0].toDeposit + split[1].toDeposit));
+  });
+
+  it("deducts the sinking-fund set-aside for active recurring expenses before computing surplus", () => {
+    const recurring = [
+      { id: "1", user_id: "u", description: "Car rego", amount: 780, category_key: "other", account: "ANZ Plus", frequency: "yearly" as const, next_due: "2027-01-01", active: true, created_at: "" },
+    ];
+    const noCCFullEmergency = { ...balances, cc: 0, emergency: profile.emergency_target };
+    const withSinking = buildFortnightSplit(profile, D, categories, noCCFullEmergency, recurring, periods, profile.pay_anchor, 1);
+    const without = buildFortnightSplit(profile, D, categories, noCCFullEmergency, [], periods, profile.pay_anchor, 1);
+    expect(withSinking[0].sinkingTotal).toBeCloseTo(780 / 26, 5);
+    expect(withSinking[0].toDeposit).toBeCloseTo(without[0].toDeposit - 780 / 26, 5);
+  });
+});
+
+describe("sinkingFundBreakdown", () => {
+  it("converts each active recurring expense to a per-fortnight equivalent, biggest first", () => {
+    const recurring = [
+      { id: "1", user_id: "u", description: "Rego", amount: 780, category_key: "other", account: "ANZ Plus", frequency: "yearly" as const, next_due: "2027-01-01", active: true, created_at: "" },
+      { id: "2", user_id: "u", description: "Netflix", amount: 20, category_key: "other", account: "Everyday", frequency: "monthly" as const, next_due: "2026-09-01", active: true, created_at: "" },
+      { id: "3", user_id: "u", description: "Paused thing", amount: 500, category_key: "other", account: "Everyday", frequency: "yearly" as const, next_due: "2027-01-01", active: false, created_at: "" },
+    ];
+    const rows = sinkingFundBreakdown(recurring);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].label).toBe("Rego");
+    expect(rows[0].perFortnight).toBeCloseTo(780 / 26, 5);
+    expect(rows[1].label).toBe("Netflix");
+    expect(rows[1].perFortnight).toBeCloseTo((20 * 12) / 26, 5);
   });
 });
 

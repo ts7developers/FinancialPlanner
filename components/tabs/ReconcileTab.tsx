@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, FileBarChart, Wand2, TrendingDown, TrendingUp } from "lucide-react";
+import { Check, FileBarChart, Wand2, TrendingDown, TrendingUp, RotateCcw } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { currentPeriod, financialYearStart, isFT, isoFromDate, periodLabel } from "@/lib/period";
@@ -94,6 +94,14 @@ export default function ReconcileTab() {
     flash("Autofilled from Expenses");
   };
 
+  const resetReconciliation = () => {
+    if (!window.confirm(`Clear the reconciliation for ${periodLabel(perObj)}? This removes the actual income and every manual override for this fortnight — logged transactions on Expenses are untouched, so any auto-filled rows will come straight back.`)) return;
+    setIncomeInput("");
+    setOverridesInput({});
+    setReconciliation(period, { actual_income: null, actual_overrides: {} });
+    flash("Reconciliation cleared");
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -138,6 +146,28 @@ export default function ReconcileTab() {
           <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#2E7D5B", fontWeight: 600 }}>
             <Check size={14} /> Reconciled
           </span>
+        )}
+        {summary.anyActual && (
+          <button
+            onClick={resetReconciliation}
+            title="Clear the actual income and all manual overrides for this fortnight"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "transparent",
+              color: UNFAV,
+              border: `1px solid ${UNFAV}`,
+              borderRadius: 8,
+              padding: "6px 12px",
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "var(--font-space-grotesk), sans-serif",
+            }}
+          >
+            <RotateCcw size={13} /> Reset fortnight
+          </button>
         )}
         {flashMsg && <span style={{ fontSize: 12, color: GOLD, fontWeight: 600 }}>{flashMsg}</span>}
       </div>

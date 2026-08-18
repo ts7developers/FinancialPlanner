@@ -7,7 +7,7 @@ import { netFromPackage, hecsCompulsoryRepayment, incomeTaxAU, litoAU, FN_PER_YE
 import { OTHER_CATEGORY_KEY } from "./categories";
 export { hecsCompulsoryRepayment } from "./tax";
 import type { Account } from "./theme";
-import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot, RecurringFrequency, MiscIncome } from "./types";
+import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot, RecurringFrequency, RecurringExpense, MiscIncome } from "./types";
 
 export interface DerivedFinancials {
   netFTfn: number;
@@ -852,17 +852,60 @@ export interface FortnightSplitPoint {
   isFT: boolean;
   netPay: number;
   categoriesTotal: number;
+  sinkingTotal: number;
+  toCreditCard: number;
   toEmergency: number;
   toDeposit: number;
   emergencyBalance: number;
   depositBalance: number;
+  creditCardBalance: number;
+}
+
+/** How many times a year a recurring expense of this frequency falls due. */
+const RECURRING_OCCURRENCES_PER_YEAR: Record<RecurringFrequency, number> = {
+  weekly: 52,
+  fortnightly: 26,
+  monthly: 12,
+  quarterly: 4,
+  yearly: 1,
+};
+
+/** Converts a recurring expense's amount+frequency to its per-fortnight equivalent set-aside rate. */
+export function recurringPerFortnight(amount: number, frequency: RecurringFrequency): number {
+  return (amount * RECURRING_OCCURRENCES_PER_YEAR[frequency]) / FN_PER_YEAR;
+}
+
+export interface SinkingFundItem {
+  label: string;
+  amount: number;
+  frequency: RecurringFrequency;
+  perFortnight: number;
+}
+
+/**
+ * Active recurring expenses (rego, insurance, subscriptions, etc) sit outside the monthly
+ * budget categories entirely — nothing in `D.expFN` accounts for them. This is what should be
+ * set aside each pay so the lump sum is there when they're actually due, biggest first.
+ */
+export function sinkingFundBreakdown(recurringExpenses: RecurringExpense[]): SinkingFundItem[] {
+  return recurringExpenses
+    .filter((r) => r.active)
+    .map((r) => ({ label: r.description, amount: r.amount, frequency: r.frequency, perFortnight: recurringPerFortnight(r.amount, r.frequency) }))
+    .sort((a, b) => b.perFortnight - a.perFortnight);
+}
+
+/** Total per-fortnight set-aside across all active recurring expenses — see `sinkingFundBreakdown`. */
+export function sinkingFundTotal(recurringExpenses: RecurringExpense[]): number {
+  return sinkingFundBreakdown(recurringExpenses).reduce((s, i) => s + i.perFortnight, 0);
 }
 
 /**
  * Walks forward from today's real balances, one pay period at a time, showing exactly where
- * each fortnight's pay is planned to go: budgeted categories first, then whatever's left tops
- * up the emergency fund (until its target), then the rest goes to the house deposit. Same
- * waterfall `buildPlanPath`/`buildNetWorthProjection` use, just surfaced per-period instead of
+ * each fortnight's pay is planned to go: budgeted categories first, then a set-aside for
+ * recurring non-fortnightly bills (rego, insurance — see `sinkingFundBreakdown`), then whatever
+ * surplus remains pays down the credit card balance before it tops up the emergency fund (until
+ * its target) and finally the house deposit. Same waterfall `buildPlanPath`/`buildNetWorthProjection`
+ * use, extended with the credit-card and sinking-fund steps and surfaced per-period instead of
  * collapsed into a single running total.
  */
 export function buildFortnightSplit(
@@ -870,19 +913,25 @@ export function buildFortnightSplit(
   D: DerivedFinancials,
   categories: BudgetCategoryRow[],
   balances: Balances,
+  recurringExpenses: RecurringExpense[],
   periods: Period[],
   todayISO: string,
   horizonPeriods = 10
 ): FortnightSplitPoint[] {
   const startIdx = currentPeriod(periods, todayISO).idx;
   const emergencyTarget = Number(profile.emergency_target) || 0;
+  const sinkingTotal = sinkingFundTotal(recurringExpenses);
   let emergency = Number(balances.emergency) || 0;
   let deposit = Number(balances.anzplus) || 0;
+  let cc = Number(balances.cc) || 0;
 
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per) => {
     const netPay = plannedIncomeFN(per, profile, D);
     const categoriesTotal = D.expFN(per.year);
-    const surplus = Math.max(0, netPay - categoriesTotal);
+    let surplus = Math.max(0, netPay - categoriesTotal - sinkingTotal);
+    const toCreditCard = Math.max(0, Math.min(surplus, cc));
+    surplus -= toCreditCard;
+    cc = Math.max(0, cc - toCreditCard);
     const toEmergency = Math.max(0, Math.min(surplus, emergencyTarget - emergency));
     const toDeposit = surplus - toEmergency;
     emergency += toEmergency;
@@ -893,10 +942,13 @@ export function buildFortnightSplit(
       isFT: isFT(per.key, profile.ft_start),
       netPay,
       categoriesTotal,
+      sinkingTotal,
+      toCreditCard,
       toEmergency,
       toDeposit,
       emergencyBalance: Math.round(emergency),
       depositBalance: Math.round(deposit),
+      creditCardBalance: Math.round(cc),
     };
   });
 }
