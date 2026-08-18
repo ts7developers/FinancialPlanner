@@ -487,6 +487,72 @@ export function buildVarianceInsights(
   return insights.sort((a, b) => b.streakLength - a.streakLength);
 }
 
+export interface AdaptiveCategoryRate {
+  id: string;
+  label: string;
+  planRate: number;
+  effectiveRate: number;
+  adaptive: boolean; // true when effectiveRate differs from planRate (a streak was found)
+  streakLength: number;
+}
+
+/**
+ * Per-category $/fortnight to use in forward projections: the planned Budget-tab amount, unless
+ * that category is on a current 3+ fortnight streak of consistently running over or under that
+ * plan (the exact same streak `buildVarianceInsights` flags on Reconcile) — in which case use the
+ * average actual spend from that streak instead, so projections react to real recent behavior
+ * rather than a plan that's evidently stopped matching reality. Only applies to `year` (normally
+ * the current year); other years fall back to the plan since there's no actual data for them yet.
+ */
+export function adaptiveCategoryRates(
+  categories: BudgetCategoryRow[],
+  D: DerivedFinancials,
+  year: number,
+  periods: Period[],
+  loggedByCat: Record<string, Record<string, number>>,
+  reconciliations: Record<string, Reconciliation>,
+  minStreak = 3
+): AdaptiveCategoryRate[] {
+  const history = new Map<string, { actual: number; overBudget: boolean }[]>();
+  categories.forEach((c) => history.set(c.key, []));
+
+  periods.forEach((per) => {
+    const rec = reconciliations[per.key];
+    const catRows = reconcileCategoryRows(categories, D, per.year, loggedByCat[per.key], rec?.actual_overrides ?? {});
+    catRows.forEach((r) => {
+      if (r.actual === null) return;
+      history.get(r.id)?.push({ actual: r.actual, overBudget: r.actual > r.plan });
+    });
+  });
+
+  return categories.map((c) => {
+    const planRate = D.catFN(c.key, year);
+    const flags = history.get(c.key) ?? [];
+    if (flags.length === 0) return { id: c.key, label: c.label, planRate, effectiveRate: planRate, adaptive: false, streakLength: 0 };
+    const last = flags[flags.length - 1].overBudget;
+    let streak = 1;
+    for (let i = flags.length - 2; i >= 0 && flags[i].overBudget === last; i--) streak++;
+    if (streak < minStreak) return { id: c.key, label: c.label, planRate, effectiveRate: planRate, adaptive: false, streakLength: streak };
+    const streakSlice = flags.slice(flags.length - streak);
+    const effectiveRate = streakSlice.reduce((s, f) => s + f.actual, 0) / streakSlice.length;
+    return { id: c.key, label: c.label, planRate, effectiveRate, adaptive: true, streakLength: streak };
+  });
+}
+
+/** Total per-fortnight expense rate across every category's adaptive (or planned) rate — see `adaptiveCategoryRates`. */
+export function adaptiveExpenseTotal(rates: AdaptiveCategoryRate[]): number {
+  return rates.reduce((s, r) => s + r.effectiveRate, 0);
+}
+
+/**
+ * Wraps `D` so its `expFN` returns `adaptiveTotal` for `year` (leaving every other year and every
+ * other field untouched) — lets `buildFortnightSplit`/`buildNetWorthProjection` react to real
+ * recent spending without changing their signatures or the editable Budget-tab plan itself.
+ */
+export function withAdaptiveExpenses(D: DerivedFinancials, year: number, adaptiveTotal: number): DerivedFinancials {
+  return { ...D, expFN: (y: number) => (y === year ? adaptiveTotal : D.expFN(y)) };
+}
+
 export interface NetPosition {
   assets: number;
   liabilities: number;

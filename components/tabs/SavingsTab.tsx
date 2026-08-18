@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { TrendingUp, Sparkles, Home, CreditCard, Target, ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { isoFromDate } from "@/lib/period";
+import { currentPeriod, isoFromDate } from "@/lib/period";
 import {
   buildNetWorthProjection,
   netWorthPositiveAt,
@@ -14,6 +14,9 @@ import {
   buildFortnightSplit,
   periodsToTarget,
   creditCardPayoffPeriod,
+  adaptiveCategoryRates,
+  adaptiveExpenseTotal,
+  withAdaptiveExpenses,
   DEFAULT_FHSS_DEEMED_RATE,
 } from "@/lib/derive";
 import { AUD } from "@/lib/money";
@@ -28,7 +31,7 @@ const HORIZON_PERIODS = 78; // roughly 3 years of fortnights
 
 export default function SavingsTab() {
   const isMobile = useIsMobile();
-  const { profile, balances, periods, categories, superContributions, recurringExpenses, goals, addGoal, updateGoal, deleteGoal, D } = useAppData();
+  const { profile, balances, periods, categories, superContributions, recurringExpenses, goals, addGoal, updateGoal, deleteGoal, loggedByCat, reconciliations, D } = useAppData();
   const [newGoalLabel, setNewGoalLabel] = useState("");
   const [newGoalTarget, setNewGoalTarget] = useState("");
   const [goalBusy, setGoalBusy] = useState(false);
@@ -44,10 +47,14 @@ export default function SavingsTab() {
 
   const today = isoFromDate(new Date());
   const goalsBalanceTotal = goals.reduce((s, g) => s + (Number(g.current_amount) || 0), 0);
-  const points = buildNetWorthProjection(profile, D, balances, goals, periods, today, Number(growthPct) || 0, Number(extraFn) || 0, scenario, Number(hecsIndexPct) || 0, HORIZON_PERIODS);
+  const currentYear = currentPeriod(periods, today).year;
+  const adaptiveRates = adaptiveCategoryRates(categories, D, currentYear, periods, loggedByCat, reconciliations, 3);
+  const adaptiveCategories = adaptiveRates.filter((r) => r.adaptive);
+  const adaptiveD = withAdaptiveExpenses(D, currentYear, adaptiveExpenseTotal(adaptiveRates));
+  const points = buildNetWorthProjection(profile, adaptiveD, balances, goals, periods, today, Number(growthPct) || 0, Number(extraFn) || 0, scenario, Number(hecsIndexPct) || 0, HORIZON_PERIODS);
   const comparisonPoints = buildNetWorthProjection(
     profile,
-    D,
+    adaptiveD,
     balances,
     goals,
     periods,
@@ -84,7 +91,7 @@ export default function SavingsTab() {
   const depositTarget = D.dep5;
   const depositRemaining = Math.max(0, depositTarget - combinedDeposit);
 
-  const split = buildFortnightSplit(profile, D, categories, balances, recurringExpenses, goals, periods, today, 10);
+  const split = buildFortnightSplit(profile, adaptiveD, categories, balances, recurringExpenses, goals, periods, today, 10);
   const avgToDeposit = split.length > 0 ? split.reduce((s, p) => s + p.toDeposit, 0) / split.length : 0;
   const etaPeriods = periodsToTarget(combinedDeposit, depositTarget, avgToDeposit);
   const currentIdx = split.length > 0 ? periods.findIndex((p) => p.key === split[0].key) : -1;
@@ -100,7 +107,7 @@ export default function SavingsTab() {
   const ccBalance = Number(balances.cc) || 0;
   // Long horizon just for this ETA (a slow payoff can take a while) — separate from `split`,
   // which stays short since it also drives the averages above.
-  const ccProjection = buildFortnightSplit(profile, D, categories, balances, recurringExpenses, goals, periods, today, 52);
+  const ccProjection = buildFortnightSplit(profile, adaptiveD, categories, balances, recurringExpenses, goals, periods, today, 52);
   const ccPayoffPoint = creditCardPayoffPeriod(ccProjection);
   const ccStuck = ccBalance > 0 && !ccPayoffPoint && ccProjection.every((p) => p.toCreditCard === 0);
   const ccEtaLabel = ccBalance <= 0 ? "nothing owing" : ccPayoffPoint ? ccPayoffPoint.label : ccStuck ? "no surplus to put toward it" : `beyond ${ccProjection.length} fortnights`;
@@ -301,6 +308,25 @@ export default function SavingsTab() {
           fund is topped up.
         </div>
       </div>
+
+      {adaptiveCategories.length > 0 && (
+        <div style={{ background: "#FBEDE9", border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: "#8A3320" }}>
+            This projection uses recent actuals, not the Budget plan, for {adaptiveCategories.length} categor{adaptiveCategories.length === 1 ? "y" : "ies"}
+          </div>
+          <div style={{ fontSize: 11.5, color: "#8A3320", marginBottom: 8, lineHeight: 1.5 }}>
+            3+ fortnights running consistently over or under plan (same streak flagged on <b>Reconcile</b>) — the net worth
+            projection below reacts to that instead of assuming the old plan number forever.
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px" }}>
+            {adaptiveCategories.map((r) => (
+              <span key={r.id} style={{ fontSize: 12, color: "#8A3320" }}>
+                {r.label} <span style={{ color: "#B87A69" }}>plan {AUD(r.planRate)}</span> → <b>{AUD(r.effectiveRate)}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12 }}>

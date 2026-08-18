@@ -27,6 +27,9 @@ import {
   sinkingFundBreakdown,
   creditCardPayoffPeriod,
   sortGoalsByPriority,
+  adaptiveCategoryRates,
+  adaptiveExpenseTotal,
+  withAdaptiveExpenses,
   periodsToTarget,
   buildIncomeProjection,
   buildVarianceReport,
@@ -822,6 +825,45 @@ describe("buildVarianceInsights", () => {
     const insights = buildVarianceInsights(categories, D, periods, loggedByCat, {}, 2);
     expect(insights).toHaveLength(1);
     expect(insights[0].streakLength).toBe(2);
+  });
+});
+
+describe("adaptiveCategoryRates / adaptiveExpenseTotal / withAdaptiveExpenses", () => {
+  const periods = buildPeriods(profile.pay_anchor);
+  const D = deriveFinancials(profile, categories);
+  const plan = D.catFN("groceries", periods[0].year);
+
+  it("falls back to the plan rate when there's no streak", () => {
+    const loggedByCat = { [periods[0].key]: { groceries: plan + 100 } };
+    const rates = adaptiveCategoryRates(categories, D, periods[0].year, periods, loggedByCat, {});
+    const groceries = rates.find((r) => r.id === "groceries")!;
+    expect(groceries.adaptive).toBe(false);
+    expect(groceries.effectiveRate).toBeCloseTo(plan, 5);
+  });
+
+  it("switches to the streak's average actual once a 3+ fortnight streak is running", () => {
+    const loggedByCat = {
+      [periods[0].key]: { groceries: plan + 80 },
+      [periods[1].key]: { groceries: plan + 100 },
+      [periods[2].key]: { groceries: plan + 120 },
+    };
+    const rates = adaptiveCategoryRates(categories, D, periods[0].year, periods, loggedByCat, {});
+    const groceries = rates.find((r) => r.id === "groceries")!;
+    expect(groceries.adaptive).toBe(true);
+    expect(groceries.streakLength).toBe(3);
+    expect(groceries.effectiveRate).toBeCloseTo(plan + 100, 5); // average of +80/+100/+120
+  });
+
+  it("sums every category's effective rate", () => {
+    const rates = adaptiveCategoryRates(categories, D, periods[0].year, periods, {}, {});
+    expect(adaptiveExpenseTotal(rates)).toBeCloseTo(D.expFN(periods[0].year), 5);
+  });
+
+  it("only overrides expFN for the given year, leaving other years and the rest of D untouched", () => {
+    const adaptiveD = withAdaptiveExpenses(D, periods[0].year, 999);
+    expect(adaptiveD.expFN(periods[0].year)).toBe(999);
+    expect(adaptiveD.expFN(periods[0].year + 1)).toBeCloseTo(D.expFN(periods[0].year + 1), 5);
+    expect(adaptiveD.netFTfn).toBe(D.netFTfn);
   });
 });
 

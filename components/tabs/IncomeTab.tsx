@@ -6,8 +6,20 @@ import { Wallet, Landmark, PiggyBank, TrendingUp, Receipt, Sparkles, SplitSquare
 import Link from "next/link";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { financialYearStart, isFT, isoFromDate, periodKeyOf, periodLabel } from "@/lib/period";
-import { sumYTD, sumMiscIncomeYTD, buildIncomeProjection, buildFortnightSplit, fortnightCategoryBreakdown, sinkingFundBreakdown, creditCardPayoffPeriod, SALARY_SCENARIOS } from "@/lib/derive";
+import { currentPeriod, financialYearStart, isFT, isoFromDate, periodKeyOf, periodLabel } from "@/lib/period";
+import {
+  sumYTD,
+  sumMiscIncomeYTD,
+  buildIncomeProjection,
+  buildFortnightSplit,
+  fortnightCategoryBreakdown,
+  sinkingFundBreakdown,
+  creditCardPayoffPeriod,
+  adaptiveCategoryRates,
+  adaptiveExpenseTotal,
+  withAdaptiveExpenses,
+  SALARY_SCENARIOS,
+} from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
 import { Metric, Field, Collapsible } from "@/components/ui/atoms";
@@ -26,7 +38,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function IncomeTab() {
   const isMobile = useIsMobile();
-  const { profile, payslips, periods, categories, balances, D, miscIncome, addMiscIncome, deleteMiscIncome, recurringExpenses, goals } = useAppData();
+  const { profile, payslips, periods, categories, balances, D, miscIncome, addMiscIncome, deleteMiscIncome, recurringExpenses, goals, loggedByCat, reconciliations } = useAppData();
   const [scenarioId, setScenarioId] = useState("flat");
   const [miscDate, setMiscDate] = useState("");
   const [miscDesc, setMiscDesc] = useState("");
@@ -87,12 +99,17 @@ export default function IncomeTab() {
   const projectedAnnualNet = projection.length > 0 ? (projection.reduce((s, p) => s + p.net, 0) / projection.length) * 26 : 0;
   const ftNotYetStarted = !isFT(today, profile.ft_start);
 
-  const split = buildFortnightSplit(profile, D, categories, balances, recurringExpenses, goals, periods, today, 10);
+  const currentYear = currentPeriod(periods, today).year;
+  const adaptiveRates = adaptiveCategoryRates(categories, D, currentYear, periods, loggedByCat, reconciliations, 3);
+  const adaptiveCategories = adaptiveRates.filter((r) => r.adaptive);
+  const adaptiveD = withAdaptiveExpenses(D, currentYear, adaptiveExpenseTotal(adaptiveRates));
+
+  const split = buildFortnightSplit(profile, adaptiveD, categories, balances, recurringExpenses, goals, periods, today, 10);
   const splitCurrentIdx = split.length > 0 ? periods.findIndex((p) => p.key === split[0].key) : -1;
   const categoryBreakdown = fortnightCategoryBreakdown(categories, D, splitCurrentIdx >= 0 ? periods[splitCurrentIdx].year : new Date().getUTCFullYear());
   const sinkingFunds = sinkingFundBreakdown(recurringExpenses);
   const ccBalance = Number(balances.cc) || 0;
-  const ccPayoffPoint = creditCardPayoffPeriod(buildFortnightSplit(profile, D, categories, balances, recurringExpenses, goals, periods, today, 52));
+  const ccPayoffPoint = creditCardPayoffPeriod(buildFortnightSplit(profile, adaptiveD, categories, balances, recurringExpenses, goals, periods, today, 52));
   const ccEtaLabel = ccBalance <= 0 ? "nothing owing" : ccPayoffPoint ? ccPayoffPoint.label : "beyond this projection";
 
   return (
@@ -278,6 +295,25 @@ export default function IncomeTab() {
               ))}
           </div>
         </div>
+        {adaptiveCategories.length > 0 && (
+          <div style={{ padding: "14px 18px", borderTop: `1px solid ${LINE}`, background: "#FBEDE9" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4, color: "#8A3320" }}>
+              Using recent actuals instead of the Budget plan for {adaptiveCategories.length} categor{adaptiveCategories.length === 1 ? "y" : "ies"}
+            </div>
+            <div style={{ fontSize: 11, color: "#8A3320", marginBottom: 8, lineHeight: 1.5 }}>
+              These have run consistently over or under budget for 3+ fortnights running (same pattern flagged on <b>Reconcile</b>) — the
+              waterfall above uses their recent average instead of the plan, so it reflects what&apos;s actually happening rather than a
+              number that&apos;s stopped matching reality. Edit the plan on <b>Budget</b> once you&apos;re confident it&apos;s the new normal.
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px" }}>
+              {adaptiveCategories.map((r) => (
+                <span key={r.id} style={{ fontSize: 12, color: "#8A3320" }}>
+                  {r.label} <span style={{ color: "#B87A69" }}>plan {AUD(r.planRate)}</span> → <b>{AUD(r.effectiveRate)}</b>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         {sinkingFunds.length > 0 && (
           <div style={{ padding: "14px 18px", borderTop: `1px solid ${LINE}` }}>
             <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>
