@@ -31,6 +31,7 @@ import type {
   RecurringExpense,
   RecurringFrequency,
   MiscIncome,
+  Goal,
 } from "@/lib/types";
 import type { PayslipExtraction } from "@/lib/payslipSchema";
 
@@ -56,6 +57,7 @@ interface AppDataContextValue {
   superContributions: SuperContribution[];
   recurringExpenses: RecurringExpense[];
   miscIncome: MiscIncome[];
+  goals: Goal[];
   periods: Period[];
   D: DerivedFinancials;
   planPath: PlanPathPoint[];
@@ -116,6 +118,10 @@ interface AppDataContextValue {
   /** One-off income (tax refund, gift, side gig, etc) — lands in Everyday immediately and adds to that fortnight's actual income on Reconcile. */
   addMiscIncome: (date: string, description: string, amount: number) => Promise<void>;
   deleteMiscIncome: (id: string) => Promise<void>;
+  /** A custom savings goal beyond the emergency fund and house deposit — see the `Goal` type. */
+  addGoal: (label: string, targetAmount: number, priority?: number) => Promise<void>;
+  updateGoal: (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority">>) => Promise<void>;
+  deleteGoal: (id: string) => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -140,6 +146,7 @@ export function AppDataProvider({
   initialSuperContributions,
   initialRecurringExpenses,
   initialMiscIncome,
+  initialGoals,
   children,
 }: {
   initialProfile: Profile;
@@ -155,6 +162,7 @@ export function AppDataProvider({
   initialSuperContributions: SuperContribution[];
   initialRecurringExpenses: RecurringExpense[];
   initialMiscIncome: MiscIncome[];
+  initialGoals: Goal[];
   children: React.ReactNode;
 }) {
   const supabase = useMemo(() => createClient(), []);
@@ -173,6 +181,7 @@ export function AppDataProvider({
   const [superContributions, setSuperContributions] = useState(initialSuperContributions);
   const [recurringExpenses, setRecurringExpenses] = useState(initialRecurringExpenses);
   const [miscIncome, setMiscIncome] = useState(initialMiscIncome);
+  const [goals, setGoals] = useState(initialGoals);
 
   const periods = useMemo(() => buildPeriods(profile.pay_anchor), [profile.pay_anchor]);
   const D = useMemo(() => deriveFinancials(profile, categories), [profile, categories]);
@@ -394,6 +403,40 @@ export function AppDataProvider({
       }
     },
     [supabase, miscIncome, balances, updateBalances, payslips, profile.pay_anchor, setReconciliation]
+  );
+
+  const addGoal = useCallback(
+    async (label: string, targetAmount: number, priority?: number) => {
+      const trimmed = label.trim();
+      if (!trimmed || !(targetAmount > 0)) return;
+      const nextPriority = priority ?? (goals.length > 0 ? Math.max(...goals.map((g) => g.priority)) + 1 : 0);
+      const { data, error } = await supabase
+        .from("goals")
+        .insert({ user_id: profile.user_id, label: trimmed, target_amount: targetAmount, priority: nextPriority })
+        .select()
+        .single();
+      if (error) throw error;
+      setGoals((gs) => [...gs, data as Goal].sort((a, b) => a.priority - b.priority));
+    },
+    [supabase, profile.user_id, goals]
+  );
+
+  const updateGoal = useCallback(
+    async (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority">>) => {
+      setGoals((gs) => gs.map((g) => (g.id === id ? { ...g, ...patch } : g)).sort((a, b) => a.priority - b.priority));
+      const { error } = await supabase.from("goals").update(patch).eq("id", id);
+      if (error) throw error;
+    },
+    [supabase]
+  );
+
+  const deleteGoal = useCallback(
+    async (id: string) => {
+      setGoals((gs) => gs.filter((g) => g.id !== id));
+      const { error } = await supabase.from("goals").delete().eq("id", id);
+      if (error) throw error;
+    },
+    [supabase]
   );
 
   const addTransfer = useCallback(
@@ -631,6 +674,7 @@ export function AppDataProvider({
     superContributions,
     recurringExpenses,
     miscIncome,
+    goals,
     periods,
     D,
     planPath,
@@ -662,6 +706,9 @@ export function AppDataProvider({
     logRecurringExpense,
     addMiscIncome,
     deleteMiscIncome,
+    addGoal,
+    updateGoal,
+    deleteGoal,
   };
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

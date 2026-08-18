@@ -28,6 +28,7 @@ export default function AccountsTab() {
     transfers,
     holdings,
     holdingLots,
+    goals,
     updateBalances,
     takeSnapshot,
     addTransfer,
@@ -148,7 +149,8 @@ export default function AccountsTab() {
   const totalPL = holdingPLs.reduce((s, { pl }) => s + (pl.unrealizedPL ?? 0), 0);
   const anyPL = holdingPLs.some(({ pl }) => pl.unrealizedPL != null);
 
-  const { assets, liabilities, net } = netPosition(balances);
+  const goalsBalanceTotal = goals.reduce((s, g) => s + (Number(g.current_amount) || 0), 0);
+  const { assets, liabilities, net } = netPosition(balances, goalsBalanceTotal);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>

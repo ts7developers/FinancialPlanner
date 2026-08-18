@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import { TrendingUp, Sparkles, Home, CreditCard } from "lucide-react";
+import { TrendingUp, Sparkles, Home, CreditCard, Target, ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { isoFromDate } from "@/lib/period";
@@ -17,7 +17,7 @@ import {
   DEFAULT_FHSS_DEEMED_RATE,
 } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, INK, selStyle } from "@/lib/theme";
 import { Metric, Field, Progress } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { NetWorthChartRow } from "@/components/charts/NetWorthChart";
@@ -28,7 +28,11 @@ const HORIZON_PERIODS = 78; // roughly 3 years of fortnights
 
 export default function SavingsTab() {
   const isMobile = useIsMobile();
-  const { profile, balances, periods, categories, superContributions, recurringExpenses, D } = useAppData();
+  const { profile, balances, periods, categories, superContributions, recurringExpenses, goals, addGoal, updateGoal, deleteGoal, D } = useAppData();
+  const [newGoalLabel, setNewGoalLabel] = useState("");
+  const [newGoalTarget, setNewGoalTarget] = useState("");
+  const [goalBusy, setGoalBusy] = useState(false);
+  const [goalAmountInputs, setGoalAmountInputs] = useState<Record<string, string>>({});
   const [growthPct, setGrowthPct] = useState("7");
   const [extraFn, setExtraFn] = useState("0");
   const [hecsIndexPct, setHecsIndexPct] = useState("3");
@@ -39,11 +43,13 @@ export default function SavingsTab() {
   const comparisonScenario = SALARY_SCENARIOS.find((s) => s.id !== scenarioId) ?? SALARY_SCENARIOS[0];
 
   const today = isoFromDate(new Date());
-  const points = buildNetWorthProjection(profile, D, balances, periods, today, Number(growthPct) || 0, Number(extraFn) || 0, scenario, Number(hecsIndexPct) || 0, HORIZON_PERIODS);
+  const goalsBalanceTotal = goals.reduce((s, g) => s + (Number(g.current_amount) || 0), 0);
+  const points = buildNetWorthProjection(profile, D, balances, goals, periods, today, Number(growthPct) || 0, Number(extraFn) || 0, scenario, Number(hecsIndexPct) || 0, HORIZON_PERIODS);
   const comparisonPoints = buildNetWorthProjection(
     profile,
     D,
     balances,
+    goals,
     periods,
     today,
     Number(growthPct) || 0,
@@ -64,7 +70,7 @@ export default function SavingsTab() {
   const in1yr = points[Math.min(25, points.length - 1)];
   const in3yr = points[points.length - 1];
   const positiveAt = netWorthPositiveAt(points);
-  const netWorthToday = (balances.emergency || 0) + (balances.anzplus || 0) + (balances.shares || 0) + (balances.superb || 0) - (balances.cc || 0) - (balances.hecs || 0);
+  const netWorthToday = (balances.emergency || 0) + (balances.anzplus || 0) + (balances.shares || 0) + (balances.superb || 0) + goalsBalanceTotal - (balances.cc || 0) - (balances.hecs || 0);
   const horizonYears = Math.round((HORIZON_PERIODS * 14) / 365);
 
   const fhss = fhssSummary(
@@ -78,7 +84,7 @@ export default function SavingsTab() {
   const depositTarget = D.dep5;
   const depositRemaining = Math.max(0, depositTarget - combinedDeposit);
 
-  const split = buildFortnightSplit(profile, D, categories, balances, recurringExpenses, periods, today, 10);
+  const split = buildFortnightSplit(profile, D, categories, balances, recurringExpenses, goals, periods, today, 10);
   const avgToDeposit = split.length > 0 ? split.reduce((s, p) => s + p.toDeposit, 0) / split.length : 0;
   const etaPeriods = periodsToTarget(combinedDeposit, depositTarget, avgToDeposit);
   const currentIdx = split.length > 0 ? periods.findIndex((p) => p.key === split[0].key) : -1;
@@ -94,10 +100,42 @@ export default function SavingsTab() {
   const ccBalance = Number(balances.cc) || 0;
   // Long horizon just for this ETA (a slow payoff can take a while) — separate from `split`,
   // which stays short since it also drives the averages above.
-  const ccProjection = buildFortnightSplit(profile, D, categories, balances, recurringExpenses, periods, today, 52);
+  const ccProjection = buildFortnightSplit(profile, D, categories, balances, recurringExpenses, goals, periods, today, 52);
   const ccPayoffPoint = creditCardPayoffPeriod(ccProjection);
   const ccStuck = ccBalance > 0 && !ccPayoffPoint && ccProjection.every((p) => p.toCreditCard === 0);
   const ccEtaLabel = ccBalance <= 0 ? "nothing owing" : ccPayoffPoint ? ccPayoffPoint.label : ccStuck ? "no surplus to put toward it" : `beyond ${ccProjection.length} fortnights`;
+
+  const goalEtaLabel = (goalId: string) => {
+    const point = ccProjection.find((p) => (p.goalAllocations.find((g) => g.id === goalId)?.balance ?? 0) >= (goals.find((g) => g.id === goalId)?.target_amount ?? Infinity));
+    return point ? point.label : `beyond ${ccProjection.length} fortnights`;
+  };
+
+  const onAddGoal = async () => {
+    if (!newGoalLabel.trim() || !(Number(newGoalTarget) > 0)) return;
+    setGoalBusy(true);
+    try {
+      await addGoal(newGoalLabel, Number(newGoalTarget));
+      setNewGoalLabel("");
+      setNewGoalTarget("");
+    } finally {
+      setGoalBusy(false);
+    }
+  };
+
+  const onDeleteGoal = (id: string, label: string) => {
+    if (!window.confirm(`Delete the goal "${label}"? This doesn't touch any real balance — it just stops tracking toward it.`)) return;
+    deleteGoal(id);
+  };
+
+  const moveGoalPriority = (id: string, direction: -1 | 1) => {
+    const sorted = goals.slice().sort((a, b) => a.priority - b.priority);
+    const idx = sorted.findIndex((g) => g.id === id);
+    const swapWith = sorted[idx + direction];
+    if (!swapWith) return;
+    const current = sorted[idx];
+    updateGoal(current.id, { priority: swapWith.priority });
+    updateGoal(swapWith.id, { priority: current.priority });
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -166,6 +204,103 @@ export default function SavingsTab() {
           </div>
         </div>
       )}
+
+      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15 }}>
+            <Target size={16} color={GOLD} /> Goals
+          </div>
+          <div style={{ fontSize: 12, color: MUTE }}>funded after the emergency fund, before the deposit — in priority order</div>
+        </div>
+        {goals.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: MUTE, marginBottom: 14 }}>
+            Nothing set up yet — add a trip, a car, or any other savings target and it&apos;ll get its own slice of fortnightly surplus.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 14 }}>
+            {goals
+              .slice()
+              .sort((a, b) => a.priority - b.priority)
+              .map((g, i) => (
+                <div key={g.id}>
+                  <Progress label={g.label} value={Number(g.current_amount) || 0} target={Number(g.target_amount) || 0} colorFrom={GOLD} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 10, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11.5, color: MUTE }}>
+                      At current rate, funded by <b style={{ color: NAVY }}>{goalEtaLabel(g.id)}</b>
+                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <button
+                        onClick={() => moveGoalPriority(g.id, -1)}
+                        disabled={i === 0}
+                        title="Fund this one sooner"
+                        style={{ background: "none", border: "none", cursor: i === 0 ? "default" : "pointer", color: i === 0 ? "#E5E0D0" : "#A99B6E", display: "flex" }}
+                      >
+                        <ArrowUp size={14} />
+                      </button>
+                      <button
+                        onClick={() => moveGoalPriority(g.id, 1)}
+                        disabled={i === goals.length - 1}
+                        title="Fund this one later"
+                        style={{ background: "none", border: "none", cursor: i === goals.length - 1 ? "default" : "pointer", color: i === goals.length - 1 ? "#E5E0D0" : "#A99B6E", display: "flex" }}
+                      >
+                        <ArrowDown size={14} />
+                      </button>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        value={goalAmountInputs[g.id] ?? String(g.current_amount)}
+                        onChange={(e) => setGoalAmountInputs((gi) => ({ ...gi, [g.id]: e.target.value }))}
+                        onBlur={(e) => updateGoal(g.id, { current_amount: Number(e.target.value) || 0 })}
+                        title="Update how much you've actually saved toward this goal"
+                        style={{ ...selStyle, width: 90, textAlign: "right", fontSize: 12 }}
+                      />
+                      <button onClick={() => onDeleteGoal(g.id, g.label)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8, paddingTop: 12, borderTop: `1px solid ${LINE}`, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <Field label="New goal" grow>
+            <input
+              type="text"
+              placeholder="e.g. Trip to Japan"
+              value={newGoalLabel}
+              onChange={(e) => setNewGoalLabel(e.target.value)}
+              style={{ ...selStyle, width: "100%", textAlign: "left" }}
+            />
+          </Field>
+          <Field label="Target">
+            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span style={{ color: MUTE, fontSize: 13 }}>$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="0"
+                value={newGoalTarget}
+                onChange={(e) => setNewGoalTarget(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && onAddGoal()}
+                style={{ ...selStyle, width: 90, textAlign: "right" }}
+              />
+            </div>
+          </Field>
+          <button
+            onClick={onAddGoal}
+            disabled={goalBusy || !newGoalLabel.trim() || !(Number(newGoalTarget) > 0)}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: goalBusy ? "default" : "pointer", opacity: goalBusy || !newGoalLabel.trim() || !(Number(newGoalTarget) > 0) ? 0.6 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
+          >
+            <Plus size={14} /> Add
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: MUTE, marginTop: 10, lineHeight: 1.5 }}>
+          Each goal is its own virtual balance — update &ldquo;saved so far&rdquo; directly as you set money aside for it (e.g. in a
+          separate ANZ Plus sub-account). Reorder with the arrows to change which goal gets funded first once the emergency
+          fund is topped up.
+        </div>
+      </div>
 
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12 }}>

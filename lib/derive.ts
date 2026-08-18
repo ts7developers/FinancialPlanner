@@ -7,7 +7,7 @@ import { netFromPackage, hecsCompulsoryRepayment, incomeTaxAU, litoAU, FN_PER_YE
 import { OTHER_CATEGORY_KEY } from "./categories";
 export { hecsCompulsoryRepayment } from "./tax";
 import type { Account } from "./theme";
-import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot, RecurringFrequency, RecurringExpense, MiscIncome } from "./types";
+import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot, RecurringFrequency, RecurringExpense, MiscIncome, Goal } from "./types";
 
 export interface DerivedFinancials {
   netFTfn: number;
@@ -119,16 +119,18 @@ export interface NetWorthPoint {
  * Projects net worth forward from today's real balances (not the plan baseline used by
  * `buildPlanPath`) under a given salary-growth `scenario`. Each period: the package grows per
  * the scenario, net pay is recomputed from that grown package (so tax/HECS withholding scale
- * with it too), surplus pays down the credit card before it tops up the emergency fund then the
- * deposit — same priority order as `buildFortnightSplit`'s fortnight-by-fortnight waterfall, so
- * the two projections agree — shares/super compound at `annualGrowthPct` (super also keeps its
- * usual employer contribution), and HECS reduces by the compulsory repayment on the grown income
- * while indexing at `hecsIndexationPct`. A rough guide, not advice.
+ * with it too), surplus pays down the credit card, then tops up the emergency fund, then funds
+ * `goals` in priority order, then whatever's left goes to the deposit — same priority order as
+ * `buildFortnightSplit`'s fortnight-by-fortnight waterfall, so the two projections agree —
+ * shares/super compound at `annualGrowthPct` (super also keeps its usual employer contribution),
+ * and HECS reduces by the compulsory repayment on the grown income while indexing at
+ * `hecsIndexationPct`. A rough guide, not advice.
  */
 export function buildNetWorthProjection(
   profile: Profile,
   D: DerivedFinancials,
   balances: Balances,
+  goals: Goal[],
   periods: Period[],
   todayISO: string,
   annualGrowthPct: number,
@@ -151,6 +153,8 @@ export function buildNetWorthProjection(
   let superb = Number(balances.superb) || 0;
   let cc = Number(balances.cc) || 0;
   let hecs = Number(balances.hecs) || 0;
+  const goalBalances = new Map<string, number>(goals.map((g) => [g.id, Number(g.current_amount) || 0]));
+  const orderedGoals = sortGoalsByPriority(goals);
 
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per, i) => {
     const grownPackage = (isFT(per.key, profile.ft_start) ? basePackage : basePackage * ptFraction) * scenario.multiplierAt(i);
@@ -163,20 +167,29 @@ export function buildNetWorthProjection(
     surplus -= toCC;
     cc = Math.max(0, cc - toCC);
     const toEmergency = Math.max(0, Math.min(surplus, emergencyTarget - emergency));
+    surplus -= toEmergency;
     emergency += toEmergency;
-    deposit += surplus - toEmergency;
+    orderedGoals.forEach((g) => {
+      const current = goalBalances.get(g.id) ?? 0;
+      const remaining = Math.max(0, Number(g.target_amount) - current);
+      const amount = Math.max(0, Math.min(surplus, remaining));
+      surplus -= amount;
+      goalBalances.set(g.id, current + amount);
+    });
+    deposit += surplus;
     shares *= 1 + periodGrowth;
     superb = superb * (1 + periodGrowth) + superFn;
 
     const hecsRepaymentFn = hecsCompulsoryRepayment(cash) / FN_PER_YEAR;
     hecs = Math.max(0, hecs * (1 + hecsPeriodIndexation) - hecsRepaymentFn);
 
+    const goalsTotal = Array.from(goalBalances.values()).reduce((s, v) => s + v, 0);
     return {
       key: per.key,
       label: dayLabel(per.start),
-      liquid: Math.round(emergency + deposit),
+      liquid: Math.round(emergency + deposit + goalsTotal),
       invested: Math.round(shares + superb),
-      netWorth: Math.round(emergency + deposit + shares + superb - cc - hecs),
+      netWorth: Math.round(emergency + deposit + goalsTotal + shares + superb - cc - hecs),
     };
   });
 }
@@ -480,11 +493,18 @@ export interface NetPosition {
   net: number;
 }
 
-export function netPosition(balances: Balances): NetPosition {
+/** `goalsTotal` — sum of every custom goal's `current_amount` (see `Goal`); it's real money set
+ * aside outside the tracked balance fields, so it counts as an asset here same as any other. */
+export function netPosition(balances: Balances, goalsTotal = 0): NetPosition {
   const assets =
-    balances.everyday + balances.anzplus + balances.emergency + balances.holiday + balances.shares + balances.superb;
+    balances.everyday + balances.anzplus + balances.emergency + balances.holiday + balances.shares + balances.superb + goalsTotal;
   const liabilities = balances.cc + balances.hecs;
   return { assets, liabilities, net: assets - liabilities };
+}
+
+/** Custom goals in the order they should be funded from fortnightly surplus — lower `priority` first, ties broken by creation order. */
+export function sortGoalsByPriority(goals: Goal[]): Goal[] {
+  return goals.slice().sort((a, b) => a.priority - b.priority || a.created_at.localeCompare(b.created_at));
 }
 
 /** Accounts stored as "amount owing" — moving money here pays the balance down, not up. */
@@ -862,6 +882,13 @@ export interface FortnightSplitCategory {
   amount: number;
 }
 
+export interface GoalAllocation {
+  id: string;
+  label: string;
+  amount: number; // contributed this period
+  balance: number; // running balance after this period's contribution
+}
+
 export interface FortnightSplitPoint {
   key: string;
   label: string;
@@ -871,6 +898,8 @@ export interface FortnightSplitPoint {
   sinkingTotal: number;
   toCreditCard: number;
   toEmergency: number;
+  toGoalsTotal: number;
+  goalAllocations: GoalAllocation[];
   toDeposit: number;
   emergencyBalance: number;
   depositBalance: number;
@@ -919,9 +948,10 @@ export function sinkingFundTotal(recurringExpenses: RecurringExpense[]): number 
  * Walks forward from today's real balances, one pay period at a time, showing exactly where
  * each fortnight's pay is planned to go: budgeted categories first, then a set-aside for
  * recurring non-fortnightly bills (rego, insurance — see `sinkingFundBreakdown`), then whatever
- * surplus remains pays down the credit card balance before it tops up the emergency fund (until
- * its target) and finally the house deposit. Same waterfall `buildPlanPath`/`buildNetWorthProjection`
- * use, extended with the credit-card and sinking-fund steps and surfaced per-period instead of
+ * surplus remains pays down the credit card balance, tops up the emergency fund (until its
+ * target), funds `goals` in priority order (until each one's target), and finally whatever's
+ * left goes to the house deposit. Same waterfall `buildPlanPath`/`buildNetWorthProjection` use,
+ * extended with the credit-card/sinking-fund/goals steps and surfaced per-period instead of
  * collapsed into a single running total.
  */
 export function buildFortnightSplit(
@@ -930,6 +960,7 @@ export function buildFortnightSplit(
   categories: BudgetCategoryRow[],
   balances: Balances,
   recurringExpenses: RecurringExpense[],
+  goals: Goal[],
   periods: Period[],
   todayISO: string,
   horizonPeriods = 10
@@ -940,6 +971,8 @@ export function buildFortnightSplit(
   let emergency = Number(balances.emergency) || 0;
   let deposit = Number(balances.anzplus) || 0;
   let cc = Number(balances.cc) || 0;
+  const goalBalances = new Map<string, number>(goals.map((g) => [g.id, Number(g.current_amount) || 0]));
+  const orderedGoals = sortGoalsByPriority(goals);
 
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per) => {
     const netPay = plannedIncomeFN(per, profile, D);
@@ -949,8 +982,23 @@ export function buildFortnightSplit(
     surplus -= toCreditCard;
     cc = Math.max(0, cc - toCreditCard);
     const toEmergency = Math.max(0, Math.min(surplus, emergencyTarget - emergency));
-    const toDeposit = surplus - toEmergency;
+    surplus -= toEmergency;
     emergency += toEmergency;
+
+    const goalAllocations: GoalAllocation[] = [];
+    let toGoalsTotal = 0;
+    orderedGoals.forEach((g) => {
+      const current = goalBalances.get(g.id) ?? 0;
+      const remaining = Math.max(0, Number(g.target_amount) - current);
+      const amount = Math.max(0, Math.min(surplus, remaining));
+      surplus -= amount;
+      toGoalsTotal += amount;
+      const balance = current + amount;
+      goalBalances.set(g.id, balance);
+      goalAllocations.push({ id: g.id, label: g.label, amount, balance: Math.round(balance) });
+    });
+
+    const toDeposit = surplus;
     deposit += toDeposit;
     return {
       key: per.key,
@@ -961,6 +1009,8 @@ export function buildFortnightSplit(
       sinkingTotal,
       toCreditCard,
       toEmergency,
+      toGoalsTotal,
+      goalAllocations,
       toDeposit,
       emergencyBalance: Math.round(emergency),
       depositBalance: Math.round(deposit),

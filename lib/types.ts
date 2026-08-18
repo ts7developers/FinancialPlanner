@@ -134,6 +134,20 @@ export interface RecurringExpense {
   created_at: string;
 }
 
+/** A custom savings goal beyond the built-in emergency fund and house deposit — e.g. "New car"
+ * or "Trip to Japan". Tracked as its own virtual balance (`current_amount`, edited directly like
+ * an account balance) with a `priority` controlling funding order in the fortnightly waterfall
+ * (lower number = funded first, after the emergency fund and before the house deposit). */
+export interface Goal {
+  id: string;
+  user_id: string;
+  label: string;
+  target_amount: number;
+  current_amount: number;
+  priority: number;
+  created_at: string;
+}
+
 /** A one-off income entry that isn't a payslip (tax refund, gift, reimbursement, side gig, etc). */
 export interface MiscIncome {
   id: string;

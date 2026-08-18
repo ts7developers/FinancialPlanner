@@ -26,6 +26,7 @@ import {
   fortnightCategoryBreakdown,
   sinkingFundBreakdown,
   creditCardPayoffPeriod,
+  sortGoalsByPriority,
   periodsToTarget,
   buildIncomeProjection,
   buildVarianceReport,
@@ -37,7 +38,7 @@ import {
 import { buildPeriods, isFT } from "@/lib/period";
 import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
-import type { Balances, BudgetCategoryRow, HoldingLot, MiscIncome, Payslip, Profile, Reconciliation } from "@/lib/types";
+import type { Balances, BudgetCategoryRow, HoldingLot, MiscIncome, Payslip, Profile, Reconciliation, Goal } from "@/lib/types";
 
 const balances: Balances = {
   user_id: "u1",
@@ -349,9 +350,10 @@ describe("buildNetWorthProjection", () => {
   const D = deriveFinancials(profile, categories);
   const flatScenario = SALARY_SCENARIOS[0];
   const startBalances: Balances = { ...balances, emergency: 0, anzplus: 0, shares: 1000, superb: 1000, cc: 0, hecs: 0 };
+  const noGoals: Goal[] = [];
 
   it("starts from today's real balances, not the plan baseline", () => {
-    const [first] = buildNetWorthProjection(profile, D, startBalances, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 1);
+    const [first] = buildNetWorthProjection(profile, D, startBalances, noGoals, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 1);
     // Zero growth, zero extra: liquid should just be the period's surplus (income - expenses).
     const income = plannedIncomeFN(periods[0], profile, D);
     const surplus = Math.max(0, income - D.expFN(periods[0].year));
@@ -362,7 +364,7 @@ describe("buildNetWorthProjection", () => {
     const zeroExpenseCategories: BudgetCategoryRow[] = [{ id: "c1", user_id: "u1", key: "groceries", label: "Groceries", amount_2026: 0, amount_2027: 0, sort: 0 }];
     const D0 = deriveFinancials(profile, zeroExpenseCategories);
     const flatBalances: Balances = { ...startBalances, shares: 1000, superb: 0 };
-    const [first] = buildNetWorthProjection(profile, D0, flatBalances, periods, profile.pay_anchor, 10, 0, flatScenario, 0, 1);
+    const [first] = buildNetWorthProjection(profile, D0, flatBalances, noGoals, periods, profile.pay_anchor, 10, 0, flatScenario, 0, 1);
     const periodGrowth = Math.pow(1.1, 14 / 365) - 1;
     const pkg = isFT(periods[0].key, profile.ft_start) ? profile.package : profile.package * profile.pt_fraction;
     const { cash } = netFromPackage(pkg, profile.super_rate);
@@ -373,13 +375,13 @@ describe("buildNetWorthProjection", () => {
   it("extra fortnightly savings flows straight into liquid balance", () => {
     const zeroIncomeProfile: Profile = { ...profile, package: 0 };
     const D0 = deriveFinancials(zeroIncomeProfile, categories);
-    const [first] = buildNetWorthProjection(zeroIncomeProfile, D0, startBalances, periods, profile.pay_anchor, 0, 100, flatScenario, 0, 1);
+    const [first] = buildNetWorthProjection(zeroIncomeProfile, D0, startBalances, noGoals, periods, profile.pay_anchor, 0, 100, flatScenario, 0, 1);
     expect(first.liquid).toBe(100);
   });
 
   it("pays the credit card down from surplus before topping up the emergency fund or deposit", () => {
     const withDebt: Balances = { ...startBalances, cc: 200 };
-    const [first] = buildNetWorthProjection(profile, D, withDebt, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 1);
+    const [first] = buildNetWorthProjection(profile, D, withDebt, noGoals, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 1);
     const income = plannedIncomeFN(periods[0], profile, D);
     const surplus = Math.max(0, income - D.expFN(periods[0].year));
     const toCC = Math.min(surplus, 200);
@@ -389,7 +391,7 @@ describe("buildNetWorthProjection", () => {
 
   it("stops paying down the credit card once it's cleared, same as buildFortnightSplit", () => {
     const smallDebt: Balances = { ...startBalances, cc: 1 };
-    const points = buildNetWorthProjection(profile, D, smallDebt, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 3);
+    const points = buildNetWorthProjection(profile, D, smallDebt, noGoals, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 3);
     // A $1 debt is trivially cleared in period 0 — every later period's netWorth should stop subtracting it.
     points.slice(1).forEach((p) => {
       expect(p.netWorth).toBeCloseTo(p.liquid + p.invested, -1);
@@ -398,17 +400,33 @@ describe("buildNetWorthProjection", () => {
 
   it("reduces HECS via the compulsory repayment on income, and grows it via indexation", () => {
     const withHecs: Balances = { ...startBalances, hecs: 40000 };
-    const noIndexation = buildNetWorthProjection(profile, D, withHecs, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 5);
-    const withIndexation = buildNetWorthProjection(profile, D, withHecs, periods, profile.pay_anchor, 0, 0, flatScenario, 10, 5);
+    const noIndexation = buildNetWorthProjection(profile, D, withHecs, noGoals, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 5);
+    const withIndexation = buildNetWorthProjection(profile, D, withHecs, noGoals, periods, profile.pay_anchor, 0, 0, flatScenario, 10, 5);
     // Same income/repayment either way, but indexation grows the balance, so net worth ends up lower.
     expect(withIndexation[4].netWorth).toBeLessThan(noIndexation[4].netWorth);
   });
 
   it("a higher-paying salary scenario produces a higher (or equal) net worth over time", () => {
     const standardScenario = SALARY_SCENARIOS.find((s) => s.id === "standard")!;
-    const flatPoints = buildNetWorthProjection(profile, D, startBalances, periods, profile.pay_anchor, 5, 0, flatScenario, 3, 26);
-    const standardPoints = buildNetWorthProjection(profile, D, startBalances, periods, profile.pay_anchor, 5, 0, standardScenario, 3, 26);
+    const flatPoints = buildNetWorthProjection(profile, D, startBalances, noGoals, periods, profile.pay_anchor, 5, 0, flatScenario, 3, 26);
+    const standardPoints = buildNetWorthProjection(profile, D, startBalances, noGoals, periods, profile.pay_anchor, 5, 0, standardScenario, 3, 26);
     expect(standardPoints[25].netWorth).toBeGreaterThan(flatPoints[25].netWorth);
+  });
+
+  it("funds goals in priority order after the emergency fund, and counts their balance toward liquid net worth", () => {
+    const fullEmergency: Balances = { ...startBalances, emergency: profile.emergency_target, cc: 0 };
+    const goals: Goal[] = [
+      { id: "g1", user_id: "u1", label: "Car", target_amount: 50, current_amount: 0, priority: 0, created_at: "2026-01-01" },
+      { id: "g2", user_id: "u1", label: "Trip", target_amount: 1000, current_amount: 0, priority: 1, created_at: "2026-01-01" },
+    ];
+    const income = plannedIncomeFN(periods[0], profile, D);
+    const surplus = Math.max(0, income - D.expFN(periods[0].year));
+    const [withGoals] = buildNetWorthProjection(profile, D, fullEmergency, goals, periods, profile.pay_anchor, 0, 0, flatScenario, 0, 1);
+    const [withoutGoals] = buildNetWorthProjection(profile, D, fullEmergency, [], periods, profile.pay_anchor, 0, 0, flatScenario, 0, 1);
+    // The $50 car goal is funded first (fully, since surplus exceeds it) — same total liquid either way,
+    // just reshuffled between "deposit" and "goal balance", both of which count toward liquid.
+    expect(withGoals.liquid).toBeCloseTo(withoutGoals.liquid, -1);
+    expect(surplus).toBeGreaterThan(50); // sanity: enough surplus to fully fund the smaller goal
   });
 });
 
@@ -548,9 +566,10 @@ describe("daysUntil", () => {
 describe("buildFortnightSplit", () => {
   const periods = buildPeriods(profile.pay_anchor);
   const D = deriveFinancials(profile, categories);
+  const noGoals: Goal[] = [];
 
   it("pays down the credit card before the emergency fund, starting from real balances", () => {
-    const split = buildFortnightSplit(profile, D, categories, balances, [], periods, profile.pay_anchor, 3);
+    const split = buildFortnightSplit(profile, D, categories, balances, [], noGoals, periods, profile.pay_anchor, 3);
     expect(split).toHaveLength(3);
     const first = split[0];
     expect(first.categoriesTotal).toBeCloseTo(D.expFN(periods[0].year), 5);
@@ -563,13 +582,13 @@ describe("buildFortnightSplit", () => {
 
   it("stops topping up the emergency fund once it's already at its target", () => {
     const fullEmergency = { ...balances, emergency: profile.emergency_target, cc: 0 };
-    const split = buildFortnightSplit(profile, D, categories, fullEmergency, [], periods, profile.pay_anchor, 1);
+    const split = buildFortnightSplit(profile, D, categories, fullEmergency, [], noGoals, periods, profile.pay_anchor, 1);
     expect(split[0].toEmergency).toBe(0);
     expect(split[0].toDeposit).toBeCloseTo(split[0].netPay - split[0].categoriesTotal, 5);
   });
 
   it("accumulates the running deposit balance period over period", () => {
-    const split = buildFortnightSplit(profile, D, categories, balances, [], periods, profile.pay_anchor, 2);
+    const split = buildFortnightSplit(profile, D, categories, balances, [], noGoals, periods, profile.pay_anchor, 2);
     expect(split[1].depositBalance).toBe(Math.round(balances.anzplus + split[0].toDeposit + split[1].toDeposit));
   });
 
@@ -578,10 +597,39 @@ describe("buildFortnightSplit", () => {
       { id: "1", user_id: "u", description: "Car rego", amount: 780, category_key: "other", account: "ANZ Plus", frequency: "yearly" as const, next_due: "2027-01-01", active: true, created_at: "" },
     ];
     const noCCFullEmergency = { ...balances, cc: 0, emergency: profile.emergency_target };
-    const withSinking = buildFortnightSplit(profile, D, categories, noCCFullEmergency, recurring, periods, profile.pay_anchor, 1);
-    const without = buildFortnightSplit(profile, D, categories, noCCFullEmergency, [], periods, profile.pay_anchor, 1);
+    const withSinking = buildFortnightSplit(profile, D, categories, noCCFullEmergency, recurring, noGoals, periods, profile.pay_anchor, 1);
+    const without = buildFortnightSplit(profile, D, categories, noCCFullEmergency, [], noGoals, periods, profile.pay_anchor, 1);
     expect(withSinking[0].sinkingTotal).toBeCloseTo(780 / 26, 5);
     expect(withSinking[0].toDeposit).toBeCloseTo(without[0].toDeposit - 780 / 26, 5);
+  });
+
+  it("funds goals in priority order after the emergency fund and before the deposit", () => {
+    const fullEmergencyNoCC = { ...balances, emergency: profile.emergency_target, cc: 0 };
+    const goals: Goal[] = [
+      { id: "g1", user_id: "u1", label: "Low priority", target_amount: 10000, current_amount: 0, priority: 1, created_at: "2026-01-01" },
+      { id: "g2", user_id: "u1", label: "High priority", target_amount: 50, current_amount: 0, priority: 0, created_at: "2026-01-01" },
+    ];
+    const split = buildFortnightSplit(profile, D, categories, fullEmergencyNoCC, [], goals, periods, profile.pay_anchor, 1);
+    const g2 = split[0].goalAllocations.find((g) => g.id === "g2")!;
+    const g1 = split[0].goalAllocations.find((g) => g.id === "g1")!;
+    // The $50 high-priority goal should be funded in full before the low-priority one gets anything.
+    expect(g2.amount).toBe(50);
+    expect(g2.balance).toBe(50);
+    expect(split[0].toGoalsTotal).toBeCloseTo(g1.amount + g2.amount, 5);
+    // Whatever's left after both goals should be exactly what's left for deposit — no money unaccounted for.
+    const surplus = Math.max(0, split[0].netPay - split[0].categoriesTotal);
+    expect(split[0].toDeposit).toBeCloseTo(surplus - split[0].toGoalsTotal, 5);
+  });
+});
+
+describe("sortGoalsByPriority", () => {
+  it("sorts ascending by priority, ties broken by creation order", () => {
+    const goals: Goal[] = [
+      { id: "b", user_id: "u", label: "B", target_amount: 1, current_amount: 0, priority: 1, created_at: "2026-02-01" },
+      { id: "a", user_id: "u", label: "A", target_amount: 1, current_amount: 0, priority: 0, created_at: "2026-01-01" },
+      { id: "c", user_id: "u", label: "C", target_amount: 1, current_amount: 0, priority: 1, created_at: "2026-01-01" },
+    ];
+    expect(sortGoalsByPriority(goals).map((g) => g.id)).toEqual(["a", "c", "b"]);
   });
 });
 
@@ -591,7 +639,7 @@ describe("creditCardPayoffPeriod", () => {
 
   it("finds the first period whose simulated credit-card balance reaches zero", () => {
     const smallDebt = { ...balances, cc: 50, emergency: profile.emergency_target };
-    const split = buildFortnightSplit(profile, D, categories, smallDebt, [], periods, profile.pay_anchor, 3);
+    const split = buildFortnightSplit(profile, D, categories, smallDebt, [], [], periods, profile.pay_anchor, 3);
     const payoff = creditCardPayoffPeriod(split);
     expect(payoff).not.toBeNull();
     expect(payoff!.key).toBe(split[0].key);
@@ -599,7 +647,7 @@ describe("creditCardPayoffPeriod", () => {
 
   it("returns null when the debt outlasts the whole projection", () => {
     const hugeDebt = { ...balances, cc: 1_000_000 };
-    const split = buildFortnightSplit(profile, D, categories, hugeDebt, [], periods, profile.pay_anchor, 3);
+    const split = buildFortnightSplit(profile, D, categories, hugeDebt, [], [], periods, profile.pay_anchor, 3);
     expect(creditCardPayoffPeriod(split)).toBeNull();
   });
 });
