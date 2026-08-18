@@ -147,14 +147,46 @@ export function Field({ label, children, grow }: { label: string; children: Reac
   );
 }
 
-export function Panel({ title, children, icon: Icon }: { title: string; children: React.ReactNode; icon?: LucideIcon }) {
+export function Panel({
+  title,
+  children,
+  icon: Icon,
+  collapsible = false,
+  defaultOpen = true,
+}: {
+  title: string;
+  children: React.ReactNode;
+  icon?: LucideIcon;
+  /** When true, the header becomes clickable and the body can be hidden — for settings that are set once and rarely revisited. */
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const showBody = !collapsible || open;
   return (
     <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
-      <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12, color: NAVY, display: "flex", alignItems: "center", gap: 7 }}>
-        {Icon && <Icon size={16} color={GOLD} />}
-        {title}
+      <div
+        onClick={collapsible ? () => setOpen((o) => !o) : undefined}
+        style={{
+          fontFamily: "var(--font-space-grotesk), sans-serif",
+          fontWeight: 600,
+          fontSize: 15,
+          marginBottom: showBody ? 12 : 0,
+          color: NAVY,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 7,
+          cursor: collapsible ? "pointer" : "default",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          {Icon && <Icon size={16} color={GOLD} />}
+          {title}
+        </span>
+        {collapsible && <ChevronDown size={16} color={MUTE} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .2s", flexShrink: 0 }} />}
       </div>
-      {children}
+      {showBody && children}
     </div>
   );
 }

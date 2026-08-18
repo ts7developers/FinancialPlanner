@@ -2,19 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Wallet, Receipt, ScrollText, Landmark, LineChart, PiggyBank, SlidersHorizontal } from "lucide-react";
 import { PAPER, NAVY, GOLD } from "@/lib/theme";
-
-const TABS = [
-  { href: "/overview", label: "Overview", icon: LayoutDashboard },
-  { href: "/income", label: "Income", icon: Wallet },
-  { href: "/expenses", label: "Expenses", icon: Receipt },
-  { href: "/reconcile", label: "Reconcile", icon: ScrollText },
-  { href: "/accounts", label: "Accounts", icon: Landmark },
-  { href: "/savings", label: "Savings", icon: LineChart },
-  { href: "/super", label: "Super", icon: PiggyBank },
-  { href: "/plan", label: "Budget", icon: SlidersHorizontal },
-];
+import { NAV_GROUPS } from "@/lib/navGroups";
 
 export default function TabNav({ isMobile }: { isMobile: boolean }) {
   const pathname = usePathname();
@@ -36,12 +25,13 @@ export default function TabNav({ isMobile }: { isMobile: boolean }) {
           paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
-        {TABS.map((t) => {
-          const on = pathname.startsWith(t.href);
+        {NAV_GROUPS.map((g) => {
+          const primary = g.members[0].href;
+          const on = g.members.some((m) => pathname.startsWith(m.href));
           return (
             <Link
-              key={t.href}
-              href={t.href}
+              key={g.label}
+              href={primary}
               style={{
                 flex: 1,
                 display: "flex",
@@ -54,10 +44,10 @@ export default function TabNav({ isMobile }: { isMobile: boolean }) {
                 minWidth: 0,
               }}
             >
-              <t.icon size={17} />
+              <g.icon size={18} />
               <span
                 style={{
-                  fontSize: 9,
+                  fontSize: 9.5,
                   fontWeight: 600,
                   fontFamily: "var(--font-space-grotesk), sans-serif",
                   whiteSpace: "nowrap",
@@ -66,7 +56,7 @@ export default function TabNav({ isMobile }: { isMobile: boolean }) {
                   maxWidth: "100%",
                 }}
               >
-                {t.label}
+                {g.label}
               </span>
             </Link>
           );
@@ -77,12 +67,13 @@ export default function TabNav({ isMobile }: { isMobile: boolean }) {
 
   return (
     <div style={{ display: "flex", gap: 4, overflowX: "auto", scrollbarWidth: "none" }}>
-      {TABS.map((t) => {
-        const on = pathname.startsWith(t.href);
+      {NAV_GROUPS.map((g) => {
+        const primary = g.members[0].href;
+        const on = g.members.some((m) => pathname.startsWith(m.href));
         return (
           <Link
-            key={t.href}
-            href={t.href}
+            key={g.label}
+            href={primary}
             className="tabbtn"
             style={{
               flexShrink: 0,
@@ -100,7 +91,7 @@ export default function TabNav({ isMobile }: { isMobile: boolean }) {
               textDecoration: "none",
             }}
           >
-            <t.icon size={15} /> {t.label}
+            <g.icon size={15} /> {g.label}
           </Link>
         );
       })}

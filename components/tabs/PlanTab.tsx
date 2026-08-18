@@ -198,7 +198,7 @@ export default function PlanTab() {
               ]}
             />
           </Panel>
-          <Panel title="Employment & tax">
+          <Panel title="Employment & tax" collapsible defaultOpen={false}>
             <PInput label="Salary package (incl. super)" prefix="$" value={inputs.package} onChange={(v) => set("package", v)} onBlur={() => commitNumber("package", inputs.package)} />
             <PInput label="Super rate" suffix="%" value={inputs.sg} onChange={(v) => set("sg", v)} onBlur={() => commitNumber("super_rate", inputs.sg, 100)} />
             <PInput label="Part-time fraction" suffix="%" value={inputs.ptFrac} onChange={(v) => set("ptFrac", v)} onBlur={() => commitNumber("pt_fraction", inputs.ptFrac, 100)} />
@@ -223,7 +223,7 @@ export default function PlanTab() {
             <PInput label="Opening deposit (ANZ Plus)" prefix="$" value={inputs.openDeposit} onChange={(v) => set("openDeposit", v)} onBlur={() => commitNumber("open_deposit", inputs.openDeposit)} />
             <Derived rows={[["Deposit at 5%", AUD(D.dep5)], ["Net cash to save", AUD(D.netCash)]]} />
           </Panel>
-          <Panel title="Borrowing capacity">
+          <Panel title="Borrowing capacity" collapsible defaultOpen={false}>
             <PInput
               label="Partner's annual income"
               prefix="$"
