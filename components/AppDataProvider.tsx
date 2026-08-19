@@ -74,7 +74,7 @@ interface AppDataContextValue {
   undoDeleteTransaction: (id: string) => void;
   setReconciliation: (
     periodKey: string,
-    patch: Partial<Pick<Reconciliation, "actual_income" | "actual_overrides">>
+    patch: Partial<Pick<Reconciliation, "actual_income" | "actual_overrides" | "closed_at">>
   ) => Promise<void>;
   updateBalances: (patch: Partial<Omit<Balances, "user_id">>) => Promise<void>;
   takeSnapshot: () => Promise<void>;
@@ -294,8 +294,8 @@ export function AppDataProvider({
   );
 
   const setReconciliation = useCallback(
-    async (periodKey: string, patch: Partial<Pick<Reconciliation, "actual_income" | "actual_overrides">>) => {
-      const existing = reconciliations[periodKey] || { period_key: periodKey, actual_income: null, actual_overrides: {} };
+    async (periodKey: string, patch: Partial<Pick<Reconciliation, "actual_income" | "actual_overrides" | "closed_at">>) => {
+      const existing = reconciliations[periodKey] || { period_key: periodKey, actual_income: null, actual_overrides: {}, closed_at: null };
       const merged: Reconciliation = { ...existing, ...patch };
       setReconciliations((rs) => ({ ...rs, [periodKey]: merged }));
       const { error } = await supabase
@@ -306,6 +306,7 @@ export function AppDataProvider({
             period_key: periodKey,
             actual_income: merged.actual_income,
             actual_overrides: merged.actual_overrides,
+            closed_at: merged.closed_at ?? null,
           },
           { onConflict: "user_id,period_key" }
         );

@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, FileBarChart, Wand2, TrendingDown, TrendingUp, RotateCcw } from "lucide-react";
+import { Check, FileBarChart, Wand2, TrendingDown, TrendingUp, RotateCcw, Wallet, Save } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { currentPeriod, financialYearStart, isFT, isoFromDate, periodLabel } from "@/lib/period";
-import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation, sumYTD, buildVarianceReport, buildVarianceInsights } from "@/lib/derive";
+import { currentPeriod, dayLabel, financialYearStart, isFT, isoFromDate, periodLabel } from "@/lib/period";
+import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation, sumYTD, buildVarianceReport, buildVarianceInsights, actualIncomeForPeriod } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, INK, GOLD_SOFT, FAV, UNFAV, inputStyle } from "@/lib/theme";
 import { Row, Cell2, VarTag, Stat, Collapsible } from "@/components/ui/atoms";
@@ -16,7 +16,7 @@ export default function ReconcileTab() {
   const isMobile = useIsMobile();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { profile, categories, periods, D, loggedByCat, reconciliations, setReconciliation, payslips } = useAppData();
+  const { profile, categories, periods, D, loggedByCat, reconciliations, setReconciliation, payslips, miscIncome } = useAppData();
 
   const [period, setPeriod] = useState(() => {
     const fromQuery = searchParams.get("period");
@@ -94,11 +94,27 @@ export default function ReconcileTab() {
     flash("Autofilled from Expenses");
   };
 
+  // Sum of every confirmed payslip's net + misc income landing in this fortnight — same rule
+  // confirmPayslip/addMiscIncome already use, just triggerable on demand rather than only when
+  // one of those is first confirmed/added (e.g. after confirming a payslip without leaving this page).
+  const autofillablePayAmount = actualIncomeForPeriod(payslips, miscIncome, period, profile.pay_anchor);
+  const autofillPay = () => {
+    const value = String(autofillablePayAmount);
+    setIncomeInput(value);
+    setReconciliation(period, { actual_income: autofillablePayAmount });
+    flash("Autofilled pay");
+  };
+
+  const closeReconciliation = () => {
+    setReconciliation(period, { closed_at: new Date().toISOString() });
+    flash("Fortnight reconciled");
+  };
+
   const resetReconciliation = () => {
     if (!window.confirm(`Clear the reconciliation for ${periodLabel(perObj)}? This removes the actual income and every manual override for this fortnight — logged transactions on Expenses are untouched, so any auto-filled rows will come straight back.`)) return;
     setIncomeInput("");
     setOverridesInput({});
-    setReconciliation(period, { actual_income: null, actual_overrides: {} });
+    setReconciliation(period, { actual_income: null, actual_overrides: {}, closed_at: null });
     flash("Reconciliation cleared");
   };
 
@@ -121,6 +137,28 @@ export default function ReconcileTab() {
           {isFT(perObj.key, profile.ft_start) ? "Full-time" : "Part-time"}
         </span>
         <button
+          onClick={autofillPay}
+          disabled={autofillablePayAmount <= 0}
+          title={autofillablePayAmount <= 0 ? "No confirmed payslip or misc income for this fortnight yet" : `Fill Net pay with ${AUD(autofillablePayAmount)} from confirmed payslips + misc income`}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: autofillablePayAmount <= 0 ? "transparent" : GOLD,
+            color: autofillablePayAmount <= 0 ? MUTE : INK,
+            border: autofillablePayAmount <= 0 ? `1px solid ${LINE}` : "none",
+            borderRadius: 8,
+            padding: "6px 12px",
+            fontSize: 12.5,
+            fontWeight: 600,
+            cursor: autofillablePayAmount <= 0 ? "default" : "pointer",
+            opacity: autofillablePayAmount <= 0 ? 0.6 : 1,
+            fontFamily: "var(--font-space-grotesk), sans-serif",
+          }}
+        >
+          <Wallet size={13} /> Autofill pay
+        </button>
+        <button
           onClick={autofillFromExpenses}
           disabled={autofillableCount === 0}
           title={autofillableCount === 0 ? "Nothing new logged on Expenses for this fortnight" : `Lock in ${autofillableCount} categor${autofillableCount === 1 ? "y" : "ies"} from Expenses`}
@@ -142,9 +180,29 @@ export default function ReconcileTab() {
         >
           <Wand2 size={13} /> Autofill from Expenses{autofillableCount > 0 ? ` (${autofillableCount})` : ""}
         </button>
+        <button
+          onClick={closeReconciliation}
+          title="Save this fortnight's actuals as reconciled"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: NAVY,
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            padding: "6px 12px",
+            fontSize: 12.5,
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "var(--font-space-grotesk), sans-serif",
+          }}
+        >
+          <Save size={13} /> Reconcile
+        </button>
         {summary.anyActual && (
           <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#2E7D5B", fontWeight: 600 }}>
-            <Check size={14} /> Reconciled
+            <Check size={14} /> {rec?.closed_at ? `Reconciled · ${dayLabel(new Date(rec.closed_at))}` : "Reconciled"}
           </span>
         )}
         {summary.anyActual && (
