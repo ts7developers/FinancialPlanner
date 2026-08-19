@@ -6,20 +6,9 @@ import { useAppData } from "@/components/AppDataProvider";
 import { AUD, num } from "@/lib/money";
 import { netPosition, applyTransfer, computeHoldingPL } from "@/lib/derive";
 import { dateFromISO, dayLabel } from "@/lib/period";
-import { CARD, LINE, MUTE, GOLD, INK, NAVY, GOLD_SOFT, FAV, UNFAV, inputStyle, selStyle } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, INK, NAVY, GOLD_SOFT, FAV, UNFAV, inputStyle, selStyle, BALANCE_FIELDS } from "@/lib/theme";
 import { Stat, Field } from "@/components/ui/atoms";
 import type { Balances } from "@/lib/types";
-
-const BALANCE_FIELDS: [keyof Omit<Balances, "user_id">, string][] = [
-  ["everyday", "Everyday account"],
-  ["anzplus", "ANZ Plus — deposit"],
-  ["emergency", "Emergency fund"],
-  ["holiday", "Holiday (cruise)"],
-  ["shares", "Shares (CMC)"],
-  ["superb", "Super (UniSuper)"],
-  ["cc", "Credit card (owing)"],
-  ["hecs", "HECS-HELP (owing)"],
-];
 
 export default function AccountsTab() {
   const {

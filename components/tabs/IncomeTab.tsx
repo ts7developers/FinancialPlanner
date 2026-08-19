@@ -21,10 +21,11 @@ import {
   SALARY_SCENARIOS,
 } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, UNFAV, selStyle, BALANCE_FIELDS } from "@/lib/theme";
 import { Metric, Field, Collapsible } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { IncomeTrendPoint } from "@/components/charts/IncomeTrendChart";
+import type { Balances } from "@/lib/types";
 
 const IncomeTrendChart = dynamic(() => import("@/components/charts/IncomeTrendChart"), { ssr: false, loading: () => <ChartSkeleton height={220} /> });
 
@@ -43,6 +44,7 @@ export default function IncomeTab() {
   const [miscDate, setMiscDate] = useState("");
   const [miscDesc, setMiscDesc] = useState("");
   const [miscAmount, setMiscAmount] = useState("");
+  const [miscAccount, setMiscAccount] = useState<keyof Omit<Balances, "user_id">>("everyday");
   const [miscBusy, setMiscBusy] = useState(false);
   const [miscFlash, setMiscFlash] = useState("");
 
@@ -64,9 +66,9 @@ export default function IncomeTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const miscFlashMsg = (m = "Logged") => {
+  const miscFlashMsg = (m = "Logged", durationMs = 1300) => {
     setMiscFlash(m);
-    setTimeout(() => setMiscFlash(""), 1300);
+    setTimeout(() => setMiscFlash(""), durationMs);
   };
 
   const onAddMisc = async () => {
@@ -76,10 +78,17 @@ export default function IncomeTab() {
     }
     setMiscBusy(true);
     try {
-      await addMiscIncome(miscDate, miscDesc, Number(miscAmount));
+      await addMiscIncome(miscDate, miscDesc, Number(miscAmount), miscAccount);
       setMiscDesc("");
       setMiscAmount("");
-      miscFlashMsg("Added to Everyday");
+      miscFlashMsg(`Added to ${BALANCE_FIELDS.find(([k]) => k === miscAccount)?.[1] ?? miscAccount}`);
+    } catch (err) {
+      miscFlashMsg(
+        err instanceof Error && err.message.includes("Could not find the")
+          ? "Misc income accounts aren't set up yet — run migration 0014, then try again."
+          : "Something went wrong logging that — try again.",
+        6000
+      );
     } finally {
       setMiscBusy(false);
     }
@@ -107,7 +116,7 @@ export default function IncomeTab() {
   const split = buildFortnightSplit(profile, adaptiveD, categories, balances, recurringExpenses, goals, periods, today, 10);
   const splitCurrentIdx = split.length > 0 ? periods.findIndex((p) => p.key === split[0].key) : -1;
   const categoryBreakdown = fortnightCategoryBreakdown(categories, D, splitCurrentIdx >= 0 ? periods[splitCurrentIdx].year : new Date().getUTCFullYear());
-  const sinkingFunds = sinkingFundBreakdown(recurringExpenses);
+  const sinkingFunds = sinkingFundBreakdown(recurringExpenses, today);
   const ccBalance = Number(balances.cc) || 0;
   const ccPayoffPoint = creditCardPayoffPeriod(buildFortnightSplit(profile, adaptiveD, categories, balances, recurringExpenses, goals, periods, today, 52));
   const ccEtaLabel = ccBalance <= 0 ? "nothing owing" : ccPayoffPoint ? ccPayoffPoint.label : "beyond this projection";
@@ -176,7 +185,7 @@ export default function IncomeTab() {
           <Gift size={16} color={GOLD} /> Misc income
         </div>
         <div style={{ fontSize: 12, color: MUTE, marginBottom: 12 }}>
-          A tax refund, gift, reimbursement, side gig — anything that isn&apos;t a payslip. Lands in Everyday immediately and adds to that fortnight&apos;s actual income.
+          A tax refund, gift, reimbursement, side gig — anything that isn&apos;t a payslip. Lands in the account you pick and adds to that fortnight&apos;s actual income.
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
           <Field label="Date">
@@ -199,6 +208,19 @@ export default function IncomeTab() {
               />
             </div>
           </Field>
+          <Field label="Account">
+            <select
+              value={miscAccount}
+              onChange={(e) => setMiscAccount(e.target.value as keyof Omit<Balances, "user_id">)}
+              style={{ ...selStyle, width: 170 }}
+            >
+              {BALANCE_FIELDS.map(([k, lbl]) => (
+                <option key={k} value={k}>
+                  {lbl}
+                </option>
+              ))}
+            </select>
+          </Field>
           <button
             onClick={onAddMisc}
             disabled={miscBusy}
@@ -214,6 +236,7 @@ export default function IncomeTab() {
               <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "6px 0" }}>
                 <span style={{ color: MUTE }}>
                   {m.date} {m.description ? `· ${m.description}` : ""}
+                  {m.account && <span style={{ color: "#C7C2B4" }}> · {BALANCE_FIELDS.find(([k]) => k === m.account)?.[1] ?? m.account}</span>}
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{AUD(m.amount, 2)}</span>
@@ -321,11 +344,17 @@ export default function IncomeTab() {
             </div>
             <div style={{ fontSize: 11, color: MUTE, marginBottom: 8 }}>
               Rego, insurance and other recurring expenses outside the monthly budget — set this aside each pay (e.g. in a separate ANZ Plus sub-account) so the lump sum is ready when it&apos;s due.
+              Quarterly/yearly ones recalculate against how long is actually left until due, so the rate climbs if nothing&apos;s been set aside yet — keep saving what it says and it stays flat.
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px" }}>
               {sinkingFunds.map((s) => (
                 <span key={s.label} style={{ fontSize: 12, color: MUTE }}>
-                  {s.label} <span style={{ color: "#C7C2B4" }}>({s.frequency})</span> <b style={{ color: NAVY }}>{AUD(s.perFortnight, 2)}/fn</b>
+                  {s.label}{" "}
+                  <span style={{ color: "#C7C2B4" }}>
+                    ({s.frequency}
+                    {(s.frequency === "yearly" || s.frequency === "quarterly") && `, due ${s.nextDue.slice(5)}`})
+                  </span>{" "}
+                  <b style={{ color: NAVY }}>{AUD(s.perFortnight, 2)}/fn</b>
                 </span>
               ))}
             </div>

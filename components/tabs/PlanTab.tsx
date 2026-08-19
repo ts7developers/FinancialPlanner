@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Copy, RotateCcw, CalendarClock, Trash2, Plus } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
+import { isoFromDate } from "@/lib/period";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
 import { BORROW_MULT_LOW, BORROW_MULT_HIGH, sinkingFundTotal } from "@/lib/derive";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
@@ -45,7 +46,7 @@ function toInputs(profile: Profile): ProfileInputs {
 
 export default function PlanTab() {
   const { profile, categories, recurringExpenses, D, updateProfile, updateCategory, addCategory, deleteCategory } = useAppData();
-  const recurringFortnightTotal = sinkingFundTotal(recurringExpenses);
+  const recurringFortnightTotal = sinkingFundTotal(recurringExpenses, isoFromDate(new Date()));
   const activeRecurringCount = recurringExpenses.filter((r) => r.active).length;
   const [inputs, setInputs] = useState<ProfileInputs>(() => toInputs(profile));
   const [catInputs, setCatInputs] = useState<Record<string, { label: string; a26: string; a27: string }>>(() =>

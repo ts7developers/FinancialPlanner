@@ -11,6 +11,7 @@ import {
   applyTransfer,
   applyExpenseToBalance,
   applyIncomeToBalance,
+  applyIncomeToAccount,
   nextOccurrence,
   actualIncomeForPeriod,
   type DerivedFinancials,
@@ -116,7 +117,7 @@ interface AppDataContextValue {
   /** Posts today's occurrence as a real transaction (so it flows through the usual balance/reconciliation path) and rolls next_due forward one cadence. */
   logRecurringExpense: (id: string) => Promise<void>;
   /** One-off income (tax refund, gift, side gig, etc) — lands in Everyday immediately and adds to that fortnight's actual income on Reconcile. */
-  addMiscIncome: (date: string, description: string, amount: number) => Promise<void>;
+  addMiscIncome: (date: string, description: string, amount: number, account?: keyof Omit<Balances, "user_id">) => Promise<void>;
   deleteMiscIncome: (id: string) => Promise<void>;
   /** A custom savings goal beyond the emergency fund and house deposit — see the `Goal` type. */
   addGoal: (label: string, targetAmount: number, priority?: number) => Promise<void>;
@@ -368,17 +369,17 @@ export function AppDataProvider({
   );
 
   const addMiscIncome = useCallback(
-    async (date: string, description: string, amount: number) => {
+    async (date: string, description: string, amount: number, account: keyof Omit<Balances, "user_id"> = "everyday") => {
       if (!(amount > 0)) return;
       const { data, error } = await supabase
         .from("misc_income")
-        .insert({ user_id: profile.user_id, date, description: description.trim() || null, amount })
+        .insert({ user_id: profile.user_id, date, description: description.trim() || null, amount, account })
         .select()
         .single();
       if (error) throw error;
       const effectiveMiscIncome = [data as MiscIncome, ...miscIncome];
       setMiscIncome(effectiveMiscIncome);
-      await updateBalances(applyIncomeToBalance(balances, amount));
+      await updateBalances(applyIncomeToAccount(balances, account, amount));
       const periodKey = periodKeyOf(date, profile.pay_anchor);
       if (periodKey) {
         const periodTotal = actualIncomeForPeriod(payslips, effectiveMiscIncome, periodKey, profile.pay_anchor);
@@ -396,7 +397,7 @@ export function AppDataProvider({
       setMiscIncome(effectiveMiscIncome);
       const { error } = await supabase.from("misc_income").delete().eq("id", id);
       if (error) throw error;
-      await updateBalances(applyIncomeToBalance(balances, entry.amount, -1));
+      await updateBalances(applyIncomeToAccount(balances, entry.account as keyof Omit<Balances, "user_id">, entry.amount, -1));
       const periodKey = periodKeyOf(entry.date, profile.pay_anchor);
       if (periodKey) {
         const periodTotal = actualIncomeForPeriod(payslips, effectiveMiscIncome, periodKey, profile.pay_anchor);

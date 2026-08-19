@@ -3,6 +3,7 @@ import {
   applyTransfer,
   applyExpenseToBalance,
   applyIncomeToBalance,
+  applyIncomeToAccount,
   buildSpendTrend,
   buildBorrowingCapacity,
   borrowingCapacityYearReached,
@@ -26,11 +27,13 @@ import {
   buildFortnightSplit,
   fortnightCategoryBreakdown,
   sinkingFundBreakdown,
+  recurringPerFortnight,
   creditCardPayoffPeriod,
   sortGoalsByPriority,
   adaptiveCategoryRates,
   adaptiveExpenseTotal,
   withAdaptiveExpenses,
+  fortnightBreakdown,
   periodsToTarget,
   buildIncomeProjection,
   buildVarianceReport,
@@ -142,6 +145,24 @@ describe("applyIncomeToBalance", () => {
 
   it("reverses with sign -1", () => {
     expect(applyIncomeToBalance(balances, 1000, -1)).toEqual({ everyday: 0 });
+  });
+});
+
+describe("applyIncomeToAccount", () => {
+  it("adds income to an asset account", () => {
+    expect(applyIncomeToAccount(balances, "anzplus", 500)).toEqual({ anzplus: balances.anzplus + 500 });
+  });
+
+  it("reverses with sign -1", () => {
+    expect(applyIncomeToAccount(balances, "anzplus", 500, -1)).toEqual({ anzplus: balances.anzplus - 500 });
+  });
+
+  it("pays down a liability account instead of adding to it", () => {
+    expect(applyIncomeToAccount(balances, "cc", 50)).toEqual({ cc: balances.cc - 50 });
+  });
+
+  it("reversing a liability paydown adds the debt back", () => {
+    expect(applyIncomeToAccount(balances, "cc", 50, -1)).toEqual({ cc: balances.cc + 50 });
   });
 });
 
@@ -588,6 +609,66 @@ describe("daysUntil", () => {
   });
 });
 
+describe("fortnightBreakdown", () => {
+  const D = deriveFinancials(profile, categories);
+  const today = "2026-08-19";
+
+  it("routes a one-off net pay through categories, credit card, emergency fund, then deposit", () => {
+    const b = fortnightBreakdown(D, categories, balances, [], [], 1000, profile.emergency_target, 2026, today);
+    expect(b.categoriesTotal).toBeCloseTo(D.expFN(2026), 5);
+    const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
+    const toCC = Math.min(surplus, balances.cc);
+    expect(b.toCreditCard).toBeCloseTo(toCC, 5);
+    const afterCC = surplus - toCC;
+    const toEmergency = Math.min(afterCC, (profile.emergency_target || 0) - balances.emergency);
+    expect(b.toEmergency).toBeCloseTo(toEmergency, 5);
+    expect(b.toDeposit).toBeCloseTo(afterCC - toEmergency, 5);
+  });
+
+  it("deducts the sinking-fund set-aside before computing surplus", () => {
+    const recurring = [
+      { id: "1", user_id: "u", description: "Rego", amount: 780, category_key: "other", account: "ANZ Plus", frequency: "yearly" as const, next_due: "2027-08-10", active: true, created_at: "" },
+    ];
+    const noCC = { ...balances, cc: 0, emergency: profile.emergency_target };
+    const withSinking = fortnightBreakdown(D, categories, noCC, recurring, [], 1000, profile.emergency_target, 2026, today);
+    const without = fortnightBreakdown(D, categories, noCC, [], [], 1000, profile.emergency_target, 2026, today);
+    expect(withSinking.sinkingTotal).toBeGreaterThan(0);
+    expect(withSinking.toDeposit).toBeCloseTo(without.toDeposit - withSinking.sinkingTotal, 5);
+  });
+
+  it("funds goals in priority order after the emergency fund", () => {
+    const fullEmergencyNoCC = { ...balances, emergency: profile.emergency_target, cc: 0 };
+    const goals: Goal[] = [
+      { id: "g1", user_id: "u1", label: "High priority", target_amount: 50, current_amount: 0, priority: 0, created_at: "2026-01-01" },
+      { id: "g2", user_id: "u1", label: "Low priority", target_amount: 10000, current_amount: 0, priority: 1, created_at: "2026-01-01" },
+    ];
+    const b = fortnightBreakdown(D, categories, fullEmergencyNoCC, [], goals, 1000, profile.emergency_target, 2026, today);
+    const g1 = b.goalAllocations.find((g) => g.id === "g1")!;
+    expect(g1.amount).toBe(50);
+    expect(b.toDeposit).toBeCloseTo(1000 - b.categoriesTotal - b.toGoalsTotal, 5);
+  });
+});
+
+describe("recurringPerFortnight", () => {
+  it("uses a flat frequency-based average for weekly/fortnightly/monthly bills", () => {
+    expect(recurringPerFortnight(100, "fortnightly", "2026-09-01", "2026-08-19")).toBeCloseTo(100, 5);
+    expect(recurringPerFortnight(52, "weekly", "2026-08-24", "2026-08-19")).toBeCloseTo(104, 5);
+    expect(recurringPerFortnight(120, "monthly", "2026-09-05", "2026-08-19")).toBeCloseTo((120 * 12) / 26, 5);
+  });
+
+  it("divides yearly/quarterly bills by the fortnights actually left until they're due", () => {
+    // Due in exactly 364 days (26 fortnights) — matches the old flat annual average.
+    expect(recurringPerFortnight(780, "yearly", "2027-08-18", "2026-08-19")).toBeCloseTo(780 / 26, 5);
+    // Due in 2 fortnights (28 days) — needs a much higher rate than the flat average would suggest.
+    expect(recurringPerFortnight(780, "yearly", "2026-09-16", "2026-08-19")).toBeCloseTo(780 / 2, 5);
+  });
+
+  it("floors at 1 fortnight for an overdue or same-day due date, rather than dividing by zero", () => {
+    expect(recurringPerFortnight(260, "yearly", "2026-08-19", "2026-08-19")).toBeCloseTo(260, 5);
+    expect(recurringPerFortnight(260, "yearly", "2026-08-01", "2026-08-19")).toBeCloseTo(260, 5);
+  });
+});
+
 describe("buildFortnightSplit", () => {
   const periods = buildPeriods(profile.pay_anchor);
   const D = deriveFinancials(profile, categories);
@@ -624,8 +705,9 @@ describe("buildFortnightSplit", () => {
     const noCCFullEmergency = { ...balances, cc: 0, emergency: profile.emergency_target };
     const withSinking = buildFortnightSplit(profile, D, categories, noCCFullEmergency, recurring, noGoals, periods, profile.pay_anchor, 1);
     const without = buildFortnightSplit(profile, D, categories, noCCFullEmergency, [], noGoals, periods, profile.pay_anchor, 1);
-    expect(withSinking[0].sinkingTotal).toBeCloseTo(780 / 26, 5);
-    expect(withSinking[0].toDeposit).toBeCloseTo(without[0].toDeposit - 780 / 26, 5);
+    const expectedSinking = 780 / Math.ceil(daysUntil("2027-01-01", profile.pay_anchor) / 14);
+    expect(withSinking[0].sinkingTotal).toBeCloseTo(expectedSinking, 5);
+    expect(withSinking[0].toDeposit).toBeCloseTo(without[0].toDeposit - expectedSinking, 5);
   });
 
   it("funds goals in priority order after the emergency fund and before the deposit", () => {
@@ -678,16 +760,18 @@ describe("creditCardPayoffPeriod", () => {
 });
 
 describe("sinkingFundBreakdown", () => {
+  const today = "2026-08-19";
+
   it("converts each active recurring expense to a per-fortnight equivalent, biggest first", () => {
     const recurring = [
-      { id: "1", user_id: "u", description: "Rego", amount: 780, category_key: "other", account: "ANZ Plus", frequency: "yearly" as const, next_due: "2027-01-01", active: true, created_at: "" },
+      { id: "1", user_id: "u", description: "Rego", amount: 780, category_key: "other", account: "ANZ Plus", frequency: "yearly" as const, next_due: "2027-08-19", active: true, created_at: "" },
       { id: "2", user_id: "u", description: "Netflix", amount: 20, category_key: "other", account: "Everyday", frequency: "monthly" as const, next_due: "2026-09-01", active: true, created_at: "" },
       { id: "3", user_id: "u", description: "Paused thing", amount: 500, category_key: "other", account: "Everyday", frequency: "yearly" as const, next_due: "2027-01-01", active: false, created_at: "" },
     ];
-    const rows = sinkingFundBreakdown(recurring);
+    const rows = sinkingFundBreakdown(recurring, today);
     expect(rows).toHaveLength(2);
     expect(rows[0].label).toBe("Rego");
-    expect(rows[0].perFortnight).toBeCloseTo(780 / 26, 5);
+    expect(rows[0].perFortnight).toBeCloseTo(780 / Math.ceil(daysUntil("2027-08-19", today) / 14), 5);
     expect(rows[1].label).toBe("Netflix");
     expect(rows[1].perFortnight).toBeCloseTo((20 * 12) / 26, 5);
   });
@@ -911,7 +995,7 @@ function makePayslip(overrides: Partial<Payslip>): Payslip {
 }
 
 function makeMiscIncome(overrides: Partial<MiscIncome>): MiscIncome {
-  return { id: "m1", user_id: "u1", date: "2026-08-24", description: null, amount: 0, created_at: "2026-08-24T00:00:00Z", ...overrides };
+  return { id: "m1", user_id: "u1", date: "2026-08-24", description: null, amount: 0, account: "everyday", created_at: "2026-08-24T00:00:00Z", ...overrides };
 }
 
 describe("sumMiscIncomeYTD", () => {

@@ -157,6 +157,8 @@ export interface MiscIncome {
   date: string;
   description: string | null;
   amount: number;
+  /** Which balance this landed in — a key of `Balances` (e.g. "everyday", "anzplus"). */
+  account: string;
   created_at: string;
 }
 

@@ -1,16 +1,18 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Upload, Check, FileEdit } from "lucide-react";
+import { Upload, Check, FileEdit, ArrowRight } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { createClient } from "@/lib/supabase/client";
+import { isoFromDate } from "@/lib/period";
+import { actualIncomeForPeriod, fortnightBreakdown } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, INK, FAV, inputStyle } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, INK, FAV, UNFAV, NAVY, inputStyle } from "@/lib/theme";
 import type { PayslipExtraction } from "@/lib/payslipSchema";
 import type { Payslip } from "@/lib/types";
 
 export default function PayslipPanel({ periodKey }: { periodKey: string }) {
-  const { profile, payslips, addPayslip, updatePayslip, confirmPayslip } = useAppData();
+  const { profile, payslips, addPayslip, updatePayslip, confirmPayslip, categories, balances, recurringExpenses, goals, miscIncome, periods, D } = useAppData();
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -19,6 +21,15 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
   const periodPayslips = payslips.filter((p) => p.period_key === periodKey).sort((a, b) => a.created_at.localeCompare(b.created_at));
   const confirmedPayslips = periodPayslips.filter((p) => p.status === "confirmed");
   const confirmedTotal = confirmedPayslips.reduce((s, p) => s + (p.net || 0), 0);
+
+  // "Where this pay goes" — the fortnightly waterfall applied to everything actually confirmed
+  // for this period so far (every confirmed payslip's net + misc income), not just this one payslip.
+  const periodTotal = actualIncomeForPeriod(payslips, miscIncome, periodKey, profile.pay_anchor);
+  const per = periods.find((p) => p.key === periodKey);
+  const breakdown =
+    per && periodTotal > 0
+      ? fortnightBreakdown(D, categories, balances, recurringExpenses, goals, periodTotal, Number(profile.emergency_target) || 0, per.year, isoFromDate(new Date()))
+      : null;
 
   const handleFile = async (file: File) => {
     setBusy(true);
@@ -205,6 +216,52 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
               <span>{AUD(confirmedTotal)}</span>
             </div>
           )}
+        </div>
+      )}
+      {breakdown && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${LINE}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>
+            <ArrowRight size={13} color={GOLD} /> Where this pay goes
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: MUTE }}>Budgeted categories</span>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(breakdown.categoriesTotal)}</span>
+            </div>
+            {breakdown.sinkingTotal > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: MUTE }}>Set aside for bills</span>
+                <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(breakdown.sinkingTotal)}</span>
+              </div>
+            )}
+            {breakdown.toCreditCard > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: UNFAV }}>→ Credit card</span>
+                <span style={{ fontVariantNumeric: "tabular-nums", color: UNFAV }}>{AUD(breakdown.toCreditCard)}</span>
+              </div>
+            )}
+            {breakdown.toEmergency > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: FAV }}>→ Emergency fund</span>
+                <span style={{ fontVariantNumeric: "tabular-nums", color: FAV }}>{AUD(breakdown.toEmergency)}</span>
+              </div>
+            )}
+            {breakdown.goalAllocations
+              .filter((g) => g.amount > 0)
+              .map((g) => (
+                <div key={g.id} style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: GOLD }}>→ {g.label}</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums", color: GOLD }}>{AUD(g.amount)}</span>
+                </div>
+              ))}
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, borderTop: `1px solid ${LINE}`, paddingTop: 4, marginTop: 2 }}>
+              <span style={{ color: NAVY }}>→ Deposit</span>
+              <span style={{ fontVariantNumeric: "tabular-nums", color: FAV }}>{AUD(breakdown.toDeposit)}</span>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: MUTE, marginTop: 8, lineHeight: 1.5 }}>
+            Based on {AUD(periodTotal)} confirmed so far this fortnight, against today&apos;s real balances — a guide for where to move the money, not automatic.
+          </div>
         </div>
       )}
       {error && <div style={{ fontSize: 12, color: "#C0492F", marginTop: 8 }}>{error}</div>}

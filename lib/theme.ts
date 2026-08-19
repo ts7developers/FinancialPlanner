@@ -1,6 +1,7 @@
 // Palette + shared style tokens, ported from the FinancialPlanTracker.jsx prototype (spec §8).
 
 import type { CSSProperties } from "react";
+import type { Balances } from "./types";
 
 export const INK = "#16203A";
 export const NAVY = "#1F2A44";
@@ -30,6 +31,19 @@ export const ACC_COLOR: Record<Account, string> = {
   Holiday: "#2E7D5B",
   Cash: "#8CA0BE",
 };
+
+/** Every tracked balance field with a friendly label — the full set of destinations money can
+ * land in or move between (Accounts' transfer picker, misc income's account picker, etc). */
+export const BALANCE_FIELDS: [keyof Omit<Balances, "user_id">, string][] = [
+  ["everyday", "Everyday account"],
+  ["anzplus", "ANZ Plus — deposit"],
+  ["emergency", "Emergency fund"],
+  ["holiday", "Holiday (cruise)"],
+  ["shares", "Shares (CMC)"],
+  ["superb", "Super (UniSuper)"],
+  ["cc", "Credit card (owing)"],
+  ["hecs", "HECS-HELP (owing)"],
+];
 
 export const selStyle: CSSProperties = {
   padding: "7px 9px",

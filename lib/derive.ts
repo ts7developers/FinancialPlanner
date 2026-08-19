@@ -660,6 +660,21 @@ export function applyIncomeToBalance(balances: Balances, amount: number, sign: 1
   return { everyday: roundCents(balances.everyday + sign * amount) };
 }
 
+/**
+ * Balance patch for landing income (e.g. misc income) in a chosen account, or reversing it via
+ * `sign: -1`. Landing it in a liability account (cc/hecs) pays that down instead of adding to
+ * it — same convention `applyTransfer`'s "to" side uses.
+ */
+export function applyIncomeToAccount(
+  balances: Balances,
+  account: keyof Omit<Balances, "user_id">,
+  amount: number,
+  sign: 1 | -1 = 1
+): Partial<Omit<Balances, "user_id">> {
+  const delta = sign * amount * (LIABILITY_ACCOUNTS.has(account) ? -1 : 1);
+  return { [account]: roundCents(balances[account] + delta) };
+}
+
 export interface HoldingPL {
   avgCost: number | null;
   costBasis: number;
@@ -1012,8 +1027,21 @@ const RECURRING_OCCURRENCES_PER_YEAR: Record<RecurringFrequency, number> = {
   yearly: 1,
 };
 
-/** Converts a recurring expense's amount+frequency to its per-fortnight equivalent set-aside rate. */
-export function recurringPerFortnight(amount: number, frequency: RecurringFrequency): number {
+/**
+ * Converts a recurring expense's amount+frequency to its per-fortnight equivalent set-aside
+ * rate. Weekly/fortnightly/monthly bills recur predictably often enough that a flat
+ * occurrences-per-year average is the right steady-state number. Quarterly/yearly ones are big,
+ * infrequent lump sums instead — for those, dividing the amount by the fortnights actually left
+ * until `nextDueISO` gives a real answer to "how much do I need to save each pay to have this
+ * ready in time", which a flat annual average can badly understate right after adding a bill
+ * that's due soon. It recalculates as the due date approaches, so it climbs if nothing's been
+ * set aside yet — set the amount aside as it says and the rate stays flat instead.
+ */
+export function recurringPerFortnight(amount: number, frequency: RecurringFrequency, nextDueISO: string, todayISO: string): number {
+  if (frequency === "yearly" || frequency === "quarterly") {
+    const fortnightsUntilDue = Math.max(1, Math.ceil(daysUntil(nextDueISO, todayISO) / 14));
+    return amount / fortnightsUntilDue;
+  }
   return (amount * RECURRING_OCCURRENCES_PER_YEAR[frequency]) / FN_PER_YEAR;
 }
 
@@ -1021,6 +1049,7 @@ export interface SinkingFundItem {
   label: string;
   amount: number;
   frequency: RecurringFrequency;
+  nextDue: string;
   perFortnight: number;
 }
 
@@ -1029,16 +1058,72 @@ export interface SinkingFundItem {
  * budget categories entirely — nothing in `D.expFN` accounts for them. This is what should be
  * set aside each pay so the lump sum is there when they're actually due, biggest first.
  */
-export function sinkingFundBreakdown(recurringExpenses: RecurringExpense[]): SinkingFundItem[] {
+export function sinkingFundBreakdown(recurringExpenses: RecurringExpense[], todayISO: string): SinkingFundItem[] {
   return recurringExpenses
     .filter((r) => r.active)
-    .map((r) => ({ label: r.description, amount: r.amount, frequency: r.frequency, perFortnight: recurringPerFortnight(r.amount, r.frequency) }))
+    .map((r) => ({ label: r.description, amount: r.amount, frequency: r.frequency, nextDue: r.next_due, perFortnight: recurringPerFortnight(r.amount, r.frequency, r.next_due, todayISO) }))
     .sort((a, b) => b.perFortnight - a.perFortnight);
 }
 
 /** Total per-fortnight set-aside across all active recurring expenses — see `sinkingFundBreakdown`. */
-export function sinkingFundTotal(recurringExpenses: RecurringExpense[]): number {
-  return sinkingFundBreakdown(recurringExpenses).reduce((s, i) => s + i.perFortnight, 0);
+export function sinkingFundTotal(recurringExpenses: RecurringExpense[], todayISO: string): number {
+  return sinkingFundBreakdown(recurringExpenses, todayISO).reduce((s, i) => s + i.perFortnight, 0);
+}
+
+export interface FortnightBreakdown {
+  netPay: number;
+  categoriesTotal: number;
+  sinkingTotal: number;
+  toCreditCard: number;
+  toEmergency: number;
+  toGoalsTotal: number;
+  goalAllocations: GoalAllocation[];
+  toDeposit: number;
+}
+
+/**
+ * Applies the same waterfall `buildFortnightSplit` walks forward period by period — budgeted
+ * expenses, then the sinking-fund set-aside, then credit card paydown, then the emergency fund,
+ * then `goals` in priority order, then whatever's left to the deposit — to a single one-off
+ * amount (e.g. a just-confirmed payslip's net, or a fortnight's combined actual income) against
+ * today's real balances, rather than to the planned income for a series of projected periods.
+ * Used to show "where this pay goes" right after importing a payslip.
+ */
+export function fortnightBreakdown(
+  D: DerivedFinancials,
+  categories: BudgetCategoryRow[],
+  balances: Balances,
+  recurringExpenses: RecurringExpense[],
+  goals: Goal[],
+  netPay: number,
+  emergencyTarget: number,
+  year: number,
+  todayISO: string
+): FortnightBreakdown {
+  const categoriesTotal = D.expFN(year);
+  const sinkingTotal = sinkingFundTotal(recurringExpenses, todayISO);
+  let surplus = Math.max(0, netPay - categoriesTotal - sinkingTotal);
+
+  const cc = Number(balances.cc) || 0;
+  const toCreditCard = Math.max(0, Math.min(surplus, cc));
+  surplus -= toCreditCard;
+
+  const emergency = Number(balances.emergency) || 0;
+  const toEmergency = Math.max(0, Math.min(surplus, emergencyTarget - emergency));
+  surplus -= toEmergency;
+
+  const goalAllocations: GoalAllocation[] = [];
+  let toGoalsTotal = 0;
+  sortGoalsByPriority(goals).forEach((g) => {
+    const current = Number(g.current_amount) || 0;
+    const remaining = Math.max(0, Number(g.target_amount) - current);
+    const amount = Math.max(0, Math.min(surplus, remaining));
+    surplus -= amount;
+    toGoalsTotal += amount;
+    goalAllocations.push({ id: g.id, label: g.label, amount, balance: Math.round(current + amount) });
+  });
+
+  return { netPay, categoriesTotal, sinkingTotal, toCreditCard, toEmergency, toGoalsTotal, goalAllocations, toDeposit: surplus };
 }
 
 /**
@@ -1064,7 +1149,7 @@ export function buildFortnightSplit(
 ): FortnightSplitPoint[] {
   const startIdx = currentPeriod(periods, todayISO).idx;
   const emergencyTarget = Number(profile.emergency_target) || 0;
-  const sinkingTotal = sinkingFundTotal(recurringExpenses);
+  const sinkingTotal = sinkingFundTotal(recurringExpenses, todayISO);
   let emergency = Number(balances.emergency) || 0;
   let deposit = Number(balances.anzplus) || 0;
   let cc = Number(balances.cc) || 0;
