@@ -117,15 +117,19 @@ export default function ExpensesTab() {
       flash("Add a date and amount");
       return;
     }
-    await addTransaction({
-      date: form.date,
-      description: form.desc,
-      amount: Number(form.amount),
-      category_key: form.catId,
-      account: form.account,
-    });
-    setForm((f) => ({ ...f, desc: "", amount: "" }));
-    flash("Expense logged");
+    try {
+      await addTransaction({
+        date: form.date,
+        description: form.desc,
+        amount: Number(form.amount),
+        category_key: form.catId,
+        account: form.account,
+      });
+      setForm((f) => ({ ...f, desc: "", amount: "" }));
+      flash("Expense logged");
+    } catch {
+      flash("Could not log that expense");
+    }
   };
 
   // Falls back for a category deleted on Budget since this transaction was logged — the spend
@@ -150,9 +154,13 @@ export default function ExpensesTab() {
       flash("Add a description, amount and start date");
       return;
     }
-    await addRecurringExpense(recForm.desc, Number(recForm.amount), recForm.catId, recForm.account, recForm.frequency, recForm.nextDue);
-    setRecForm((f) => ({ ...f, desc: "", amount: "" }));
-    flash("Recurring expense added");
+    try {
+      await addRecurringExpense(recForm.desc, Number(recForm.amount), recForm.catId, recForm.account, recForm.frequency, recForm.nextDue);
+      setRecForm((f) => ({ ...f, desc: "", amount: "" }));
+      flash("Recurring expense added");
+    } catch {
+      flash("Could not add that recurring expense");
+    }
   };
 
   const onLogRecurring = async (r: RecurringExpense) => {
@@ -160,13 +168,31 @@ export default function ExpensesTab() {
     try {
       await logRecurringExpense(r.id);
       flash(`Logged ${r.description}`);
+    } catch {
+      flash(`Could not log ${r.description}`);
     } finally {
       setRecBusy(null);
     }
   };
 
+  const onToggleRecurring = async (r: RecurringExpense) => {
+    try {
+      await toggleRecurringExpense(r.id);
+    } catch {
+      flash(`Could not ${r.active ? "pause" : "resume"} ${r.description}`);
+    }
+  };
+
+  const onDeleteRecurring = async (r: RecurringExpense) => {
+    try {
+      await deleteRecurringExpense(r.id);
+    } catch {
+      flash(`Could not remove ${r.description}`);
+    }
+  };
+
   const onDelete = (t: Transaction) => {
-    deleteTransaction(t.id);
+    deleteTransaction(t.id, () => flash("Could not delete that expense — it's back"));
     const desc = t.description || catLabel(t.category_key);
     setPendingDelete({ id: t.id, desc });
     setTimeout(() => setPendingDelete((p) => (p?.id === t.id ? null : p)), 5000);
@@ -365,10 +391,10 @@ export default function ExpensesTab() {
                   >
                     <Plus size={13} /> Log it
                   </button>
-                  <button onClick={() => toggleRecurringExpense(r.id)} title="Pause" style={{ background: "none", border: "none", cursor: "pointer", color: "#A99B6E", display: "flex" }}>
+                  <button onClick={() => onToggleRecurring(r)} title="Pause" style={{ background: "none", border: "none", cursor: "pointer", color: "#A99B6E", display: "flex" }}>
                     <Pause size={14} />
                   </button>
-                  <button onClick={() => deleteRecurringExpense(r.id)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                  <button onClick={() => onDeleteRecurring(r)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -396,10 +422,10 @@ export default function ExpensesTab() {
                   {FREQ_LABEL[r.frequency]} · next {r.next_due.slice(5)} · in {daysUntil(r.next_due, today)}d
                 </span>
                 <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500, flex: "0 0 auto" }}>{AUD(Number(r.amount), 2)}</span>
-                <button onClick={() => toggleRecurringExpense(r.id)} title="Pause" style={{ background: "none", border: "none", cursor: "pointer", color: "#A99B6E", display: "flex" }}>
+                <button onClick={() => onToggleRecurring(r)} title="Pause" style={{ background: "none", border: "none", cursor: "pointer", color: "#A99B6E", display: "flex" }}>
                   <Pause size={13} />
                 </button>
-                <button onClick={() => deleteRecurringExpense(r.id)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                <button onClick={() => onDeleteRecurring(r)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -414,10 +440,10 @@ export default function ExpensesTab() {
                 <div style={{ flex: "1 1 160px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.description}</div>
                 <span style={{ fontSize: 11.5, color: MUTE, flex: "0 0 auto" }}>{FREQ_LABEL[r.frequency]} · paused</span>
                 <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500, flex: "0 0 auto" }}>{AUD(Number(r.amount), 2)}</span>
-                <button onClick={() => toggleRecurringExpense(r.id)} title="Resume" style={{ background: "none", border: "none", cursor: "pointer", color: FAV, display: "flex" }}>
+                <button onClick={() => onToggleRecurring(r)} title="Resume" style={{ background: "none", border: "none", cursor: "pointer", color: FAV, display: "flex" }}>
                   <Play size={13} />
                 </button>
-                <button onClick={() => deleteRecurringExpense(r.id)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                <button onClick={() => onDeleteRecurring(r)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
                   <Trash2 size={13} />
                 </button>
               </div>

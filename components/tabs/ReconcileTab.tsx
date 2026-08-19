@@ -66,23 +66,31 @@ export default function ReconcileTab() {
   const varianceRows = varianceReport.rows.filter((r) => r.plannedTotal > 0 || r.actualTotal > 0).sort((a, b) => a.variance - b.variance);
   const insights = buildVarianceInsights(categories, D, periods, loggedByCat, reconciliations);
 
-  const commitIncome = () => {
-    setReconciliation(period, { actual_income: incomeInput === "" ? null : Number(incomeInput) });
-    flash();
+  const commitIncome = async () => {
+    try {
+      await setReconciliation(period, { actual_income: incomeInput === "" ? null : Number(incomeInput) });
+      flash();
+    } catch {
+      flash("Could not save that");
+    }
   };
-  const commitActual = (catId: string, value: string) => {
+  const commitActual = async (catId: string, value: string) => {
     // Untouched fields display the auto-filled logged total but never got an onChange, so
     // overridesInput[catId] is still undefined here — skip writing an override so the row
     // keeps auto-tracking new transactions logged against this category for the period.
     if (overridesInput[catId] === undefined) return;
     const nextOverrides = { ...overridesInput, [catId]: value };
     setOverridesInput(nextOverrides);
-    setReconciliation(period, { actual_overrides: nextOverrides });
-    flash();
+    try {
+      await setReconciliation(period, { actual_overrides: nextOverrides });
+      flash();
+    } catch {
+      flash("Could not save that");
+    }
   };
 
   const autofillableCount = catRows.filter((r) => r.logged > 0 && (overridesInput[r.id] === undefined || overridesInput[r.id] === "")).length;
-  const autofillFromExpenses = () => {
+  const autofillFromExpenses = async () => {
     const nextOverrides = { ...overridesInput };
     catRows.forEach((r) => {
       if (r.logged > 0 && (overridesInput[r.id] === undefined || overridesInput[r.id] === "")) {
@@ -90,32 +98,49 @@ export default function ReconcileTab() {
       }
     });
     setOverridesInput(nextOverrides);
-    setReconciliation(period, { actual_overrides: nextOverrides });
-    flash("Autofilled from Expenses");
+    try {
+      await setReconciliation(period, { actual_overrides: nextOverrides });
+      flash("Autofilled from Expenses");
+    } catch {
+      flash("Could not autofill from Expenses");
+    }
   };
 
   // Sum of every confirmed payslip's net + misc income landing in this fortnight — same rule
   // confirmPayslip/addMiscIncome already use, just triggerable on demand rather than only when
   // one of those is first confirmed/added (e.g. after confirming a payslip without leaving this page).
   const autofillablePayAmount = actualIncomeForPeriod(payslips, miscIncome, period, profile.pay_anchor);
-  const autofillPay = () => {
+  const autofillPay = async () => {
     const value = String(autofillablePayAmount);
     setIncomeInput(value);
-    setReconciliation(period, { actual_income: autofillablePayAmount });
-    flash("Autofilled pay");
+    try {
+      await setReconciliation(period, { actual_income: autofillablePayAmount });
+      flash("Autofilled pay");
+    } catch {
+      setIncomeInput(rec?.actual_income == null ? "" : String(rec.actual_income));
+      flash("Could not autofill pay");
+    }
   };
 
-  const closeReconciliation = () => {
-    setReconciliation(period, { closed_at: new Date().toISOString() });
-    flash("Fortnight reconciled");
+  const closeReconciliation = async () => {
+    try {
+      await setReconciliation(period, { closed_at: new Date().toISOString() });
+      flash("Fortnight reconciled");
+    } catch {
+      flash("Could not reconcile — nothing was saved");
+    }
   };
 
-  const resetReconciliation = () => {
+  const resetReconciliation = async () => {
     if (!window.confirm(`Clear the reconciliation for ${periodLabel(perObj)}? This removes the actual income and every manual override for this fortnight — logged transactions on Expenses are untouched, so any auto-filled rows will come straight back.`)) return;
-    setIncomeInput("");
-    setOverridesInput({});
-    setReconciliation(period, { actual_income: null, actual_overrides: {}, closed_at: null });
-    flash("Reconciliation cleared");
+    try {
+      await setReconciliation(period, { actual_income: null, actual_overrides: {}, closed_at: null });
+      setIncomeInput("");
+      setOverridesInput({});
+      flash("Reconciliation cleared");
+    } catch {
+      flash("Could not clear that reconciliation");
+    }
   };
 
   return (

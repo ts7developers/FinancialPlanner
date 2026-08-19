@@ -14,6 +14,7 @@ import {
   applyIncomeToAccount,
   nextOccurrence,
   actualIncomeForPeriod,
+  roundCents,
   type DerivedFinancials,
   type PlanPathPoint,
 } from "@/lib/derive";
@@ -70,8 +71,9 @@ interface AppDataContextValue {
   addCategory: (label: string, amount2026?: number, amount2027?: number, explicitKey?: string) => Promise<void>;
   deleteCategory: (key: string) => Promise<void>;
   addTransaction: (t: NewTransaction) => Promise<void>;
-  /** Removes the transaction from view immediately; the DB delete is deferred so `undoDeleteTransaction` can still cancel it. */
-  deleteTransaction: (id: string) => void;
+  /** Removes the transaction from view immediately; the DB delete is deferred so `undoDeleteTransaction` can still cancel it.
+   * If the deferred delete fails, the removal is rolled back (transaction and balance restored) and `onFailure` is called. */
+  deleteTransaction: (id: string, onFailure?: () => void) => void;
   undoDeleteTransaction: (id: string) => void;
   setReconciliation: (
     periodKey: string,
@@ -93,7 +95,7 @@ interface AppDataContextValue {
   deleteHolding: (id: string) => Promise<void>;
   /** Fetches delayed prices for every held code and revalues the "shares" balance to match. */
   refreshHoldingPrices: () => Promise<void>;
-  addHoldingLot: (code: string, shares: number, price: number, date: string) => Promise<void>;
+  addHoldingLot: (code: string, shares: number, price: number, date: string, account?: keyof Omit<Balances, "user_id">) => Promise<void>;
   deleteHoldingLot: (id: string) => Promise<void>;
   addSuperContribution: (
     date: string,
@@ -101,7 +103,8 @@ interface AppDataContextValue {
     type: SuperContribution["type"],
     taxDeductible: boolean,
     affectsBalance: boolean,
-    note?: string
+    note?: string,
+    account?: keyof Omit<Balances, "user_id">
   ) => Promise<void>;
   deleteSuperContribution: (id: string) => Promise<void>;
   addRecurringExpense: (
@@ -265,7 +268,7 @@ export function AppDataProvider({
   const pendingDeletes = useRef<Record<string, { txn: Transaction; timer: ReturnType<typeof setTimeout> }>>({});
 
   const deleteTransaction = useCallback(
-    (id: string) => {
+    (id: string, onFailure?: () => void) => {
       const txn = transactions.find((t) => t.id === id);
       if (!txn) return;
       setTransactions((ts) => ts.filter((t) => t.id !== id));
@@ -274,7 +277,15 @@ export function AppDataProvider({
       const timer = setTimeout(async () => {
         delete pendingDeletes.current[id];
         const { error } = await supabase.from("transactions").delete().eq("id", id);
-        if (error) throw error;
+        if (error) {
+          // The optimistic removal never actually persisted — put the transaction and its
+          // balance effect back rather than leaving local state silently diverged from the DB.
+          setTransactions((ts) => [txn, ...ts]);
+          const revertPatch = applyExpenseToBalance(balances, txn.account, Number(txn.amount) || 0, 1);
+          if (revertPatch) updateBalances(revertPatch);
+          onFailure?.();
+          return;
+        }
       }, UNDO_WINDOW_MS);
       pendingDeletes.current[id] = { txn, timer };
     },
@@ -311,7 +322,10 @@ export function AppDataProvider({
           },
           { onConflict: "user_id,period_key" }
         );
-      if (error) throw error;
+      if (error) {
+        setReconciliations((rs) => ({ ...rs, [periodKey]: existing }));
+        throw error;
+      }
     },
     [supabase, profile.user_id, reconciliations]
   );
@@ -340,7 +354,9 @@ export function AppDataProvider({
 
   const confirmPayslip = useCallback(
     async (id: string, periodKey: string, fields: PayslipExtraction) => {
-      const alreadyConfirmed = payslips.find((p) => p.id === id)?.status === "confirmed";
+      const existing = payslips.find((p) => p.id === id);
+      const alreadyConfirmed = existing?.status === "confirmed";
+      const previouslyPostedNet = alreadyConfirmed ? existing?.net ?? 0 : 0;
       const confirmedAt = new Date().toISOString();
       const patch = {
         status: "confirmed" as const,
@@ -361,9 +377,11 @@ export function AppDataProvider({
       // job, or a tax refund) alongside the main one.
       const periodTotal = actualIncomeForPeriod(effectivePayslips, miscIncome, periodKey, profile.pay_anchor);
       await setReconciliation(periodKey, { actual_income: periodTotal > 0 ? periodTotal : null });
-      // Only the first confirmation lands the pay in Everyday — re-confirming an already-posted
-      // payslip (e.g. after correcting a figure) must not double-count it.
-      if (!alreadyConfirmed) await updateBalances(applyIncomeToBalance(balances, fields.net));
+      // Land just the delta in Everyday: the first confirmation posts the full net; re-confirming
+      // an already-posted payslip (e.g. after correcting a misread figure) posts only the
+      // difference from what was posted before, so a correction is reflected instead of ignored.
+      const delta = fields.net - previouslyPostedNet;
+      if (delta !== 0) await updateBalances(applyIncomeToBalance(balances, delta));
     },
     [supabase, setReconciliation, payslips, miscIncome, profile.pay_anchor, balances, updateBalances]
   );
@@ -444,8 +462,8 @@ export function AppDataProvider({
   const addTransfer = useCallback(
     async (from: keyof Omit<Balances, "user_id">, to: keyof Omit<Balances, "user_id">, amount: number, note?: string) => {
       if (from === to || !(amount > 0)) return;
-      const patch = applyTransfer(balances, from, to, amount);
-      await updateBalances(patch);
+      // Persist the transfer row first — if the caller retries after a failure, applying the
+      // balance patch only once the row is safely saved avoids moving the money twice.
       const { data, error } = await supabase
         .from("transfers")
         .insert({ user_id: profile.user_id, from_account: from, to_account: to, amount, note: note || null })
@@ -453,6 +471,7 @@ export function AppDataProvider({
         .single();
       if (error) throw error;
       setTransfers((ts) => [data as Transfer, ...ts]);
+      await updateBalances(applyTransfer(balances, from, to, amount));
     },
     [supabase, profile.user_id, balances, updateBalances]
   );
@@ -476,6 +495,7 @@ export function AppDataProvider({
     async (id: string) => {
       const holding = holdings.find((h) => h.id === id);
       setHoldings((hs) => hs.filter((h) => h.id !== id));
+      const codeLots = holding ? holdingLots.filter((l) => l.code === holding.code) : [];
       if (holding) setHoldingLots((ls) => ls.filter((l) => l.code !== holding.code));
       const { error } = await supabase.from("holdings").delete().eq("id", id);
       if (error) throw error;
@@ -484,9 +504,23 @@ export function AppDataProvider({
         // a stale average cost from lots the holding no longer has any connection to.
         const { error: lotsErr } = await supabase.from("holding_lots").delete().eq("user_id", profile.user_id).eq("code", holding.code);
         if (lotsErr) throw lotsErr;
+
+        // Refund whatever funded each lot, and remove this holding's value from the shares
+        // balance — best estimate is its last priced value, falling back to cost basis for a
+        // holding that was never priced. Approximate until the next "Refresh prices".
+        const totalCost = codeLots.reduce((s, l) => s + l.shares * l.price, 0);
+        const estimatedValue = holding.last_price != null ? holding.last_price * holding.shares : totalCost;
+        const refundByAccount = new Map<string, number>();
+        codeLots.forEach((l) => refundByAccount.set(l.account, (refundByAccount.get(l.account) ?? 0) + l.shares * l.price));
+        const patch: Partial<Omit<Balances, "user_id">> = { shares: roundCents((Number(balances.shares) || 0) - estimatedValue) };
+        refundByAccount.forEach((refund, account) => {
+          const key = account as keyof Omit<Balances, "user_id">;
+          patch[key] = roundCents((Number(balances[key]) || 0) + refund);
+        });
+        await updateBalances(patch);
       }
     },
-    [supabase, holdings, profile.user_id]
+    [supabase, holdings, holdingLots, profile.user_id, balances, updateBalances]
   );
 
   const refreshHoldingPrices = useCallback(async () => {
@@ -520,22 +554,32 @@ export function AppDataProvider({
 
     const total = holdings.reduce((sum, h) => {
       const q = priced.find((r) => r.code === h.code);
-      const price = q ? q.price! : h.last_price;
-      return sum + (price != null ? price * h.shares : 0);
+      let price = q ? q.price! : h.last_price;
+      if (price == null) {
+        // Never priced (e.g. quote failed on a brand-new holding) — fall back to average cost
+        // from its buy lots rather than silently contributing $0 to the total.
+        const codeLots = holdingLots.filter((l) => l.code === h.code);
+        const totalCost = codeLots.reduce((s, l) => s + l.shares * l.price, 0);
+        const totalLotShares = codeLots.reduce((s, l) => s + l.shares, 0);
+        price = totalLotShares > 0 ? totalCost / totalLotShares : 0;
+      }
+      return sum + price * h.shares;
     }, 0);
     await updateBalances({ shares: total });
-  }, [holdings, supabase, profile.user_id, updateBalances]);
+  }, [holdings, holdingLots, supabase, profile.user_id, updateBalances]);
 
-  // Logs a buy lot (for DCA/P&L) and folds it straight into that code's current share count —
-  // creating the holding if this is a new code. Selling isn't tracked as lots (no FIFO/CGT
-  // parcel accounting here); use the holding row's Shares field directly for that correction.
+  // Logs a buy lot (for DCA/P&L), folds it into that code's current share count — creating the
+  // holding if this is a new code — and debits the funding account for the cash actually spent
+  // (crediting `shares` by the same amount, refined later by "Refresh prices" once real quotes
+  // come in). Selling isn't tracked as lots (no FIFO/CGT parcel accounting here); use the
+  // holding row's Shares field directly for that correction.
   const addHoldingLot = useCallback(
-    async (code: string, shares: number, price: number, date: string) => {
+    async (code: string, shares: number, price: number, date: string, account: keyof Omit<Balances, "user_id"> = "everyday") => {
       const normalizedCode = code.trim().toUpperCase();
       if (!normalizedCode || !(shares > 0) || !(price > 0)) return;
       const { data, error } = await supabase
         .from("holding_lots")
-        .insert({ user_id: profile.user_id, code: normalizedCode, shares, price, date })
+        .insert({ user_id: profile.user_id, code: normalizedCode, shares, price, date, account })
         .select()
         .single();
       if (error) throw error;
@@ -550,12 +594,13 @@ export function AppDataProvider({
         .single();
       if (holdingErr) throw holdingErr;
       setHoldings((hs) => [...hs.filter((h) => h.code !== normalizedCode), holdingRow as Holding].sort((a, b) => a.code.localeCompare(b.code)));
+      await updateBalances(applyTransfer(balances, account, "shares", shares * price));
     },
-    [supabase, profile.user_id, holdings]
+    [supabase, profile.user_id, holdings, balances, updateBalances]
   );
 
-  // Reverses what addHoldingLot did: removes the lot and subtracts its shares back off that
-  // code's holding, so deleting a mistaken buy entry doesn't leave the share count inflated.
+  // Reverses what addHoldingLot did: removes the lot, subtracts its shares back off that code's
+  // holding, and refunds the account that funded it.
   const deleteHoldingLot = useCallback(
     async (id: string) => {
       const lot = holdingLots.find((l) => l.id === id);
@@ -569,22 +614,46 @@ export function AppDataProvider({
         setHoldings((hs) => hs.map((h) => (h.id === holding.id ? { ...h, shares: newShareTotal } : h)));
         const { error: shareErr } = await supabase.from("holdings").update({ shares: newShareTotal }).eq("id", holding.id);
         if (shareErr) throw shareErr;
+        await updateBalances(applyTransfer(balances, "shares", lot.account as keyof Omit<Balances, "user_id">, lot.shares * lot.price));
       }
     },
-    [supabase, holdingLots, holdings]
+    [supabase, holdingLots, holdings, balances, updateBalances]
   );
 
   const addSuperContribution = useCallback(
-    async (date: string, amount: number, type: SuperContribution["type"], taxDeductible: boolean, affectsBalance: boolean, note?: string) => {
+    async (
+      date: string,
+      amount: number,
+      type: SuperContribution["type"],
+      taxDeductible: boolean,
+      affectsBalance: boolean,
+      note?: string,
+      account?: keyof Omit<Balances, "user_id">
+    ) => {
       if (!(amount > 0)) return;
+      // Only meaningful for a "personal" contribution — salary sacrifice is pre-tax and never
+      // touched a tracked balance, so there's nothing to debit.
+      const fundingAccount = type === "personal" ? account : undefined;
       const { data, error } = await supabase
         .from("super_contributions")
-        .insert({ user_id: profile.user_id, date, amount, type, tax_deductible: taxDeductible, affects_balance: affectsBalance, note: note || null })
+        .insert({
+          user_id: profile.user_id,
+          date,
+          amount,
+          type,
+          tax_deductible: taxDeductible,
+          affects_balance: affectsBalance,
+          account: fundingAccount ?? null,
+          note: note || null,
+        })
         .select()
         .single();
       if (error) throw error;
       setSuperContributions((cs) => [data as SuperContribution, ...cs]);
-      if (affectsBalance) await updateBalances({ superb: balances.superb + amount });
+      if (affectsBalance) {
+        const patch = fundingAccount ? applyTransfer(balances, fundingAccount, "superb", amount) : applyIncomeToAccount(balances, "superb", amount);
+        await updateBalances(patch);
+      }
     },
     [supabase, profile.user_id, balances, updateBalances]
   );
@@ -593,9 +662,15 @@ export function AppDataProvider({
     async (id: string) => {
       const contribution = superContributions.find((c) => c.id === id);
       setSuperContributions((cs) => cs.filter((c) => c.id !== id));
-      if (contribution?.affects_balance) await updateBalances({ superb: balances.superb - contribution.amount });
       const { error } = await supabase.from("super_contributions").delete().eq("id", id);
       if (error) throw error;
+      if (contribution?.affects_balance) {
+        const fundingAccount = contribution.account as keyof Omit<Balances, "user_id"> | null;
+        const patch = fundingAccount
+          ? applyTransfer(balances, "superb", fundingAccount, contribution.amount)
+          : applyIncomeToAccount(balances, "superb", contribution.amount, -1);
+        await updateBalances(patch);
+      }
     },
     [supabase, superContributions, balances, updateBalances]
   );

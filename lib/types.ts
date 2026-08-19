@@ -104,6 +104,8 @@ export interface HoldingLot {
   shares: number;
   price: number;
   date: string;
+  /** Which balance funded this buy (a key of `Balances`, e.g. "everyday") — reversed here if the lot is deleted. */
+  account: string;
   created_at: string;
 }
 
@@ -117,6 +119,8 @@ export interface SuperContribution {
   tax_deductible: boolean;
   /** Whether this contribution was folded into the "superb" balance when logged (false for historical backfills already reflected in the current balance). */
   affects_balance: boolean;
+  /** Which balance funded a "personal" contribution (a key of `Balances`) — null for salary_sacrifice, which is pre-tax and never touched a tracked balance. */
+  account: string | null;
   note: string | null;
   created_at: string;
 }

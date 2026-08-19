@@ -6,9 +6,9 @@ import { useAppData } from "@/components/AppDataProvider";
 import { isoFromDate, financialYearStart } from "@/lib/period";
 import { sumYTD, fhssSummary, FHSS_ANNUAL_CAP, FHSS_LIFETIME_CAP, DEFAULT_FHSS_DEEMED_RATE } from "@/lib/derive";
 import { AUD, num } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, FAV, selStyle } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, NAVY, FAV, selStyle, BALANCE_FIELDS } from "@/lib/theme";
 import { Metric, Progress, Field } from "@/components/ui/atoms";
-import type { SuperContribution } from "@/lib/types";
+import type { SuperContribution, Balances } from "@/lib/types";
 
 const TYPE_LABEL: Record<SuperContribution["type"], string> = {
   salary_sacrifice: "Salary sacrifice",
@@ -24,6 +24,7 @@ export default function SuperTab() {
   const [type, setType] = useState<SuperContribution["type"]>("salary_sacrifice");
   const [taxDeductible, setTaxDeductible] = useState(true);
   const [affectsBalance, setAffectsBalance] = useState(true);
+  const [contribAccount, setContribAccount] = useState<keyof Omit<Balances, "user_id">>("everyday");
   const [note, setNote] = useState("");
   const [deemedRate, setDeemedRate] = useState(String(DEFAULT_FHSS_DEEMED_RATE));
   const [busy, setBusy] = useState(false);
@@ -49,6 +50,15 @@ export default function SuperTab() {
     if (t === "salary_sacrifice") setTaxDeductible(true); // always concessional — never after-tax money
   };
 
+  const onDelete = async (id: string) => {
+    try {
+      await deleteSuperContribution(id);
+      flash("Contribution removed");
+    } catch {
+      setError("Could not remove that contribution");
+    }
+  };
+
   const onAdd = async () => {
     if (!(Number(amount) > 0)) {
       setError("Enter an amount.");
@@ -57,7 +67,7 @@ export default function SuperTab() {
     setBusy(true);
     setError("");
     try {
-      await addSuperContribution(date || today, Number(amount), type, taxDeductible, affectsBalance, note || undefined);
+      await addSuperContribution(date || today, Number(amount), type, taxDeductible, affectsBalance, note || undefined, type === "personal" ? contribAccount : undefined);
       setAmount("");
       setNote("");
       flash("Contribution logged");
@@ -101,7 +111,14 @@ export default function SuperTab() {
                 inputMode="decimal"
                 value={employerExtra}
                 onChange={(e) => setEmployerExtra(e.target.value)}
-                onBlur={() => updateProfile({ super_employer_extra: Number(employerExtra) || 0 })}
+                onBlur={async () => {
+                  try {
+                    await updateProfile({ super_employer_extra: Number(employerExtra) || 0 });
+                    flash();
+                  } catch {
+                    setError("Could not save that");
+                  }
+                }}
                 style={{ ...selStyle, width: 110, textAlign: "right", fontVariantNumeric: "tabular-nums" }}
               />
             </div>
@@ -179,6 +196,17 @@ export default function SuperTab() {
               Add to Super balance
             </label>
           </Field>
+          {type === "personal" && affectsBalance && (
+            <Field label="Paid from">
+              <select value={contribAccount} onChange={(e) => setContribAccount(e.target.value as keyof Omit<Balances, "user_id">)} style={{ ...selStyle, width: 170 }}>
+                {BALANCE_FIELDS.filter(([k]) => k !== "superb").map(([k, lbl]) => (
+                  <option key={k} value={k}>
+                    {lbl}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Note (optional)" grow>
             <input type="text" placeholder="e.g. Extra this payday" value={note} onChange={(e) => setNote(e.target.value)} style={{ ...selStyle, width: "100%", textAlign: "left" }} />
           </Field>
@@ -223,7 +251,7 @@ export default function SuperTab() {
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontWeight: 500 }}>{AUD(c.amount, 2)}</span>
-                  <button onClick={() => deleteSuperContribution(c.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                  <button onClick={() => onDelete(c.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
                     <Trash2 size={14} />
                   </button>
                 </div>

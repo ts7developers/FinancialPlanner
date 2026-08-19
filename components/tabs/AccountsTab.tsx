@@ -39,14 +39,22 @@ export default function AccountsTab() {
     setTimeout(() => setFlashMsg(""), 1300);
   };
 
-  const commit = (key: keyof Omit<Balances, "user_id">, value: string) => {
-    updateBalances({ [key]: num(value) } as Partial<Omit<Balances, "user_id">>);
-    flash();
+  const commit = async (key: keyof Omit<Balances, "user_id">, value: string) => {
+    try {
+      await updateBalances({ [key]: num(value) } as Partial<Omit<Balances, "user_id">>);
+      flash();
+    } catch {
+      flash("Could not save that balance");
+    }
   };
 
   const onSnapshot = async () => {
-    await takeSnapshot();
-    flash("Snapshot saved");
+    try {
+      await takeSnapshot();
+      flash("Snapshot saved");
+    } catch {
+      flash("Could not save that snapshot");
+    }
   };
 
   const [transferFrom, setTransferFrom] = useState<keyof Omit<Balances, "user_id">>("everyday");
@@ -86,6 +94,7 @@ export default function AccountsTab() {
   const [buyShares, setBuyShares] = useState("");
   const [buyPrice, setBuyPrice] = useState("");
   const [buyDate, setBuyDate] = useState("");
+  const [buyAccount, setBuyAccount] = useState<keyof Omit<Balances, "user_id">>("everyday");
   const [holdingBusy, setHoldingBusy] = useState(false);
   const [holdingError, setHoldingError] = useState("");
 
@@ -97,7 +106,7 @@ export default function AccountsTab() {
     setHoldingBusy(true);
     setHoldingError("");
     try {
-      await addHoldingLot(buyCode, Number(buyShares), Number(buyPrice), buyDate || new Date().toISOString().slice(0, 10));
+      await addHoldingLot(buyCode, Number(buyShares), Number(buyPrice), buyDate || new Date().toISOString().slice(0, 10), buyAccount);
       setBuyCode("");
       setBuyShares("");
       setBuyPrice("");
@@ -129,6 +138,24 @@ export default function AccountsTab() {
       setHoldingError("Could not fetch prices right now");
     } finally {
       setHoldingBusy(false);
+    }
+  };
+
+  const onDeleteHolding = async (id: string) => {
+    try {
+      await deleteHolding(id);
+      flash("Holding removed");
+    } catch {
+      setHoldingError("Could not remove that holding");
+    }
+  };
+
+  const onDeleteHoldingLot = async (id: string) => {
+    try {
+      await deleteHoldingLot(id);
+      flash("Buy removed");
+    } catch {
+      setHoldingError("Could not remove that buy");
     }
   };
 
@@ -336,7 +363,7 @@ export default function AccountsTab() {
                   <span style={{ flex: 1, textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
                     {h.last_price != null ? AUD(h.last_price * h.shares, 2) : "—"}
                   </span>
-                  <button onClick={() => deleteHolding(h.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                  <button onClick={() => onDeleteHolding(h.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -409,6 +436,15 @@ export default function AccountsTab() {
             <Field label="Date">
               <input type="date" value={buyDate} onChange={(e) => setBuyDate(e.target.value)} style={{ ...selStyle, width: 140 }} />
             </Field>
+            <Field label="Paid from">
+              <select value={buyAccount} onChange={(e) => setBuyAccount(e.target.value as keyof Omit<Balances, "user_id">)} style={{ ...selStyle, width: 160 }}>
+                {BALANCE_FIELDS.filter(([k]) => k !== "shares").map(([k, lbl]) => (
+                  <option key={k} value={k}>
+                    {lbl}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <button
               onClick={onLogBuy}
               disabled={holdingBusy}
@@ -418,7 +454,7 @@ export default function AccountsTab() {
             </button>
           </div>
           <div style={{ fontSize: 11, color: MUTE, marginTop: 6 }}>
-            Adds to that code&apos;s share count and its average cost. Correct the Shares number above directly for sells or fixes — sells aren&apos;t tracked as lots.
+            Adds to that code&apos;s share count and its average cost, and debits the account it was paid from. Correct the Shares number above directly for sells or fixes — sells aren&apos;t tracked as lots and don&apos;t touch any balance.
           </div>
         </div>
         {holdingError && <div style={{ fontSize: 12, color: "#C0492F", marginTop: 8 }}>{holdingError}</div>}
@@ -432,7 +468,7 @@ export default function AccountsTab() {
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span>{AUD(l.shares * l.price, 2)}</span>
-                  <button onClick={() => deleteHoldingLot(l.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                  <button onClick={() => onDeleteHoldingLot(l.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
                     <Trash2 size={13} />
                   </button>
                 </div>

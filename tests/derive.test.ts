@@ -84,6 +84,7 @@ const lot = (code: string, shares: number, price: number): HoldingLot => ({
   shares,
   price,
   date: "2026-01-01",
+  account: "everyday",
   created_at: "2026-01-01T00:00:00Z",
 });
 

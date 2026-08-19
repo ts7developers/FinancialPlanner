@@ -63,36 +63,52 @@ export default function PlanTab() {
 
   const set = (key: keyof ProfileInputs, value: string) => setInputs((ii) => ({ ...ii, [key]: value }));
 
-  const commitDate = (field: "pay_anchor" | "ft_start", value: string) => {
-    updateProfile({ [field]: value });
-    flash();
+  const commitDate = async (field: "pay_anchor" | "ft_start", value: string) => {
+    try {
+      await updateProfile({ [field]: value });
+      flash();
+    } catch {
+      flash("Could not save that");
+    }
   };
 
-  const commitNumber = (field: keyof Profile, raw: string, scale = 1) => {
-    updateProfile({ [field]: (Number(raw) || 0) / scale });
-    flash();
+  const commitNumber = async (field: keyof Profile, raw: string, scale = 1) => {
+    try {
+      await updateProfile({ [field]: (Number(raw) || 0) / scale });
+      flash();
+    } catch {
+      flash("Could not save that");
+    }
   };
 
-  const commitCategory = (key: string, field: "label" | "a26" | "a27", raw?: string) => {
+  const commitCategory = async (key: string, field: "label" | "a26" | "a27", raw?: string) => {
     const c = categories.find((cc) => cc.key === key);
     const v = catInputs[key];
     const label = (field === "label" ? raw : v?.label) ?? c?.label ?? "";
     const a26 = (field === "a26" ? raw : v?.a26) ?? String(c?.amount_2026 ?? 0);
     const a27 = (field === "a27" ? raw : v?.a27) ?? String(c?.amount_2027 ?? 0);
     if (!label.trim()) return;
-    updateCategory(key, { label: label.trim(), amount_2026: Number(a26) || 0, amount_2027: Number(a27) || 0 });
-    flash();
+    try {
+      await updateCategory(key, { label: label.trim(), amount_2026: Number(a26) || 0, amount_2027: Number(a27) || 0 });
+      flash();
+    } catch {
+      flash("Could not save that category");
+    }
   };
 
-  const onDeleteCategory = (key: string, label: string) => {
+  const onDeleteCategory = async (key: string, label: string) => {
     if (!window.confirm(`Remove "${label}" from your budget? Past transactions logged against it stay, just unlabelled going forward.`)) return;
-    deleteCategory(key);
-    setCatInputs((ci) => {
-      const next = { ...ci };
-      delete next[key];
-      return next;
-    });
-    flash("Category removed");
+    try {
+      await deleteCategory(key);
+      setCatInputs((ci) => {
+        const next = { ...ci };
+        delete next[key];
+        return next;
+      });
+      flash("Category removed");
+    } catch {
+      flash("Could not remove that category");
+    }
   };
 
   const onAddCategory = async () => {
@@ -112,21 +128,25 @@ export default function PlanTab() {
       !window.confirm("Reset the plan assumptions to the original baseline? Categories you've added stay; the standard ones are restored. Your reconciliations and balances stay.")
     )
       return;
-    updateProfile(DEFAULT_PROFILE_SETTINGS);
-    const existingKeys = new Set(categories.map((c) => c.key));
-    for (const c of DEFAULT_CATEGORIES) {
-      if (existingKeys.has(c.id)) {
-        updateCategory(c.id, { label: c.label, amount_2026: c.amount2026, amount_2027: c.amount2027 });
-      } else {
-        await addCategory(c.label, c.amount2026, c.amount2027, c.id);
+    try {
+      await updateProfile(DEFAULT_PROFILE_SETTINGS);
+      const existingKeys = new Set(categories.map((c) => c.key));
+      for (const c of DEFAULT_CATEGORIES) {
+        if (existingKeys.has(c.id)) {
+          await updateCategory(c.id, { label: c.label, amount_2026: c.amount2026, amount_2027: c.amount2027 });
+        } else {
+          await addCategory(c.label, c.amount2026, c.amount2027, c.id);
+        }
       }
+      setInputs(toInputs({ ...profile, ...DEFAULT_PROFILE_SETTINGS }));
+      setCatInputs((ci) => ({
+        ...ci,
+        ...Object.fromEntries(DEFAULT_CATEGORIES.map((c) => [c.id, { label: c.label, a26: String(c.amount2026), a27: String(c.amount2027) }])),
+      }));
+      flash("Baseline restored");
+    } catch {
+      flash("Could not restore the baseline — some changes may be partial");
     }
-    setInputs(toInputs({ ...profile, ...DEFAULT_PROFILE_SETTINGS }));
-    setCatInputs((ci) => ({
-      ...ci,
-      ...Object.fromEntries(DEFAULT_CATEGORIES.map((c) => [c.id, { label: c.label, a26: String(c.amount2026), a27: String(c.amount2027) }])),
-    }));
-    flash("Baseline restored");
   };
 
   const copyForClaude = async () => {

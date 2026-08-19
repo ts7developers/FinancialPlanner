@@ -94,6 +94,14 @@ export default function IncomeTab() {
     }
   };
 
+  const onDeleteMisc = async (id: string) => {
+    try {
+      await deleteMiscIncome(id);
+    } catch {
+      miscFlashMsg("Could not remove that entry", 6000);
+    }
+  };
+
   const trend: IncomeTrendPoint[] = confirmed.slice(-13).map((p) => {
     const per = periods.find((x) => x.key === p.period_key);
     return { label: per ? periodLabel(per) : (p.period_key || "").slice(5), gross: p.gross || 0, net: p.net || 0 };
@@ -240,7 +248,7 @@ export default function IncomeTab() {
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{AUD(m.amount, 2)}</span>
-                  <button onClick={() => deleteMiscIncome(m.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                  <button onClick={() => onDeleteMisc(m.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
                     <Trash2 size={14} />
                   </button>
                 </div>

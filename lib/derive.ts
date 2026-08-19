@@ -609,7 +609,7 @@ export const LIABILITY_ACCOUNTS = new Set<keyof Omit<Balances, "user_id">>(["cc"
 
 /** Rounds a balance to the cent — plain float addition/subtraction drifts (e.g. 500.61 + 10
  * lands on 510.60999999999996), which then persists to the DB and renders as a garbled figure. */
-const roundCents = (n: number) => Math.round(n * 100) / 100;
+export const roundCents = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * The balance patch for moving `amount` from one tracked account to another — e.g. payday:
