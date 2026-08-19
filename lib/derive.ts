@@ -1082,25 +1082,29 @@ export interface FortnightBreakdown {
 }
 
 /**
- * Applies the same waterfall `buildFortnightSplit` walks forward period by period — budgeted
- * expenses, then the sinking-fund set-aside, then credit card paydown, then the emergency fund,
- * then `goals` in priority order, then whatever's left to the deposit — to a single one-off
+ * Applies the same waterfall `buildFortnightSplit` walks forward period by period — remaining
+ * budgeted spend, then the sinking-fund set-aside, then credit card paydown, then the emergency
+ * fund, then `goals` in priority order, then whatever's left to the deposit — to a single one-off
  * amount (e.g. a just-confirmed payslip's net, or a fortnight's combined actual income) against
  * today's real balances, rather than to the planned income for a series of projected periods.
  * Used to show "where this pay goes" right after importing a payslip.
+ *
+ * `categoriesTotal` is caller-supplied rather than derived from `D`/`categories`/`year` here, so
+ * it can reflect what's actually still unspent this fortnight (plan minus whatever's already
+ * logged) rather than the full plan — important for anyone who pays for most expenses on the
+ * credit card: money already spent that way is already sitting in the `cc` balance being paid
+ * down below, so reserving the *full* planned amount on top of that double-counts it and
+ * understates how much can actually go toward clearing the card.
  */
 export function fortnightBreakdown(
-  D: DerivedFinancials,
-  categories: BudgetCategoryRow[],
+  categoriesTotal: number,
   balances: Balances,
   recurringExpenses: RecurringExpense[],
   goals: Goal[],
   netPay: number,
   emergencyTarget: number,
-  year: number,
   todayISO: string
 ): FortnightBreakdown {
-  const categoriesTotal = D.expFN(year);
   const sinkingTotal = sinkingFundTotal(recurringExpenses, todayISO);
   let surplus = Math.max(0, netPay - categoriesTotal - sinkingTotal);
 

@@ -610,12 +610,11 @@ describe("daysUntil", () => {
 });
 
 describe("fortnightBreakdown", () => {
-  const D = deriveFinancials(profile, categories);
   const today = "2026-08-19";
 
   it("routes a one-off net pay through categories, credit card, emergency fund, then deposit", () => {
-    const b = fortnightBreakdown(D, categories, balances, [], [], 1000, profile.emergency_target, 2026, today);
-    expect(b.categoriesTotal).toBeCloseTo(D.expFN(2026), 5);
+    const b = fortnightBreakdown(400, balances, [], [], 1000, profile.emergency_target, today);
+    expect(b.categoriesTotal).toBe(400);
     const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
     const toCC = Math.min(surplus, balances.cc);
     expect(b.toCreditCard).toBeCloseTo(toCC, 5);
@@ -625,13 +624,24 @@ describe("fortnightBreakdown", () => {
     expect(b.toDeposit).toBeCloseTo(afterCC - toEmergency, 5);
   });
 
+  it("takes categoriesTotal as given — the caller decides full plan vs remaining unspent budget", () => {
+    // A credit card balance too big for the surplus to fully clear if the full plan is reserved,
+    // but small enough to clear once only the genuinely-unspent remainder is reserved.
+    const bigCC = { ...balances, cc: 500 };
+    const fullPlan = fortnightBreakdown(654, bigCC, [], [], 1000, profile.emergency_target, today);
+    const remaining = fortnightBreakdown(43, bigCC, [], [], 1000, profile.emergency_target, today);
+    // Less reserved for spending that's already happened means more available to pay down the card.
+    expect(remaining.toCreditCard).toBeGreaterThan(fullPlan.toCreditCard);
+    expect(remaining.toCreditCard).toBe(500); // fully cleared
+  });
+
   it("deducts the sinking-fund set-aside before computing surplus", () => {
     const recurring = [
       { id: "1", user_id: "u", description: "Rego", amount: 780, category_key: "other", account: "ANZ Plus", frequency: "yearly" as const, next_due: "2027-08-10", active: true, created_at: "" },
     ];
     const noCC = { ...balances, cc: 0, emergency: profile.emergency_target };
-    const withSinking = fortnightBreakdown(D, categories, noCC, recurring, [], 1000, profile.emergency_target, 2026, today);
-    const without = fortnightBreakdown(D, categories, noCC, [], [], 1000, profile.emergency_target, 2026, today);
+    const withSinking = fortnightBreakdown(400, noCC, recurring, [], 1000, profile.emergency_target, today);
+    const without = fortnightBreakdown(400, noCC, [], [], 1000, profile.emergency_target, today);
     expect(withSinking.sinkingTotal).toBeGreaterThan(0);
     expect(withSinking.toDeposit).toBeCloseTo(without.toDeposit - withSinking.sinkingTotal, 5);
   });
@@ -642,7 +652,7 @@ describe("fortnightBreakdown", () => {
       { id: "g1", user_id: "u1", label: "High priority", target_amount: 50, current_amount: 0, priority: 0, created_at: "2026-01-01" },
       { id: "g2", user_id: "u1", label: "Low priority", target_amount: 10000, current_amount: 0, priority: 1, created_at: "2026-01-01" },
     ];
-    const b = fortnightBreakdown(D, categories, fullEmergencyNoCC, [], goals, 1000, profile.emergency_target, 2026, today);
+    const b = fortnightBreakdown(400, fullEmergencyNoCC, [], goals, 1000, profile.emergency_target, today);
     const g1 = b.goalAllocations.find((g) => g.id === "g1")!;
     expect(g1.amount).toBe(50);
     expect(b.toDeposit).toBeCloseTo(1000 - b.categoriesTotal - b.toGoalsTotal, 5);

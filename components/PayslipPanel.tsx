@@ -5,14 +5,14 @@ import { Upload, Check, FileEdit, ArrowRight } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { createClient } from "@/lib/supabase/client";
 import { isoFromDate } from "@/lib/period";
-import { actualIncomeForPeriod, fortnightBreakdown } from "@/lib/derive";
+import { actualIncomeForPeriod, fortnightBreakdown, reconcileCategoryRows } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, INK, FAV, UNFAV, NAVY, inputStyle } from "@/lib/theme";
 import type { PayslipExtraction } from "@/lib/payslipSchema";
 import type { Payslip } from "@/lib/types";
 
 export default function PayslipPanel({ periodKey }: { periodKey: string }) {
-  const { profile, payslips, addPayslip, updatePayslip, confirmPayslip, categories, balances, recurringExpenses, goals, miscIncome, periods, D } = useAppData();
+  const { profile, payslips, addPayslip, updatePayslip, confirmPayslip, categories, balances, recurringExpenses, goals, miscIncome, periods, D, loggedByCat, reconciliations } = useAppData();
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -26,9 +26,15 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
   // for this period so far (every confirmed payslip's net + misc income), not just this one payslip.
   const periodTotal = actualIncomeForPeriod(payslips, miscIncome, periodKey, profile.pay_anchor);
   const per = periods.find((p) => p.key === periodKey);
+  // Only what's still unspent against the plan — money already spent (often via credit card,
+  // which is already reflected in the `cc` balance paid down below) shouldn't be reserved twice.
+  const rec = reconciliations[periodKey];
+  const remainingCategoriesTotal = per
+    ? reconcileCategoryRows(categories, D, per.year, loggedByCat[periodKey], rec?.actual_overrides ?? {}).reduce((s, r) => s + Math.max(0, r.plan - (r.actual ?? 0)), 0)
+    : 0;
   const breakdown =
     per && periodTotal > 0
-      ? fortnightBreakdown(D, categories, balances, recurringExpenses, goals, periodTotal, Number(profile.emergency_target) || 0, per.year, isoFromDate(new Date()))
+      ? fortnightBreakdown(remainingCategoriesTotal, balances, recurringExpenses, goals, periodTotal, Number(profile.emergency_target) || 0, isoFromDate(new Date()))
       : null;
 
   const handleFile = async (file: File) => {
@@ -224,10 +230,12 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
             <ArrowRight size={13} color={GOLD} /> Where this pay goes
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5 }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: MUTE }}>Budgeted categories</span>
-              <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(breakdown.categoriesTotal)}</span>
-            </div>
+            {breakdown.categoriesTotal > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: MUTE }}>Still to spend this fortnight (budget left)</span>
+                <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(breakdown.categoriesTotal)}</span>
+              </div>
+            )}
             {breakdown.sinkingTotal > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ color: MUTE }}>Set aside for bills</span>
@@ -260,7 +268,8 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
             </div>
           </div>
           <div style={{ fontSize: 11, color: MUTE, marginTop: 8, lineHeight: 1.5 }}>
-            Based on {AUD(periodTotal)} confirmed so far this fortnight, against today&apos;s real balances — a guide for where to move the money, not automatic.
+            Based on {AUD(periodTotal)} confirmed so far this fortnight, against today&apos;s real balances — a guide for where to move the money, not automatic. &ldquo;Still to
+            spend&rdquo; only counts what&apos;s left of the budget, not the full plan — anything already logged (e.g. on the credit card) is already reflected in what that card owes below.
           </div>
         </div>
       )}
