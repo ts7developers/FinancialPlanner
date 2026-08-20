@@ -50,6 +50,14 @@ export interface Reconciliation {
   actual_income: number | null;
   actual_overrides: Record<string, string>; // raw input strings, e.g. "150" or "" — mirrors <input> value
   closed_at?: string | null;
+  /**
+   * Credit card / emergency fund / goal balances as they stood right before this fortnight's
+   * first confirmed income landed. "Where this pay goes" (PayslipPanel) uses this frozen snapshot
+   * instead of live balances so the plan doesn't reshuffle itself as you actually carry out the
+   * transfers it recommends — e.g. paying the card down shouldn't make the breakdown recompute
+   * and decide the card no longer needs the money.
+   */
+  breakdown_baseline?: { cc: number; emergency: number; goals: { id: string; current_amount: number }[] } | null;
 }
 
 export interface Snapshot {

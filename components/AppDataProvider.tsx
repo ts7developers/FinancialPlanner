@@ -77,7 +77,7 @@ interface AppDataContextValue {
   undoDeleteTransaction: (id: string) => void;
   setReconciliation: (
     periodKey: string,
-    patch: Partial<Pick<Reconciliation, "actual_income" | "actual_overrides" | "closed_at">>
+    patch: Partial<Pick<Reconciliation, "actual_income" | "actual_overrides" | "closed_at" | "breakdown_baseline">>
   ) => Promise<void>;
   updateBalances: (patch: Partial<Omit<Balances, "user_id">>) => Promise<void>;
   takeSnapshot: () => Promise<void>;
@@ -306,8 +306,8 @@ export function AppDataProvider({
   );
 
   const setReconciliation = useCallback(
-    async (periodKey: string, patch: Partial<Pick<Reconciliation, "actual_income" | "actual_overrides" | "closed_at">>) => {
-      const existing = reconciliations[periodKey] || { period_key: periodKey, actual_income: null, actual_overrides: {}, closed_at: null };
+    async (periodKey: string, patch: Partial<Pick<Reconciliation, "actual_income" | "actual_overrides" | "closed_at" | "breakdown_baseline">>) => {
+      const existing = reconciliations[periodKey] || { period_key: periodKey, actual_income: null, actual_overrides: {}, closed_at: null, breakdown_baseline: null };
       const merged: Reconciliation = { ...existing, ...patch };
       setReconciliations((rs) => ({ ...rs, [periodKey]: merged }));
       const { error } = await supabase
@@ -319,6 +319,7 @@ export function AppDataProvider({
             actual_income: merged.actual_income,
             actual_overrides: merged.actual_overrides,
             closed_at: merged.closed_at ?? null,
+            breakdown_baseline: merged.breakdown_baseline ?? null,
           },
           { onConflict: "user_id,period_key" }
         );
@@ -376,14 +377,24 @@ export function AppDataProvider({
       // overwriting — supports a second income source landing in the same period (e.g. a casual
       // job, or a tax refund) alongside the main one.
       const periodTotal = actualIncomeForPeriod(effectivePayslips, miscIncome, periodKey, profile.pay_anchor);
-      await setReconciliation(periodKey, { actual_income: periodTotal > 0 ? periodTotal : null });
+      // Freeze the cc/emergency/goal balances the first time income lands for this fortnight, so
+      // "Where this pay goes" (PayslipPanel) has a stable plan to show even after the user starts
+      // acting on it — moving money per the recommendation would otherwise change those same live
+      // balances and make the plan reshuffle itself mid-payday.
+      const existingBaseline = reconciliations[periodKey]?.breakdown_baseline;
+      const breakdownBaseline =
+        existingBaseline ??
+        (periodTotal > 0
+          ? { cc: Number(balances.cc) || 0, emergency: Number(balances.emergency) || 0, goals: goals.map((g) => ({ id: g.id, current_amount: Number(g.current_amount) || 0 })) }
+          : null);
+      await setReconciliation(periodKey, { actual_income: periodTotal > 0 ? periodTotal : null, breakdown_baseline: breakdownBaseline });
       // Land just the delta in Everyday: the first confirmation posts the full net; re-confirming
       // an already-posted payslip (e.g. after correcting a misread figure) posts only the
       // difference from what was posted before, so a correction is reflected instead of ignored.
       const delta = fields.net - previouslyPostedNet;
       if (delta !== 0) await updateBalances(applyIncomeToBalance(balances, delta));
     },
-    [supabase, setReconciliation, payslips, miscIncome, profile.pay_anchor, balances, updateBalances]
+    [supabase, setReconciliation, payslips, miscIncome, profile.pay_anchor, balances, updateBalances, reconciliations, goals]
   );
 
   const addMiscIncome = useCallback(
@@ -401,10 +412,16 @@ export function AppDataProvider({
       const periodKey = periodKeyOf(date, profile.pay_anchor);
       if (periodKey) {
         const periodTotal = actualIncomeForPeriod(payslips, effectiveMiscIncome, periodKey, profile.pay_anchor);
-        await setReconciliation(periodKey, { actual_income: periodTotal > 0 ? periodTotal : null });
+        const existingBaseline = reconciliations[periodKey]?.breakdown_baseline;
+        const breakdownBaseline =
+          existingBaseline ??
+          (periodTotal > 0
+            ? { cc: Number(balances.cc) || 0, emergency: Number(balances.emergency) || 0, goals: goals.map((g) => ({ id: g.id, current_amount: Number(g.current_amount) || 0 })) }
+            : null);
+        await setReconciliation(periodKey, { actual_income: periodTotal > 0 ? periodTotal : null, breakdown_baseline: breakdownBaseline });
       }
     },
-    [supabase, profile.user_id, profile.pay_anchor, balances, updateBalances, payslips, miscIncome, setReconciliation]
+    [supabase, profile.user_id, profile.pay_anchor, balances, updateBalances, payslips, miscIncome, setReconciliation, reconciliations, goals]
   );
 
   const deleteMiscIncome = useCallback(
@@ -419,10 +436,15 @@ export function AppDataProvider({
       const periodKey = periodKeyOf(entry.date, profile.pay_anchor);
       if (periodKey) {
         const periodTotal = actualIncomeForPeriod(payslips, effectiveMiscIncome, periodKey, profile.pay_anchor);
-        await setReconciliation(periodKey, { actual_income: periodTotal > 0 ? periodTotal : null });
+        // No income left for the fortnight — drop the frozen baseline so the next confirmed
+        // income re-baselines against balances as they stand then, not a stale earlier snapshot.
+        await setReconciliation(periodKey, {
+          actual_income: periodTotal > 0 ? periodTotal : null,
+          breakdown_baseline: periodTotal > 0 ? reconciliations[periodKey]?.breakdown_baseline : null,
+        });
       }
     },
-    [supabase, miscIncome, balances, updateBalances, payslips, profile.pay_anchor, setReconciliation]
+    [supabase, miscIncome, balances, updateBalances, payslips, profile.pay_anchor, setReconciliation, reconciliations]
   );
 
   const addGoal = useCallback(

@@ -134,7 +134,7 @@ export default function ReconcileTab() {
   const resetReconciliation = async () => {
     if (!window.confirm(`Clear the reconciliation for ${periodLabel(perObj)}? This removes the actual income and every manual override for this fortnight — logged transactions on Expenses are untouched, so any auto-filled rows will come straight back.`)) return;
     try {
-      await setReconciliation(period, { actual_income: null, actual_overrides: {}, closed_at: null });
+      await setReconciliation(period, { actual_income: null, actual_overrides: {}, closed_at: null, breakdown_baseline: null });
       setIncomeInput("");
       setOverridesInput({});
       flash("Reconciliation cleared");
