@@ -13,6 +13,7 @@ import { periodTotals, averageSpend, buildActualSpendTrend, daysUntil, type PieS
 import { AUD } from "@/lib/money";
 import { ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, PIE_COLORS, selStyle } from "@/lib/theme";
 import { Field, Toast, Metric } from "@/components/ui/atoms";
+import ImportCsvPanel from "@/components/ImportCsvPanel";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { Transaction, RecurringExpense, RecurringFrequency } from "@/lib/types";
 
@@ -361,6 +362,8 @@ export default function ExpensesTab() {
         )}
         {flashMsg && <div style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginTop: 10 }}>{flashMsg}</div>}
       </div>
+
+      <ImportCsvPanel catOptions={catOptions} />
 
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>

@@ -38,7 +38,7 @@ import type {
 } from "@/lib/types";
 import type { PayslipExtraction } from "@/lib/payslipSchema";
 
-interface NewTransaction {
+export interface NewTransaction {
   date: string;
   description: string;
   amount: number;
@@ -93,6 +93,8 @@ interface AppDataContextValue {
   addCategory: (label: string, amount2026?: number, amount2027?: number, explicitKey?: string) => Promise<void>;
   deleteCategory: (key: string) => Promise<void>;
   addTransaction: (t: NewTransaction) => Promise<void>;
+  /** Bulk-imports (e.g. from a bank statement CSV) in one insert + one combined balance update — see the implementation note on why this isn't just a loop of `addTransaction`. */
+  addTransactionsBulk: (rows: NewTransaction[]) => Promise<void>;
   /** Removes the transaction from view immediately; the DB delete is deferred so `undoDeleteTransaction` can still cancel it.
    * If the deferred delete fails, the removal is rolled back (transaction and balance restored) and `onFailure` is called. */
   deleteTransaction: (id: string, onFailure?: () => void) => void;
@@ -289,6 +291,37 @@ export function AppDataProvider({
       // Everyday/ANZ Plus/Holiday spend reduces that balance; credit card spend increases what's owed.
       const balancePatch = applyExpenseToBalance(balances, t.account, t.amount, 1);
       if (balancePatch) await updateBalances(balancePatch);
+    },
+    [supabase, profile.user_id, balances, updateBalances]
+  );
+
+  /** For CSV import: inserts every row in one request and applies ONE combined balance patch —
+   * looping `addTransaction` here would silently drop all but the last row's balance effect,
+   * since each call computes its patch from this render's `balances` closure rather than the
+   * previous call's result. Folding onto a local copy first sidesteps that entirely. */
+  const addTransactionsBulk = useCallback(
+    async (rows: NewTransaction[]) => {
+      if (rows.length === 0) return;
+      const { data, error } = await supabase
+        .from("transactions")
+        .insert(rows.map((t) => ({ ...t, user_id: profile.user_id })))
+        .select();
+      if (error) throw error;
+      setTransactions((ts) => [...(data as Transaction[]), ...ts]);
+
+      let working = balances;
+      const touched = new Set<keyof Omit<Balances, "user_id">>();
+      for (const t of rows) {
+        const patch = applyExpenseToBalance(working, t.account, Number(t.amount) || 0, 1);
+        if (patch) {
+          working = { ...working, ...patch };
+          (Object.keys(patch) as (keyof Omit<Balances, "user_id">)[]).forEach((k) => touched.add(k));
+        }
+      }
+      if (touched.size > 0) {
+        const finalPatch = Object.fromEntries([...touched].map((k) => [k, working[k]])) as Partial<Omit<Balances, "user_id">>;
+        await updateBalances(finalPatch);
+      }
     },
     [supabase, profile.user_id, balances, updateBalances]
   );
@@ -913,6 +946,7 @@ export function AppDataProvider({
     addCategory,
     deleteCategory,
     addTransaction,
+    addTransactionsBulk,
     deleteTransaction,
     undoDeleteTransaction,
     setReconciliation,
