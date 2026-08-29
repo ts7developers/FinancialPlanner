@@ -3,7 +3,8 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { buildPeriods, isoFromDate, periodKeyOf, type Period } from "@/lib/period";
-import { slugifyCategoryKey } from "@/lib/categories";
+import { slugifyCategoryKey, DEFAULT_CATEGORIES } from "@/lib/categories";
+import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
 import {
   deriveFinancials,
   buildPlanPath,
@@ -43,6 +44,27 @@ interface NewTransaction {
   amount: number;
   category_key: string;
   account: string;
+}
+
+/** Which categories of data to wipe via `resetData` — the "start fresh" flow on Plan. Every flag defaults to unchecked; the caller ticks only what it wants cleared. */
+export interface ResetDataSelections {
+  transactions: boolean;
+  payslips: boolean;
+  miscIncome: boolean;
+  reconciliations: boolean;
+  snapshots: boolean;
+  transfers: boolean;
+  holdings: boolean;
+  superContributions: boolean;
+  balances: boolean;
+  /** Zeroes each goal's current_amount but keeps the goal itself. Ignored if `goalsDelete` is also set. */
+  goalsProgress: boolean;
+  /** Deletes goals outright rather than just zeroing their progress. */
+  goalsDelete: boolean;
+  recurringExpenses: boolean;
+  /** Restores the built-in categories to their baseline label/amounts (adding back any that were deleted) — doesn't touch custom categories you added. */
+  budgetCategories: boolean;
+  profileSettings: boolean;
 }
 
 interface AppDataContextValue {
@@ -126,6 +148,9 @@ interface AppDataContextValue {
   addGoal: (label: string, targetAmount: number, priority?: number) => Promise<void>;
   updateGoal: (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority">>) => Promise<void>;
   deleteGoal: (id: string) => Promise<void>;
+  /** Wipes exactly the ticked categories of data for a fresh start, then reloads the page so every
+   * piece of local state (there's a lot of it) reflects the DB rather than being patched by hand. */
+  resetData: (selections: ResetDataSelections) => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -759,6 +784,64 @@ export function AppDataProvider({
     [supabase, recurringExpenses, addTransaction]
   );
 
+  const resetData = useCallback(
+    async (sel: ResetDataSelections) => {
+      const uid = profile.user_id;
+      const ops: PromiseLike<{ error: { message: string } | null }>[] = [];
+
+      if (sel.transactions) ops.push(supabase.from("transactions").delete().eq("user_id", uid));
+      if (sel.payslips) ops.push(supabase.from("payslips").delete().eq("user_id", uid));
+      if (sel.miscIncome) ops.push(supabase.from("misc_income").delete().eq("user_id", uid));
+      if (sel.reconciliations) ops.push(supabase.from("reconciliations").delete().eq("user_id", uid));
+      if (sel.snapshots) ops.push(supabase.from("snapshots").delete().eq("user_id", uid));
+      if (sel.transfers) ops.push(supabase.from("transfers").delete().eq("user_id", uid));
+      if (sel.holdings) {
+        ops.push(supabase.from("holding_lots").delete().eq("user_id", uid));
+        ops.push(supabase.from("holdings").delete().eq("user_id", uid));
+      }
+      if (sel.superContributions) ops.push(supabase.from("super_contributions").delete().eq("user_id", uid));
+      if (sel.recurringExpenses) ops.push(supabase.from("recurring_expenses").delete().eq("user_id", uid));
+      if (sel.goalsDelete) {
+        ops.push(supabase.from("goals").delete().eq("user_id", uid));
+      } else if (sel.goalsProgress) {
+        ops.push(supabase.from("goals").update({ current_amount: 0 }).eq("user_id", uid));
+      }
+      if (sel.balances) {
+        ops.push(
+          supabase
+            .from("balances")
+            .update({ everyday: 0, anzplus: 0, emergency: 0, holiday: 0, shares: 0, superb: 0, cc: 0, hecs: 0 })
+            .eq("user_id", uid)
+        );
+      }
+      if (sel.budgetCategories) {
+        // Same semantics as Plan's "Restore baseline": brings each built-in category back to its
+        // original label/amounts (recreating it if it was deleted); leaves custom categories alone.
+        DEFAULT_CATEGORIES.forEach((d) => {
+          ops.push(
+            supabase
+              .from("budget_categories")
+              .upsert(
+                { user_id: uid, key: d.id, label: d.label, amount_2026: d.amount2026, amount_2027: d.amount2027, sort: d.sort },
+                { onConflict: "user_id,key" }
+              )
+          );
+        });
+      }
+      if (sel.profileSettings) ops.push(supabase.from("profiles").update(DEFAULT_PROFILE_SETTINGS).eq("user_id", uid));
+
+      const results = await Promise.all(ops);
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw new Error(failed.error.message);
+
+      // This wipe can touch nearly every table at once — reloading is the only way to be sure
+      // every array/object in this provider (there are ~15 of them) ends up matching the DB,
+      // rather than trying to hand-patch each one and risk missing something.
+      window.location.reload();
+    },
+    [supabase, profile.user_id]
+  );
+
   const value: AppDataContextValue = {
     profile,
     categories,
@@ -808,6 +891,7 @@ export function AppDataProvider({
     addGoal,
     updateGoal,
     deleteGoal,
+    resetData,
   };
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

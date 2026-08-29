@@ -1,16 +1,69 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, RotateCcw, CalendarClock, Trash2, Plus } from "lucide-react";
+import { Copy, RotateCcw, CalendarClock, Trash2, Plus, AlertTriangle } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
+import type { ResetDataSelections } from "@/components/AppDataProvider";
 import { isoFromDate } from "@/lib/period";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
 import { BORROW_MULT_LOW, BORROW_MULT_HIGH, sinkingFundTotal } from "@/lib/derive";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
 import { AUD } from "@/lib/money";
-import { NAVY, MUTE, GOLD, LINE, INK, inputStyle, selStyle } from "@/lib/theme";
-import { Panel, PInput, Derived, Field } from "@/components/ui/atoms";
+import { NAVY, MUTE, GOLD, LINE, INK, UNFAV, CARD, inputStyle, selStyle } from "@/lib/theme";
+import { Panel, PInput, Derived, Field, Collapsible } from "@/components/ui/atoms";
 import type { Profile } from "@/lib/types";
+
+const RESET_LOGGED_ITEMS: { key: keyof ResetDataSelections; label: string }[] = [
+  { key: "transactions", label: "Logged expenses" },
+  { key: "payslips", label: "Payslips" },
+  { key: "miscIncome", label: "Misc income entries" },
+  { key: "reconciliations", label: "Fortnight reconciliations (actuals & closed status)" },
+  { key: "snapshots", label: "Balance snapshot history" },
+  { key: "transfers", label: "Transfer log" },
+  { key: "holdings", label: "Investments (holdings & buy history)" },
+  { key: "superContributions", label: "Super contributions log" },
+  { key: "balances", label: "Account balances — resets every balance to $0" },
+];
+
+const RESET_SETUP_ITEMS: { key: keyof ResetDataSelections; label: string }[] = [
+  { key: "recurringExpenses", label: "Recurring bills — deletes them entirely (rego, insurance, subscriptions, etc.)" },
+  { key: "budgetCategories", label: "Budget categories — restores the built-in ones to baseline amounts" },
+  { key: "profileSettings", label: "Profile settings (pay cycle, tax, targets) — resets to app defaults" },
+];
+
+const RESET_LABELS: Record<keyof ResetDataSelections, string> = {
+  transactions: "logged expenses",
+  payslips: "payslips",
+  miscIncome: "misc income entries",
+  reconciliations: "reconciliations",
+  snapshots: "balance snapshot history",
+  transfers: "transfer log",
+  holdings: "investments",
+  superContributions: "super contributions log",
+  balances: "account balances (reset to $0)",
+  goalsProgress: "goal progress (reset to $0)",
+  goalsDelete: "goals (deleted entirely)",
+  recurringExpenses: "recurring bills (deleted)",
+  budgetCategories: "budget categories (restored to baseline)",
+  profileSettings: "profile settings (restored to defaults)",
+};
+
+const EMPTY_RESET_SELECTIONS: ResetDataSelections = {
+  transactions: false,
+  payslips: false,
+  miscIncome: false,
+  reconciliations: false,
+  snapshots: false,
+  transfers: false,
+  holdings: false,
+  superContributions: false,
+  balances: false,
+  goalsProgress: false,
+  goalsDelete: false,
+  recurringExpenses: false,
+  budgetCategories: false,
+  profileSettings: false,
+};
 
 type ProfileInputs = {
   package: string;
@@ -45,7 +98,7 @@ function toInputs(profile: Profile): ProfileInputs {
 }
 
 export default function PlanTab() {
-  const { profile, categories, recurringExpenses, D, updateProfile, updateCategory, addCategory, deleteCategory } = useAppData();
+  const { profile, categories, recurringExpenses, D, updateProfile, updateCategory, addCategory, deleteCategory, resetData } = useAppData();
   const recurringFortnightTotal = sinkingFundTotal(recurringExpenses, isoFromDate(new Date()));
   const activeRecurringCount = recurringExpenses.filter((r) => r.active).length;
   const [inputs, setInputs] = useState<ProfileInputs>(() => toInputs(profile));
@@ -146,6 +199,38 @@ export default function PlanTab() {
       flash("Baseline restored");
     } catch {
       flash("Could not restore the baseline — some changes may be partial");
+    }
+  };
+
+  const [resetSel, setResetSel] = useState<ResetDataSelections>(EMPTY_RESET_SELECTIONS);
+  const [resetConfirmText, setResetConfirmText] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState("");
+
+  const toggleReset = (key: keyof ResetDataSelections) =>
+    setResetSel((s) => {
+      const next = { ...s, [key]: !s[key] };
+      // Deleting a goal outright makes "reset its progress" meaningless — keep only one active.
+      if (key === "goalsDelete" && next.goalsDelete) next.goalsProgress = false;
+      if (key === "goalsProgress" && next.goalsProgress) next.goalsDelete = false;
+      return next;
+    });
+
+  const resetSelectedKeys = (Object.keys(resetSel) as (keyof ResetDataSelections)[]).filter((k) => resetSel[k]);
+  const resetAnySelected = resetSelectedKeys.length > 0;
+  const resetCanConfirm = resetAnySelected && resetConfirmText.trim().toUpperCase() === "RESET";
+
+  const onResetConfirm = async () => {
+    if (!resetCanConfirm) return;
+    const summary = resetSelectedKeys.map((k) => RESET_LABELS[k]).join(", ");
+    if (!window.confirm(`This permanently deletes: ${summary}.\n\nThis can't be undone. Continue?`)) return;
+    setResetBusy(true);
+    setResetError("");
+    try {
+      await resetData(resetSel); // reloads the page on success — no further local cleanup needed
+    } catch {
+      setResetError("Could not reset — nothing was changed. Try again.");
+      setResetBusy(false);
     }
   };
 
@@ -361,6 +446,94 @@ export default function PlanTab() {
           </Panel>
         </div>
       </div>
+
+      <Collapsible title="Start fresh" icon={AlertTriangle} subtitle="Tick what to wipe if you haven't been tracking accurately and want to refill it — everything else stays untouched.">
+        <div style={{ padding: "0 18px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 11, letterSpacing: ".05em", textTransform: "uppercase", color: MUTE, fontWeight: 600, marginBottom: 8 }}>
+              What you&apos;ve logged so far
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {RESET_LOGGED_ITEMS.map((item) => (
+                <label key={item.key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                  <input type="checkbox" checked={resetSel[item.key]} onChange={() => toggleReset(item.key)} />
+                  {item.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 11, letterSpacing: ".05em", textTransform: "uppercase", color: MUTE, fontWeight: 600, marginBottom: 8 }}>
+              Goals
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                <input type="checkbox" checked={resetSel.goalsProgress} onChange={() => toggleReset("goalsProgress")} />
+                Reset goal progress to $0 (keeps the goals themselves)
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                <input type="checkbox" checked={resetSel.goalsDelete} onChange={() => toggleReset("goalsDelete")} />
+                Delete goals entirely
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 11, letterSpacing: ".05em", textTransform: "uppercase", color: MUTE, fontWeight: 600, marginBottom: 8 }}>
+              Your plan/setup — only if you want a full reset
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {RESET_SETUP_ITEMS.map((item) => (
+                <label key={item.key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                  <input type="checkbox" checked={resetSel[item.key]} onChange={() => toggleReset(item.key)} />
+                  {item.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ background: "#FBEDE9", border: `1px solid ${UNFAV}`, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ fontSize: 12.5, color: "#8A3320", lineHeight: 1.5 }}>
+              {resetAnySelected
+                ? `This permanently deletes: ${resetSelectedKeys.map((k) => RESET_LABELS[k]).join(", ")}. This can't be undone.`
+                : "Tick at least one item above to enable the reset."}
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                type="text"
+                placeholder='Type "RESET" to confirm'
+                value={resetConfirmText}
+                onChange={(e) => setResetConfirmText(e.target.value)}
+                disabled={!resetAnySelected}
+                style={{ ...inputStyle, background: CARD, width: 180, opacity: resetAnySelected ? 1 : 0.6 }}
+              />
+              <button
+                onClick={onResetConfirm}
+                disabled={!resetCanConfirm || resetBusy}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: resetCanConfirm ? UNFAV : "transparent",
+                  color: resetCanConfirm ? "#fff" : MUTE,
+                  border: resetCanConfirm ? "none" : `1px solid ${LINE}`,
+                  borderRadius: 8,
+                  padding: "9px 15px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: resetCanConfirm && !resetBusy ? "pointer" : "default",
+                  opacity: resetBusy ? 0.7 : 1,
+                  fontFamily: "var(--font-space-grotesk), sans-serif",
+                }}
+              >
+                <Trash2 size={14} /> {resetBusy ? "Resetting…" : "Reset selected"}
+              </button>
+            </div>
+            {resetError && <div style={{ fontSize: 12, color: UNFAV }}>{resetError}</div>}
+          </div>
+        </div>
+      </Collapsible>
     </div>
   );
 }
