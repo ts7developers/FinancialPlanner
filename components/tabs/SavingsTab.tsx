@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { TrendingUp, Sparkles, Home, CreditCard, Target, ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
+import { useToast } from "@/components/ToastProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { currentPeriod, isoFromDate } from "@/lib/period";
 import {
@@ -34,7 +35,9 @@ const HORIZON_PERIODS = 78; // roughly 3 years of fortnights
 
 export default function SavingsTab() {
   const isMobile = useIsMobile();
-  const { profile, balances, periods, categories, superContributions, recurringExpenses, goals, addGoal, updateGoal, deleteGoal, loggedByCat, reconciliations, snapshots, D } = useAppData();
+  const { profile, balances, periods, categories, superContributions, recurringExpenses, goals, addGoal, updateGoal, deleteGoal, undoDeleteGoal, loggedByCat, reconciliations, snapshots, D } =
+    useAppData();
+  const toast = useToast();
   const [newGoalLabel, setNewGoalLabel] = useState("");
   const [newGoalTarget, setNewGoalTarget] = useState("");
   const [goalBusy, setGoalBusy] = useState(false);
@@ -144,13 +147,12 @@ export default function SavingsTab() {
     }
   };
 
-  const onDeleteGoal = async (id: string, label: string) => {
-    if (!window.confirm(`Delete the goal "${label}"? This doesn't touch any real balance — it just stops tracking toward it.`)) return;
-    try {
-      await deleteGoal(id);
-    } catch (err) {
-      flashGoalError(err);
-    }
+  const onDeleteGoal = (id: string, label: string) => {
+    deleteGoal(id, () => {
+      setGoalFlash("Could not remove that goal — it's back");
+      setTimeout(() => setGoalFlash(""), 6000);
+    });
+    toast(`Removed "${label}"`, { actionLabel: "Undo", onAction: () => undoDeleteGoal(id) });
   };
 
   const onUpdateGoalAmount = async (id: string, value: string) => {

@@ -949,6 +949,32 @@ export function daysUntil(dateISO: string, todayISO: string): number {
   return Math.round((dateFromISO(dateISO).getTime() - dateFromISO(todayISO).getTime()) / dayMs);
 }
 
+/** The next fortnight boundary (pay lands at the start of each period) — `days` is 0 on payday itself. */
+export function nextPaydayInfo(periods: Period[], todayISO: string): { dateISO: string; days: number } | null {
+  if (periods.length === 0) return null;
+  const cur = currentPeriod(periods, todayISO);
+  const target = todayISO <= cur.key ? cur : periods[cur.idx + 1];
+  if (!target) return null;
+  return { dateISO: target.key, days: daysUntil(target.key, todayISO) };
+}
+
+/** The soonest-due active recurring bill, or null if there are none active. */
+export function nextBillDue(recurringExpenses: RecurringExpense[], todayISO: string): { description: string; dateISO: string; days: number } | null {
+  const active = recurringExpenses.filter((r) => r.active).sort((a, b) => a.next_due.localeCompare(b.next_due));
+  if (active.length === 0) return null;
+  const soonest = active[0];
+  return { description: soonest.description, dateISO: soonest.next_due, days: daysUntil(soonest.next_due, todayISO) };
+}
+
+/** The most recently *ended* fortnight, if it still hasn't been marked reconciled — a nudge to close it out. Null once it's closed, or if no fortnight has ended yet. */
+export function mostRecentUnreconciledPeriod(periods: Period[], reconciliations: Record<string, Reconciliation>, todayISO: string): Period | null {
+  const today = dateFromISO(todayISO);
+  const ended = periods.filter((p) => p.end < today);
+  if (ended.length === 0) return null;
+  const last = ended[ended.length - 1];
+  return reconciliations[last.key]?.closed_at ? null : last;
+}
+
 export interface IncomeProjectionPoint {
   key: string;
   label: string;

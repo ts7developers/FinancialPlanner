@@ -2,10 +2,10 @@
 
 import React from "react";
 import dynamic from "next/dynamic";
-import { Wallet, PiggyBank, Home, TrendingUp, Receipt, ScrollText, Camera, Landmark } from "lucide-react";
+import { Wallet, PiggyBank, Home, TrendingUp, TrendingDown, Minus, Receipt, ScrollText, Camera, Landmark, CalendarClock, BellRing, FileWarning } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { currentPeriod, financialYearStart, isoFromDate } from "@/lib/period";
+import { currentPeriod, financialYearStart, isoFromDate, periodLabel } from "@/lib/period";
 import {
   buildPieData,
   sumYTD,
@@ -16,9 +16,15 @@ import {
   DEFAULT_FHSS_DEEMED_RATE,
   BORROW_MULT_LOW,
   BORROW_MULT_HIGH,
+  buildVarianceReport,
+  actualIncomeForPeriod,
+  nextPaydayInfo,
+  nextBillDue,
+  mostRecentUnreconciledPeriod,
+  daysUntil,
 } from "@/lib/derive";
 import { AUD, num } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, FAV, PIE_COLORS } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, PIE_COLORS } from "@/lib/theme";
 import { Metric, Progress } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import Link from "next/link";
@@ -32,10 +38,28 @@ const BorrowingCapacityChart = dynamic(() => import("@/components/charts/Borrowi
 
 export default function OverviewTab() {
   const isMobile = useIsMobile();
-  const { profile, categories, balances, planPath, snapshots, periods, payslips, loggedByCat, reconciliations, superContributions, D } = useAppData();
+  const { profile, categories, balances, planPath, snapshots, periods, payslips, miscIncome, recurringExpenses, loggedByCat, reconciliations, superContributions, D } = useAppData();
 
   const today = isoFromDate(new Date());
-  const yr = currentPeriod(periods, today).year;
+  const curPeriod = currentPeriod(periods, today);
+  const yr = curPeriod.year;
+
+  // "At a glance" — a one-line tracking signal plus whatever needs your attention right now,
+  // so you don't have to visit Reconcile/Expenses/Budget just to find out nothing's due.
+  const varianceReport = buildVarianceReport(profile, categories, D, periods, loggedByCat, reconciliations);
+  const trackingTone: "ahead" | "onTrack" | "behind" | "none" =
+    varianceReport.periodsIncluded === 0
+      ? "none"
+      : varianceReport.surplusVariance >= 50
+        ? "ahead"
+        : varianceReport.surplusVariance <= -50
+          ? "behind"
+          : "onTrack";
+  const payday = nextPaydayInfo(periods, today);
+  const billDue = nextBillDue(recurringExpenses, today);
+  const unreconciled = mostRecentUnreconciledPeriod(periods, reconciliations, today);
+  const curPeriodIncome = actualIncomeForPeriod(payslips, miscIncome, curPeriod.key, profile.pay_anchor);
+  const payslipMissing = curPeriodIncome === 0 && daysUntil(curPeriod.key, today) <= 0;
   const ytd = sumYTD(payslips, financialYearStart(today));
   const taxPaidYTD = ytd.paygwTax + (Number(profile.tax_paid_opening) || 0);
 
@@ -67,8 +91,52 @@ export default function OverviewTab() {
     ["Track", "/accounts", "snapshot balances to plot", Camera],
   ];
 
+  const trackingConfig = {
+    ahead: { icon: TrendingUp, color: FAV, text: `${AUD(Math.abs(varianceReport.surplusVariance))} ahead of plan this financial year` },
+    onTrack: { icon: Minus, color: GOLD, text: "On track with your plan this financial year" },
+    behind: { icon: TrendingDown, color: UNFAV, text: `${AUD(Math.abs(varianceReport.surplusVariance))} behind plan this financial year` },
+    none: { icon: Minus, color: MUTE, text: "Reconcile a fortnight to see how you're tracking" },
+  }[trackingTone];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: isMobile ? "12px 14px" : "12px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, color: trackingConfig.color, fontSize: 13.5 }}>
+            <trackingConfig.icon size={16} /> {trackingConfig.text}
+          </div>
+          {payday && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: MUTE }}>
+              <CalendarClock size={14} color={GOLD} />
+              {payday.days === 0 ? "Payday is today" : `Payday in ${payday.days} day${payday.days === 1 ? "" : "s"}`}
+            </div>
+          )}
+          {billDue && billDue.days <= 10 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: billDue.days < 0 ? UNFAV : MUTE }}>
+              <BellRing size={14} color={billDue.days < 0 ? UNFAV : GOLD} />
+              {billDue.days < 0
+                ? `${billDue.description} overdue by ${Math.abs(billDue.days)}d`
+                : billDue.days === 0
+                  ? `${billDue.description} due today`
+                  : `${billDue.description} due in ${billDue.days}d`}
+            </div>
+          )}
+        </div>
+        {(payslipMissing || unreconciled) && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 8, borderTop: `1px solid ${LINE}` }}>
+            {payslipMissing && (
+              <Link href="/reconcile" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: NAVY, textDecoration: "none" }}>
+                <FileWarning size={14} color={GOLD} /> This fortnight&apos;s pay hasn&apos;t been logged yet — <b>upload the payslip</b>
+              </Link>
+            )}
+            {unreconciled && (
+              <Link href={`/reconcile?period=${unreconciled.key}`} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: NAVY, textDecoration: "none" }}>
+                <FileWarning size={14} color={GOLD} /> {periodLabel(unreconciled)} hasn&apos;t been reconciled yet
+              </Link>
+            )}
+          </div>
+        )}
+      </div>
       <div
         style={{
           display: "flex",

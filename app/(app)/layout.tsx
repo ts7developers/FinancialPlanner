@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAppData } from "@/lib/data/fetchAppData";
 import { AppDataProvider } from "@/components/AppDataProvider";
+import { ToastProvider } from "@/components/ToastProvider";
 import AppHeader from "@/components/AppHeader";
 import QuickAddFab from "@/components/QuickAddFab";
 import PageContent from "@/components/PageContent";
@@ -35,26 +36,28 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div style={{ background: PAPER, minHeight: "100vh", color: "#1F2A44" }}>
-      <AppHeader />
-      <AppDataProvider
-        initialProfile={profile}
-        initialCategories={categories}
-        initialTransactions={transactions}
-        initialReconciliations={reconciliations}
-        initialSnapshots={snapshots}
-        initialBalances={balances}
-        initialPayslips={payslips}
-        initialTransfers={transfers}
-        initialHoldings={holdings}
-        initialHoldingLots={holdingLots}
-        initialSuperContributions={superContributions}
-        initialRecurringExpenses={recurringExpenses}
-        initialMiscIncome={miscIncome}
-        initialGoals={goals}
-      >
-        <PageContent>{children}</PageContent>
-      </AppDataProvider>
-      <QuickAddFab />
+      <ToastProvider>
+        <AppHeader />
+        <AppDataProvider
+          initialProfile={profile}
+          initialCategories={categories}
+          initialTransactions={transactions}
+          initialReconciliations={reconciliations}
+          initialSnapshots={snapshots}
+          initialBalances={balances}
+          initialPayslips={payslips}
+          initialTransfers={transfers}
+          initialHoldings={holdings}
+          initialHoldingLots={holdingLots}
+          initialSuperContributions={superContributions}
+          initialRecurringExpenses={recurringExpenses}
+          initialMiscIncome={miscIncome}
+          initialGoals={goals}
+        >
+          <PageContent>{children}</PageContent>
+        </AppDataProvider>
+        <QuickAddFab />
+      </ToastProvider>
     </div>
   );
 }

@@ -137,7 +137,9 @@ interface AppDataContextValue {
     frequency: RecurringFrequency,
     nextDue: string
   ) => Promise<void>;
-  deleteRecurringExpense: (id: string) => Promise<void>;
+  /** Removes it from view immediately with a Supabase delete deferred behind an Undo window — see `undoDeleteRecurringExpense`. */
+  deleteRecurringExpense: (id: string, onFailure?: () => void) => void;
+  undoDeleteRecurringExpense: (id: string) => void;
   toggleRecurringExpense: (id: string) => Promise<void>;
   /** Posts today's occurrence as a real transaction (so it flows through the usual balance/reconciliation path) and rolls next_due forward one cadence. */
   logRecurringExpense: (id: string) => Promise<void>;
@@ -147,7 +149,9 @@ interface AppDataContextValue {
   /** A custom savings goal beyond the emergency fund and house deposit — see the `Goal` type. */
   addGoal: (label: string, targetAmount: number, priority?: number) => Promise<void>;
   updateGoal: (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority">>) => Promise<void>;
-  deleteGoal: (id: string) => Promise<void>;
+  /** Removes it from view immediately with a Supabase delete deferred behind an Undo window — see `undoDeleteGoal`. */
+  deleteGoal: (id: string, onFailure?: () => void) => void;
+  undoDeleteGoal: (id: string) => void;
   /** Wipes exactly the ticked categories of data for a fresh start, then reloads the page so every
    * piece of local state (there's a lot of it) reflects the DB rather than being patched by hand. */
   resetData: (selections: ResetDataSelections) => Promise<void>;
@@ -208,7 +212,10 @@ export function AppDataProvider({
   const [holdings, setHoldings] = useState(initialHoldings);
   const [holdingLots, setHoldingLots] = useState(initialHoldingLots);
   const [superContributions, setSuperContributions] = useState(initialSuperContributions);
-  const [recurringExpenses, setRecurringExpenses] = useState(initialRecurringExpenses);
+  // Defensive fallback: a Turbopack Fast Refresh swap has been seen to briefly hand this prop
+  // through as non-array during dev, crashing every `.filter`/`.reduce` caller — costs nothing
+  // in production, where fetchAppData always supplies a real array.
+  const [recurringExpenses, setRecurringExpenses] = useState(initialRecurringExpenses ?? []);
   const [miscIncome, setMiscIncome] = useState(initialMiscIncome);
   const [goals, setGoals] = useState(initialGoals);
 
@@ -497,14 +504,35 @@ export function AppDataProvider({
     [supabase]
   );
 
+  // Deferred-delete buffer so "Delete" can offer an Undo toast instead of a confirm dialog —
+  // same shape as transactions' pendingDeletes above, just keyed to a different table/list.
+  const pendingGoalDeletes = useRef<Record<string, { goal: Goal; timer: ReturnType<typeof setTimeout> }>>({});
+
   const deleteGoal = useCallback(
-    async (id: string) => {
+    (id: string, onFailure?: () => void) => {
+      const goal = goals.find((g) => g.id === id);
+      if (!goal) return;
       setGoals((gs) => gs.filter((g) => g.id !== id));
-      const { error } = await supabase.from("goals").delete().eq("id", id);
-      if (error) throw error;
+      const timer = setTimeout(async () => {
+        delete pendingGoalDeletes.current[id];
+        const { error } = await supabase.from("goals").delete().eq("id", id);
+        if (error) {
+          setGoals((gs) => [...gs, goal].sort((a, b) => a.priority - b.priority));
+          onFailure?.();
+        }
+      }, UNDO_WINDOW_MS);
+      pendingGoalDeletes.current[id] = { goal, timer };
     },
-    [supabase]
+    [supabase, goals]
   );
+
+  const undoDeleteGoal = useCallback((id: string) => {
+    const pending = pendingGoalDeletes.current[id];
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    delete pendingGoalDeletes.current[id];
+    setGoals((gs) => [...gs, pending.goal].sort((a, b) => a.priority - b.priority));
+  }, []);
 
   const addTransfer = useCallback(
     async (from: keyof Omit<Balances, "user_id">, to: keyof Omit<Balances, "user_id">, amount: number, note?: string) => {
@@ -744,14 +772,33 @@ export function AppDataProvider({
     [supabase, profile.user_id]
   );
 
+  const pendingRecurringDeletes = useRef<Record<string, { recurring: RecurringExpense; timer: ReturnType<typeof setTimeout> }>>({});
+
   const deleteRecurringExpense = useCallback(
-    async (id: string) => {
+    (id: string, onFailure?: () => void) => {
+      const recurring = recurringExpenses.find((r) => r.id === id);
+      if (!recurring) return;
       setRecurringExpenses((rs) => rs.filter((r) => r.id !== id));
-      const { error } = await supabase.from("recurring_expenses").delete().eq("id", id);
-      if (error) throw error;
+      const timer = setTimeout(async () => {
+        delete pendingRecurringDeletes.current[id];
+        const { error } = await supabase.from("recurring_expenses").delete().eq("id", id);
+        if (error) {
+          setRecurringExpenses((rs) => [...rs, recurring].sort((a, b) => a.next_due.localeCompare(b.next_due)));
+          onFailure?.();
+        }
+      }, UNDO_WINDOW_MS);
+      pendingRecurringDeletes.current[id] = { recurring, timer };
     },
-    [supabase]
+    [supabase, recurringExpenses]
   );
+
+  const undoDeleteRecurringExpense = useCallback((id: string) => {
+    const pending = pendingRecurringDeletes.current[id];
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    delete pendingRecurringDeletes.current[id];
+    setRecurringExpenses((rs) => [...rs, pending.recurring].sort((a, b) => a.next_due.localeCompare(b.next_due)));
+  }, []);
 
   const toggleRecurringExpense = useCallback(
     async (id: string) => {
@@ -884,6 +931,7 @@ export function AppDataProvider({
     deleteSuperContribution,
     addRecurringExpense,
     deleteRecurringExpense,
+    undoDeleteRecurringExpense,
     toggleRecurringExpense,
     logRecurringExpense,
     addMiscIncome,
@@ -891,6 +939,7 @@ export function AppDataProvider({
     addGoal,
     updateGoal,
     deleteGoal,
+    undoDeleteGoal,
     resetData,
   };
 

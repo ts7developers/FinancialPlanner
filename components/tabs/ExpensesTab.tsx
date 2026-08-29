@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { Plus, Trash2, Wallet, Receipt, ListChecks, Flame, Repeat, Pause, Play, Zap, ChevronDown } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
+import { useToast } from "@/components/ToastProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { periodKeyOf, periodLabel, isoFromDate } from "@/lib/period";
 import { OTHER_CATEGORY_KEY } from "@/lib/categories";
@@ -60,9 +61,11 @@ export default function ExpensesTab() {
     recurringExpenses,
     addRecurringExpense,
     deleteRecurringExpense,
+    undoDeleteRecurringExpense,
     toggleRecurringExpense,
     logRecurringExpense,
   } = useAppData();
+  const toast = useToast();
   // Budgeted categories from Budget, plus the synthetic "Other" catch-all (not a real budget
   // row — $0 planned, always available for expenses that don't fit an existing category).
   const catOptions = [...categories.map((c) => ({ key: c.key, label: c.label })), { key: OTHER_CATEGORY_KEY, label: "Other" }];
@@ -183,12 +186,9 @@ export default function ExpensesTab() {
     }
   };
 
-  const onDeleteRecurring = async (r: RecurringExpense) => {
-    try {
-      await deleteRecurringExpense(r.id);
-    } catch {
-      flash(`Could not remove ${r.description}`);
-    }
+  const onDeleteRecurring = (r: RecurringExpense) => {
+    deleteRecurringExpense(r.id, () => flash(`Could not remove ${r.description} — it's back`));
+    toast(`Removed "${r.description}"`, { actionLabel: "Undo", onAction: () => undoDeleteRecurringExpense(r.id) });
   };
 
   const onDelete = (t: Transaction) => {

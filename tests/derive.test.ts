@@ -24,6 +24,9 @@ import {
   FHSS_LIFETIME_CAP,
   nextOccurrence,
   daysUntil,
+  nextPaydayInfo,
+  nextBillDue,
+  mostRecentUnreconciledPeriod,
   buildFortnightSplit,
   fortnightCategoryBreakdown,
   sinkingFundBreakdown,
@@ -607,6 +610,62 @@ describe("daysUntil", () => {
 
   it("is negative for a past date (overdue)", () => {
     expect(daysUntil("2026-08-01", "2026-08-14")).toBe(-13);
+  });
+});
+
+describe("nextPaydayInfo", () => {
+  const periods = buildPeriods("2026-08-10", "2026-12-31");
+
+  it("is today (0 days) on the anchor date itself", () => {
+    expect(nextPaydayInfo(periods, "2026-08-10")).toEqual({ dateISO: "2026-08-10", days: 0 });
+  });
+
+  it("points at the next boundary from mid-fortnight", () => {
+    expect(nextPaydayInfo(periods, "2026-08-15")).toEqual({ dateISO: "2026-08-24", days: 9 });
+  });
+
+  it("points at the first period before the anchor date", () => {
+    expect(nextPaydayInfo(periods, "2026-08-01")).toEqual({ dateISO: "2026-08-10", days: 9 });
+  });
+
+  it("is null with no periods", () => {
+    expect(nextPaydayInfo([], "2026-08-10")).toBeNull();
+  });
+});
+
+describe("nextBillDue", () => {
+  const bills = [
+    { id: "1", user_id: "u", description: "Rego", amount: 780, category_key: "other", account: "ANZ Plus", frequency: "yearly" as const, next_due: "2027-08-19", active: true, created_at: "" },
+    { id: "2", user_id: "u", description: "Netflix", amount: 20, category_key: "other", account: "Everyday", frequency: "monthly" as const, next_due: "2026-09-01", active: true, created_at: "" },
+    { id: "3", user_id: "u", description: "Paused thing", amount: 5, category_key: "other", account: "Everyday", frequency: "yearly" as const, next_due: "2026-08-20", active: false, created_at: "" },
+  ];
+
+  it("picks the soonest-due active bill, ignoring paused ones", () => {
+    expect(nextBillDue(bills, "2026-08-19")).toEqual({ description: "Netflix", dateISO: "2026-09-01", days: 13 });
+  });
+
+  it("is null with no active bills", () => {
+    expect(nextBillDue(bills.map((b) => ({ ...b, active: false })), "2026-08-19")).toBeNull();
+  });
+});
+
+describe("mostRecentUnreconciledPeriod", () => {
+  const periods = buildPeriods("2026-08-10", "2026-12-31");
+
+  it("is null while still inside the first fortnight — nothing has ended yet", () => {
+    expect(mostRecentUnreconciledPeriod(periods, {}, "2026-08-15")).toBeNull();
+  });
+
+  it("flags the most recently ended fortnight once it's over and not closed", () => {
+    const found = mostRecentUnreconciledPeriod(periods, {}, "2026-08-25");
+    expect(found?.key).toBe("2026-08-10");
+  });
+
+  it("is null once that fortnight is marked closed", () => {
+    const reconciliations: Record<string, Reconciliation> = {
+      "2026-08-10": { period_key: "2026-08-10", actual_income: 1000, actual_overrides: {}, closed_at: "2026-08-24T00:00:00.000Z" },
+    };
+    expect(mostRecentUnreconciledPeriod(periods, reconciliations, "2026-08-25")).toBeNull();
   });
 });
 
