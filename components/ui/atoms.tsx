@@ -1,7 +1,7 @@
 // Presentational atoms — ported verbatim (styling + behaviour) from FinancialPlanTracker.jsx.
 
 import { useState } from "react";
-import { ChevronDown, type LucideIcon } from "lucide-react";
+import { ChevronDown, Info, type LucideIcon } from "lucide-react";
 import { CARD, LINE, MUTE, GOLD, GOLD_SOFT, NAVY, INK, FAV, UNFAV } from "@/lib/theme";
 import { AUD } from "@/lib/money";
 
@@ -93,7 +93,7 @@ export function Metric({
   accent = GOLD,
 }: {
   icon: LucideIcon;
-  label: string;
+  label: React.ReactNode;
   value: string;
   sub?: string;
   accent?: string;
@@ -120,7 +120,7 @@ export function Progress({
   value: number;
   target: number;
   colorFrom?: string;
-  label: string;
+  label: React.ReactNode;
 }) {
   const pct = target > 0 ? Math.max(0, Math.min(100, (value / target) * 100)) : 0;
   return (
@@ -298,6 +298,51 @@ export function Toast({ message, actionLabel, onAction }: { message: string; act
         </button>
       )}
     </div>
+  );
+}
+
+/** A small "ⓘ" that reveals a short plain-English explanation on hover or tap — for jargon
+ * (FHSS, sinking fund, variance, ...) that shouldn't need a trip to Google to understand. */
+export function InfoTip({ text, iconColor = MUTE }: { text: string; iconColor?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span style={{ position: "relative", display: "inline-flex", verticalAlign: "middle", marginLeft: 4 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        aria-label="More info"
+        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", color: iconColor, lineHeight: 0 }}
+      >
+        <Info size={13} />
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 7px)",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: INK,
+            color: "#fff",
+            fontSize: 11.5,
+            fontWeight: 400,
+            textTransform: "none",
+            letterSpacing: "normal",
+            lineHeight: 1.45,
+            padding: "8px 10px",
+            borderRadius: 8,
+            width: 220,
+            zIndex: 50,
+            boxShadow: "0 8px 20px rgba(22,32,58,.3)",
+          }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
   );
 }
 

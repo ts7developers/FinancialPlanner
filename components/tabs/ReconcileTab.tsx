@@ -9,7 +9,7 @@ import { currentPeriod, dayLabel, financialYearStart, isFT, isoFromDate, periodL
 import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation, sumYTD, buildVarianceReport, buildVarianceInsights, actualIncomeForPeriod } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, INK, GOLD_SOFT, FAV, UNFAV, inputStyle } from "@/lib/theme";
-import { Row, Cell2, VarTag, Stat, Collapsible } from "@/components/ui/atoms";
+import { Row, Cell2, VarTag, Stat, Collapsible, InfoTip } from "@/components/ui/atoms";
 import PayslipPanel from "@/components/PayslipPanel";
 
 export default function ReconcileTab() {
@@ -297,7 +297,10 @@ export default function ReconcileTab() {
             <div style={{ padding: "11px 16px" }}>Line</div>
             <div style={{ padding: "11px 16px", textAlign: "right" }}>Planned</div>
             <div style={{ padding: "11px 16px", textAlign: "right" }}>Actual</div>
-            <div style={{ padding: "11px 16px", textAlign: "right" }}>Variance</div>
+            <div style={{ padding: "11px 16px", textAlign: "right", display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
+              Variance
+              <InfoTip iconColor="#C4CDE0" text="Actual minus planned, favourability-adjusted: spending less than planned or earning more is favourable (green); the opposite is unfavourable (red)." />
+            </div>
           </div>
         )}
         <Row

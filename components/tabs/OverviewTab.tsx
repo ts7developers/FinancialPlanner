@@ -25,7 +25,7 @@ import {
 } from "@/lib/derive";
 import { AUD, num } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, PIE_COLORS } from "@/lib/theme";
-import { Metric, Progress } from "@/components/ui/atoms";
+import { Metric, Progress, InfoTip } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import Link from "next/link";
 
@@ -194,7 +194,17 @@ export default function OverviewTab() {
         />
         <Metric icon={TrendingUp} label="Planned surplus / fn" value={AUD(D.netFTfn - D.expFN(2027))} sub="2027+, all costs running" />
         <Metric icon={PiggyBank} label="Emergency fund" value={AUD(num(balances.emergency))} sub={`target ${AUD(profile.emergency_target)}`} accent={FAV} />
-        <Metric icon={Home} label="Deposit saved" value={AUD(combinedDeposit)} sub={`cash + FHSS, 5% goal ${AUD(D.dep5)}`} />
+        <Metric
+          icon={Home}
+          label={
+            <>
+              Deposit saved
+              <InfoTip text="Cash in ANZ Plus plus your FHSS-eligible super contributions (First Home Super Saver scheme) — money you could release toward a first home deposit." />
+            </>
+          }
+          value={AUD(combinedDeposit)}
+          sub={`cash + FHSS, 5% goal ${AUD(D.dep5)}`}
+        />
       </div>
 
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: "18px 18px 6px" }}>
