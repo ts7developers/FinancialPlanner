@@ -5,8 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Check, FileBarChart, Wand2, TrendingDown, TrendingUp, RotateCcw, Wallet, Save } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { currentPeriod, dayLabel, financialYearStart, isFT, isoFromDate, periodLabel } from "@/lib/period";
-import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation, sumYTD, buildVarianceReport, buildVarianceInsights, actualIncomeForPeriod } from "@/lib/derive";
+import { currentPeriod, dateFromISO, dayLabel, financialYearStart, isFT, isoFromDate, periodLabel } from "@/lib/period";
+import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation, sumYTD, buildVarianceReport, buildVarianceInsights, actualIncomeForPeriod, paydayForPeriod } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, INK, GOLD_SOFT, FAV, UNFAV, inputStyle } from "@/lib/theme";
 import { Row, Cell2, VarTag, Stat, Collapsible, InfoTip } from "@/components/ui/atoms";
@@ -154,7 +154,7 @@ export default function ReconcileTab() {
         >
           {periods.map((p) => (
             <option key={p.key} value={p.key}>
-              {periodLabel(p)}
+              {periodLabel(p)} · paid {dayLabel(dateFromISO(paydayForPeriod(p, profile.payday_offset_days ?? 2)))}
             </option>
           ))}
         </select>
