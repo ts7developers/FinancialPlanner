@@ -57,3 +57,12 @@ select:focus {
     font-size: 16px !important; /* stops iOS zoom on focus */
   }
 }
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
+}

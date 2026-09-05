@@ -17,6 +17,7 @@ export default function QuickAddFab() {
     <button
       onClick={() => router.push("/expenses?add=1")}
       aria-label="Add expense"
+      className="no-print"
       style={{
         position: "fixed",
         right: 18,

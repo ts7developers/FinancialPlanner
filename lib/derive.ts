@@ -6,6 +6,7 @@ import { dayLabel, dateFromISO, isoFromDate, currentPeriod, financialYearStart, 
 import { netFromPackage, hecsCompulsoryRepayment, incomeTaxAU, litoAU, FN_PER_YEAR, FN_FROM_MO } from "./tax";
 import { OTHER_CATEGORY_KEY } from "./categories";
 export { hecsCompulsoryRepayment } from "./tax";
+import { BALANCE_FIELDS } from "./theme";
 import type { Account } from "./theme";
 import type {
   BudgetCategoryRow,
@@ -21,6 +22,8 @@ import type {
   Goal,
   Snapshot,
   AllocationOrder,
+  SuperContribution,
+  Transfer,
 } from "./types";
 
 export interface DerivedFinancials {
@@ -173,6 +176,7 @@ export function buildNetWorthProjection(
   let cc = Number(balances.cc) || 0;
   let hecs = Number(balances.hecs) || 0;
   const goalBalances = new Map<string, number>(goals.map((g) => [g.id, Number(g.current_amount) || 0]));
+  const otherBalances = new Map<string, number>(EXTRA_BALANCE_DESTINATIONS.map((d) => [d.id as string, Number(balances[d.id]) || 0]));
   const allocationOrder = resolveAllocationOrder(profile.allocation_order, goals);
 
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per, i) => {
@@ -187,9 +191,10 @@ export function buildNetWorthProjection(
     cc = Math.max(0, cc - toCC);
 
     const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (goalBalances.get(g.id) ?? 0))]));
-    const { toEmergency, toDeposit, goalAmounts } = applyAllocationOrder(surplus, allocationOrder, Math.max(0, emergencyTarget - emergency), goalRemaining);
+    const { toEmergency, toDeposit, goalAmounts, otherAmounts } = applyAllocationOrder(surplus, allocationOrder, Math.max(0, emergencyTarget - emergency), goalRemaining);
     emergency += toEmergency;
     goals.forEach((g) => goalBalances.set(g.id, (goalBalances.get(g.id) ?? 0) + (goalAmounts.get(g.id) ?? 0)));
+    EXTRA_BALANCE_DESTINATIONS.forEach((d) => otherBalances.set(d.id as string, (otherBalances.get(d.id as string) ?? 0) + (otherAmounts.get(d.id as string) ?? 0)));
     deposit += toDeposit;
     shares *= 1 + periodGrowth;
     superb = superb * (1 + periodGrowth) + superFn;
@@ -198,12 +203,13 @@ export function buildNetWorthProjection(
     hecs = Math.max(0, hecs * (1 + hecsPeriodIndexation) - hecsRepaymentFn);
 
     const goalsTotal = Array.from(goalBalances.values()).reduce((s, v) => s + v, 0);
+    const otherTotal = Array.from(otherBalances.values()).reduce((s, v) => s + v, 0);
     return {
       key: per.key,
       label: dayLabel(per.start),
-      liquid: Math.round(emergency + deposit + goalsTotal),
+      liquid: Math.round(emergency + deposit + goalsTotal + otherTotal),
       invested: Math.round(shares + superb),
-      netWorth: Math.round(emergency + deposit + goalsTotal + shares + superb - cc - hecs),
+      netWorth: Math.round(emergency + deposit + goalsTotal + otherTotal + shares + superb - cc - hecs),
     };
   });
 }
@@ -651,6 +657,17 @@ export function resolveAllocationOrder(stored: AllocationOrder | null | undefine
   return [...stored.slice(0, insertAt), ...newTiers, ...stored.slice(insertAt)];
 }
 
+/**
+ * Tracked balances (beyond Emergency fund and the house deposit) that can be added directly to
+ * the pay-priority order as their own uncapped destination — e.g. "put 20% of surplus toward
+ * Holiday". Deliberately excludes Shares and Super: those already grow via a separate investment
+ * -return/employer-contribution model in the projections, and folding surplus allocation into
+ * that too is a bigger design question than this list is meant to solve.
+ */
+export const EXTRA_BALANCE_DESTINATIONS: { id: keyof Omit<Balances, "user_id">; label: string }[] = BALANCE_FIELDS.filter(([key]) => key === "holiday").map(([id, label]) => ({ id, label }));
+
+const EXTRA_BALANCE_IDS = new Set(EXTRA_BALANCE_DESTINATIONS.map((d) => d.id as string));
+
 interface AllocationDestination {
   id: string;
   weight: number;
@@ -695,6 +712,8 @@ export interface AllocationRunResult {
   toDeposit: number;
   /** Keyed by goal id — only goals that actually received something (or exist in the order) appear here. */
   goalAmounts: Map<string, number>;
+  /** Keyed by balance key (e.g. "holiday") — see `EXTRA_BALANCE_DESTINATIONS`. */
+  otherAmounts: Map<string, number>;
 }
 
 /**
@@ -708,6 +727,7 @@ export function applyAllocationOrder(surplus: number, order: AllocationOrder, em
   let toEmergency = 0;
   let toDeposit = 0;
   const goalAmounts = new Map<string, number>();
+  const otherAmounts = new Map<string, number>();
   let remaining = Math.max(0, surplus);
 
   for (const tier of order) {
@@ -715,13 +735,14 @@ export function applyAllocationOrder(surplus: number, order: AllocationOrder, em
     const items: AllocationDestination[] = tier.map((t) => ({
       id: t.id,
       weight: t.weightPct,
-      capacity: t.id === DEPOSIT_ALLOCATION_ID ? Infinity : t.id === EMERGENCY_ALLOCATION_ID ? Math.max(0, emergencyRemaining) : Math.max(0, goalRemaining.get(t.id) ?? 0),
+      capacity: t.id === DEPOSIT_ALLOCATION_ID || EXTRA_BALANCE_IDS.has(t.id) ? Infinity : t.id === EMERGENCY_ALLOCATION_ID ? Math.max(0, emergencyRemaining) : Math.max(0, goalRemaining.get(t.id) ?? 0),
     }));
     const { allocations, leftover } = allocateTier(remaining, items);
     for (const [id, amt] of Object.entries(allocations)) {
       if (amt <= 0) continue;
       if (id === EMERGENCY_ALLOCATION_ID) toEmergency += amt;
       else if (id === DEPOSIT_ALLOCATION_ID) toDeposit += amt;
+      else if (EXTRA_BALANCE_IDS.has(id)) otherAmounts.set(id, (otherAmounts.get(id) ?? 0) + amt);
       else goalAmounts.set(id, (goalAmounts.get(id) ?? 0) + amt);
     }
     remaining = leftover;
@@ -729,7 +750,7 @@ export function applyAllocationOrder(surplus: number, order: AllocationOrder, em
   // Safety net: if "deposit" was somehow missing from the order (shouldn't happen —
   // resolveAllocationOrder always includes it), don't let leftover surplus vanish.
   toDeposit += remaining;
-  return { toEmergency, toDeposit, goalAmounts };
+  return { toEmergency, toDeposit, goalAmounts, otherAmounts };
 }
 
 /** Accounts stored as "amount owing" — moving money here pays the balance down, not up. */
@@ -1213,6 +1234,8 @@ export interface FortnightSplitPoint {
   emergencyBalance: number;
   depositBalance: number;
   creditCardBalance: number;
+  /** Any extra balance-based destinations added to the pay-priority order (see `EXTRA_BALANCE_DESTINATIONS`) — empty unless you've added one. */
+  otherAllocations: GoalAllocation[];
 }
 
 /** How many times a year a recurring expense of this frequency falls due. */
@@ -1323,7 +1346,7 @@ export function fortnightBreakdown(
   const emergency = Number(balances.emergency) || 0;
   const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (Number(g.current_amount) || 0))]));
   const order = resolveAllocationOrder(allocationOrder, goals);
-  const { toEmergency, toDeposit, goalAmounts } = applyAllocationOrder(surplus, order, Math.max(0, emergencyTarget - emergency), goalRemaining);
+  const { toEmergency, toDeposit, goalAmounts, otherAmounts } = applyAllocationOrder(surplus, order, Math.max(0, emergencyTarget - emergency), goalRemaining);
 
   const goalAllocations: GoalAllocation[] = sortGoalsByPriority(goals).map((g) => {
     const amount = goalAmounts.get(g.id) ?? 0;
@@ -1333,10 +1356,11 @@ export function fortnightBreakdown(
   const toGoalsTotal = goalAllocations.reduce((s, g) => s + g.amount, 0);
 
   const goalLabelById = new Map(goals.map((g) => [g.id, g.label]));
+  const extraLabelById = new Map(EXTRA_BALANCE_DESTINATIONS.map((d) => [d.id as string, d.label]));
   const orderedAllocations: AllocationLineItem[] = order.flat().map((t) => ({
     id: t.id,
-    label: t.id === EMERGENCY_ALLOCATION_ID ? "Emergency fund" : t.id === DEPOSIT_ALLOCATION_ID ? "Deposit" : (goalLabelById.get(t.id) ?? "Goal"),
-    amount: t.id === EMERGENCY_ALLOCATION_ID ? toEmergency : t.id === DEPOSIT_ALLOCATION_ID ? toDeposit : (goalAmounts.get(t.id) ?? 0),
+    label: t.id === EMERGENCY_ALLOCATION_ID ? "Emergency fund" : t.id === DEPOSIT_ALLOCATION_ID ? "Deposit" : (extraLabelById.get(t.id) ?? goalLabelById.get(t.id) ?? "Goal"),
+    amount: t.id === EMERGENCY_ALLOCATION_ID ? toEmergency : t.id === DEPOSIT_ALLOCATION_ID ? toDeposit : (otherAmounts.get(t.id) ?? goalAmounts.get(t.id) ?? 0),
   }));
 
   return { netPay, categoriesTotal, sinkingTotal, toCreditCard, toEmergency, toGoalsTotal, goalAllocations, toDeposit, orderedAllocations };
@@ -1370,6 +1394,7 @@ export function buildFortnightSplit(
   let deposit = Number(balances.anzplus) || 0;
   let cc = Number(balances.cc) || 0;
   const goalBalances = new Map<string, number>(goals.map((g) => [g.id, Number(g.current_amount) || 0]));
+  const otherBalances = new Map<string, number>(EXTRA_BALANCE_DESTINATIONS.map((d) => [d.id as string, Number(balances[d.id]) || 0]));
   const orderedGoals = sortGoalsByPriority(goals);
   const allocationOrder = resolveAllocationOrder(profile.allocation_order, goals);
 
@@ -1382,7 +1407,7 @@ export function buildFortnightSplit(
     cc = Math.max(0, cc - toCreditCard);
 
     const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (goalBalances.get(g.id) ?? 0))]));
-    const { toEmergency, toDeposit, goalAmounts } = applyAllocationOrder(surplus, allocationOrder, Math.max(0, emergencyTarget - emergency), goalRemaining);
+    const { toEmergency, toDeposit, goalAmounts, otherAmounts } = applyAllocationOrder(surplus, allocationOrder, Math.max(0, emergencyTarget - emergency), goalRemaining);
     emergency += toEmergency;
 
     // Every goal appears here each period — even at $0 — so a consumer tracking a goal's running
@@ -1395,6 +1420,13 @@ export function buildFortnightSplit(
       return { id: g.id, label: g.label, amount, balance: Math.round(balance) };
     });
     const toGoalsTotal = goalAllocations.reduce((s, g) => s + g.amount, 0);
+
+    const otherAllocations: GoalAllocation[] = EXTRA_BALANCE_DESTINATIONS.map((d) => {
+      const amount = otherAmounts.get(d.id as string) ?? 0;
+      const balance = (otherBalances.get(d.id as string) ?? 0) + amount;
+      otherBalances.set(d.id as string, balance);
+      return { id: d.id as string, label: d.label, amount, balance: Math.round(balance) };
+    });
 
     deposit += toDeposit;
     return {
@@ -1412,6 +1444,7 @@ export function buildFortnightSplit(
       emergencyBalance: Math.round(emergency),
       depositBalance: Math.round(deposit),
       creditCardBalance: Math.round(cc),
+      otherAllocations,
     };
   });
 }
@@ -1442,4 +1475,157 @@ export function periodsToTarget(current: number, target: number, perPeriod: numb
   if (current >= target) return 0;
   if (perPeriod <= 0) return null;
   return Math.ceil((target - current) / perPeriod);
+}
+
+// ============ Reports (Balance Sheet / Income & Expenditure / Cash Flow) ============
+// A lightweight, personal-finance take on the standard statements — not commercial-accounting
+// rigorous (no accrual adjustments, no reconciliation to a running ledger), but grounded in the
+// same real balance/transaction data every other tab uses.
+
+export interface ReportLineItem {
+  label: string;
+  amount: number;
+}
+
+export interface BalanceSheet {
+  asOfISO: string;
+  assets: ReportLineItem[];
+  totalAssets: number;
+  liabilities: ReportLineItem[];
+  totalLiabilities: number;
+  netWorth: number;
+}
+
+/** Point-in-time statement from today's real balances — there's no historical balance-by-account
+ * data to draw an as-of-a-past-date version from (only `snapshots`' partial deposit/emergency/cc/hecs series does that). */
+export function buildBalanceSheet(balances: Balances, goals: Goal[], todayISO: string): BalanceSheet {
+  const assets: ReportLineItem[] = BALANCE_FIELDS.filter(([key]) => !LIABILITY_ACCOUNTS.has(key)).map(([key, label]) => ({ label, amount: Number(balances[key]) || 0 }));
+  const goalsTotal = goals.reduce((s, g) => s + (Number(g.current_amount) || 0), 0);
+  if (goalsTotal > 0) assets.push({ label: "Savings goals", amount: goalsTotal });
+  const liabilities: ReportLineItem[] = BALANCE_FIELDS.filter(([key]) => LIABILITY_ACCOUNTS.has(key)).map(([key, label]) => ({ label, amount: Number(balances[key]) || 0 }));
+  const totalAssets = assets.reduce((s, i) => s + i.amount, 0);
+  const totalLiabilities = liabilities.reduce((s, i) => s + i.amount, 0);
+  return { asOfISO: todayISO, assets, totalAssets, liabilities, totalLiabilities, netWorth: totalAssets - totalLiabilities };
+}
+
+export interface IncomeExpenditureStatement {
+  startISO: string;
+  endISO: string;
+  income: ReportLineItem[];
+  totalIncome: number;
+  expenses: ReportLineItem[];
+  totalExpenses: number;
+  net: number;
+}
+
+/**
+ * Economic income vs spend for the period — every logged expense counts against its category
+ * regardless of which account funded it (a credit-card purchase is still spend the moment it
+ * happens), same convention Reconcile/Budget already use. Contrast with `buildCashFlowStatement`,
+ * which only counts money that's actually left a real account.
+ */
+export function buildIncomeExpenditureStatement(
+  payslips: Payslip[],
+  miscIncome: MiscIncome[],
+  transactions: Transaction[],
+  categories: BudgetCategoryRow[],
+  startISO: string,
+  endISO: string
+): IncomeExpenditureStatement {
+  const inRange = (d: string | null) => !!d && d >= startISO && d <= endISO;
+
+  const salaryTotal = payslips.filter((p) => p.status === "confirmed" && inRange(p.period_start ?? p.period_key)).reduce((s, p) => s + (Number(p.net) || 0), 0);
+  const miscTotal = miscIncome.filter((m) => inRange(m.date)).reduce((s, m) => s + (Number(m.amount) || 0), 0);
+  const income: ReportLineItem[] = [];
+  if (salaryTotal > 0) income.push({ label: "Salary (net)", amount: salaryTotal });
+  if (miscTotal > 0) income.push({ label: "Other income", amount: miscTotal });
+  const totalIncome = salaryTotal + miscTotal;
+
+  const byCategory = new Map<string, number>();
+  transactions.filter((t) => inRange(t.date)).forEach((t) => byCategory.set(t.category_key, (byCategory.get(t.category_key) ?? 0) + (Number(t.amount) || 0)));
+  const expenses: ReportLineItem[] = categories
+    .slice()
+    .sort((a, b) => a.sort - b.sort)
+    .filter((c) => (byCategory.get(c.key) ?? 0) > 0)
+    .map((c) => ({ label: c.label, amount: byCategory.get(c.key) ?? 0 }));
+  const knownKeys = new Set(categories.map((c) => c.key));
+  const otherAmount = [...byCategory.entries()].filter(([k]) => !knownKeys.has(k)).reduce((s, [, v]) => s + v, 0);
+  if (otherAmount > 0) expenses.push({ label: "Other", amount: otherAmount });
+  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+
+  return { startISO, endISO, income, totalIncome, expenses, totalExpenses, net: totalIncome - totalExpenses };
+}
+
+export interface CashFlowSection {
+  label: string;
+  items: ReportLineItem[];
+  total: number;
+}
+
+export interface CashFlowStatement {
+  startISO: string;
+  endISO: string;
+  operating: CashFlowSection;
+  investing: CashFlowSection;
+  debtRepayment: CashFlowSection;
+  netCashFlow: number;
+}
+
+/**
+ * Actual cash movement for the period, unlike `buildIncomeExpenditureStatement`: a credit-card
+ * purchase isn't counted here until the card is actually paid down (a transfer into "cc"), since
+ * no real account loses money at the moment the purchase is logged — only once it's paid off.
+ * Expenses/purchases funded from "Fun money" or "Cash" are excluded too, since this app doesn't
+ * track a real balance for either (see `ACCOUNT_BALANCE_KEY`), so there's no account movement to report.
+ */
+export function buildCashFlowStatement(
+  payslips: Payslip[],
+  miscIncome: MiscIncome[],
+  transactions: Transaction[],
+  holdingLots: HoldingLot[],
+  superContributions: SuperContribution[],
+  transfers: Transfer[],
+  startISO: string,
+  endISO: string
+): CashFlowStatement {
+  const inRange = (d: string | null) => !!d && d >= startISO && d <= endISO;
+  const fundsRealCashAccount = (accountKey: string | null) => {
+    if (!accountKey) return false;
+    const key = accountKey as keyof Omit<Balances, "user_id">;
+    return !LIABILITY_ACCOUNTS.has(key);
+  };
+
+  const salaryTotal = payslips.filter((p) => p.status === "confirmed" && inRange(p.period_start ?? p.period_key)).reduce((s, p) => s + (Number(p.net) || 0), 0);
+  const miscTotal = miscIncome.filter((m) => inRange(m.date)).reduce((s, m) => s + (Number(m.amount) || 0), 0);
+  const cashExpenseTotal = transactions
+    .filter((t) => inRange(t.date) && fundsRealCashAccount(ACCOUNT_BALANCE_KEY[t.account as Account] ?? null))
+    .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const operatingItems: ReportLineItem[] = [];
+  if (salaryTotal > 0) operatingItems.push({ label: "Salary received", amount: salaryTotal });
+  if (miscTotal > 0) operatingItems.push({ label: "Other income received", amount: miscTotal });
+  if (cashExpenseTotal > 0) operatingItems.push({ label: "Living expenses paid from cash", amount: -cashExpenseTotal });
+  const operatingTotal = operatingItems.reduce((s, i) => s + i.amount, 0);
+
+  const sharesPurchased = holdingLots.filter((l) => inRange(l.date) && fundsRealCashAccount(l.account)).reduce((s, l) => s + l.shares * l.price, 0);
+  const personalSuperTotal = superContributions
+    .filter((c) => c.type === "personal" && inRange(c.date) && fundsRealCashAccount(c.account))
+    .reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const investingItems: ReportLineItem[] = [];
+  if (sharesPurchased > 0) investingItems.push({ label: "Shares purchased", amount: -sharesPurchased });
+  if (personalSuperTotal > 0) investingItems.push({ label: "Personal super contributions", amount: -personalSuperTotal });
+  const investingTotal = investingItems.reduce((s, i) => s + i.amount, 0);
+
+  const ccPaydown = transfers.filter((t) => t.to_account === "cc" && inRange(t.date)).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const debtItems: ReportLineItem[] = [];
+  if (ccPaydown > 0) debtItems.push({ label: "Credit card paid down", amount: -ccPaydown });
+  const debtTotal = debtItems.reduce((s, i) => s + i.amount, 0);
+
+  return {
+    startISO,
+    endISO,
+    operating: { label: "Operating activities", items: operatingItems, total: operatingTotal },
+    investing: { label: "Investing activities", items: investingItems, total: investingTotal },
+    debtRepayment: { label: "Debt repayment", items: debtItems, total: debtTotal },
+    netCashFlow: operatingTotal + investingTotal + debtTotal,
+  };
 }

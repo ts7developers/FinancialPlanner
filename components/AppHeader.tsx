@@ -10,6 +10,7 @@ export default function AppHeader() {
 
   return (
     <div
+      className="no-print"
       style={{
         background: `linear-gradient(120deg, ${INK}, ${NAVY} 70%)`,
         color: "#fff",

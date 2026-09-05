@@ -1,4 +1,4 @@
-import { LayoutDashboard, Wallet, Receipt, LineChart, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Wallet, Receipt, LineChart, SlidersHorizontal, FileBarChart, type LucideIcon } from "lucide-react";
 
 export interface NavMember {
   href: string;
@@ -13,7 +13,7 @@ export interface NavGroup {
 }
 
 /**
- * Groups the app's 8 routes under 5 top-level nav entries so the tab bar reads at a glance
+ * Groups the app's 9 routes under 6 top-level nav entries so the tab bar reads at a glance
  * instead of scrolling — each underlying route/page/component is untouched, this only changes
  * how they're reached. A group with more than one member gets a small sub-nav (see SubNav.tsx)
  * once you're inside it.
@@ -39,4 +39,5 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   { label: "Budget", icon: SlidersHorizontal, members: [{ href: "/plan", label: "Budget" }] },
+  { label: "Reports", icon: FileBarChart, members: [{ href: "/reports", label: "Reports" }] },
 ];

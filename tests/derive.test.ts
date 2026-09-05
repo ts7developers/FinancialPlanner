@@ -55,11 +55,14 @@ import {
   applyAllocationOrder,
   EMERGENCY_ALLOCATION_ID,
   DEPOSIT_ALLOCATION_ID,
+  buildBalanceSheet,
+  buildIncomeExpenditureStatement,
+  buildCashFlowStatement,
 } from "@/lib/derive";
 import { buildPeriods, isFT } from "@/lib/period";
 import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
-import type { Balances, BudgetCategoryRow, HoldingLot, MiscIncome, Payslip, Profile, Reconciliation, Goal, AllocationOrder } from "@/lib/types";
+import type { Balances, BudgetCategoryRow, HoldingLot, MiscIncome, Payslip, Profile, Reconciliation, Goal, AllocationOrder, Transaction, SuperContribution, Transfer } from "@/lib/types";
 
 const balances: Balances = {
   user_id: "u1",
@@ -860,6 +863,13 @@ describe("applyAllocationOrder", () => {
     expect(result.goalAmounts.get("g1") ?? 0).toBe(0);
     expect(result.toDeposit).toBe(0);
   });
+
+  it("routes a tied share to an extra balance destination (e.g. Holiday), uncapped like deposit", () => {
+    const order: AllocationOrder = [[{ id: "holiday", weightPct: 20 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 80 }]];
+    const result = applyAllocationOrder(1000, order, 0, new Map());
+    expect(result.otherAmounts.get("holiday")).toBe(200);
+    expect(result.toDeposit).toBe(800);
+  });
 });
 
 describe("fortnightBreakdown", () => {
@@ -934,6 +944,16 @@ describe("fortnightBreakdown", () => {
     const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
     expect(b.toEmergency).toBeCloseTo(surplus / 2, 5);
     expect(b.toDeposit).toBeCloseTo(surplus / 2, 5);
+  });
+
+  it("shows an extra balance destination (the Holiday account) by its real label in orderedAllocations", () => {
+    const noCC = { ...balances, cc: 0, emergency: 0 };
+    const order: AllocationOrder = [[{ id: "holiday", weightPct: 20 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 80 }], [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }]];
+    const b = fortnightBreakdown(400, noCC, [], [], 1000, profile.emergency_target, today, order);
+    const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
+    const holiday = b.orderedAllocations.find((a) => a.id === "holiday")!;
+    expect(holiday.label).toBe("Holiday (cruise)");
+    expect(holiday.amount).toBeCloseTo(surplus * 0.2, 5);
   });
 });
 
@@ -1014,6 +1034,20 @@ describe("buildFortnightSplit", () => {
     // Whatever's left after both goals should be exactly what's left for deposit — no money unaccounted for.
     const surplus = Math.max(0, split[0].netPay - split[0].categoriesTotal);
     expect(split[0].toDeposit).toBeCloseTo(surplus - split[0].toGoalsTotal, 5);
+  });
+
+  it("tracks a running balance for an extra destination (Holiday) added to a custom order", () => {
+    const holidayFirst: Profile = { ...profile, allocation_order: [[{ id: "holiday", weightPct: 100 }], [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]] };
+    const noCCFullEmergency = { ...balances, emergency: profile.emergency_target, cc: 0, holiday: 100 };
+    const split = buildFortnightSplit(holidayFirst, D, categories, noCCFullEmergency, [], noGoals, periods, profile.pay_anchor, 2);
+    const holidayP0 = split[0].otherAllocations.find((o) => o.id === "holiday")!;
+    const surplus0 = Math.max(0, split[0].netPay - split[0].categoriesTotal);
+    expect(holidayP0.amount).toBeCloseTo(surplus0, 5);
+    expect(holidayP0.balance).toBe(Math.round(100 + surplus0));
+    // Balance keeps accumulating into period 2, and nothing reaches deposit while holiday is solo-ranked first.
+    expect(split[0].toDeposit).toBe(0);
+    const holidayP1 = split[1].otherAllocations.find((o) => o.id === "holiday")!;
+    expect(holidayP1.balance).toBeGreaterThan(holidayP0.balance);
   });
 });
 
@@ -1313,5 +1347,114 @@ describe("actualIncomeForPeriod", () => {
 
   it("is 0 for a period with nothing confirmed or logged", () => {
     expect(actualIncomeForPeriod([], [], "2026-08-24", anchor)).toBe(0);
+  });
+});
+
+function makeTransaction(overrides: Partial<Transaction>): Transaction {
+  return { id: "t1", user_id: "u1", date: "2026-08-24", description: null, amount: 0, category_key: "groceries", account: "Everyday", created_at: "2026-08-24T00:00:00Z", ...overrides };
+}
+
+function makeSuperContribution(overrides: Partial<SuperContribution>): SuperContribution {
+  return { id: "s1", user_id: "u1", date: "2026-08-24", amount: 0, type: "personal", tax_deductible: false, affects_balance: true, account: "everyday", note: null, created_at: "2026-08-24T00:00:00Z", ...overrides };
+}
+
+function makeTransfer(overrides: Partial<Transfer>): Transfer {
+  return { id: "tr1", user_id: "u1", date: "2026-08-24", from_account: "everyday", to_account: "cc", amount: 0, note: null, created_at: "2026-08-24T00:00:00Z", ...overrides };
+}
+
+describe("buildBalanceSheet", () => {
+  it("splits assets and liabilities and totals them into net worth", () => {
+    const sheet = buildBalanceSheet(balances, [], "2026-08-24");
+    const expectedAssets = balances.everyday + balances.anzplus + balances.emergency + balances.holiday + balances.shares + balances.superb;
+    expect(sheet.totalAssets).toBeCloseTo(expectedAssets, 5);
+    expect(sheet.totalLiabilities).toBeCloseTo(balances.cc + balances.hecs, 5);
+    expect(sheet.netWorth).toBeCloseTo(expectedAssets - (balances.cc + balances.hecs), 5);
+    expect(sheet.liabilities.map((l) => l.label)).toEqual(["Credit card (owing)", "HECS-HELP (owing)"]);
+  });
+
+  it("includes goal balances as an asset line when there are any", () => {
+    const goals: Goal[] = [{ id: "g1", user_id: "u1", label: "Trip", target_amount: 1000, current_amount: 300, priority: 0, created_at: "2026-01-01" }];
+    const sheet = buildBalanceSheet(balances, goals, "2026-08-24");
+    expect(sheet.assets.find((a) => a.label === "Savings goals")?.amount).toBe(300);
+  });
+
+  it("omits the goals line entirely when there are none", () => {
+    const sheet = buildBalanceSheet(balances, [], "2026-08-24");
+    expect(sheet.assets.find((a) => a.label === "Savings goals")).toBeUndefined();
+  });
+});
+
+describe("buildIncomeExpenditureStatement", () => {
+  it("counts a credit-card-funded expense as spend immediately, unlike cash flow", () => {
+    const payslips = [makePayslip({ net: 1000 })];
+    const transactions = [makeTransaction({ amount: 200, category_key: "groceries", account: "Credit card" })];
+    const stmt = buildIncomeExpenditureStatement(payslips, [], transactions, categories, "2026-08-01", "2026-08-31");
+    expect(stmt.totalIncome).toBe(1000);
+    expect(stmt.expenses.find((e) => e.label === "Groceries")?.amount).toBe(200);
+    expect(stmt.net).toBe(800);
+  });
+
+  it("excludes transactions and payslips outside the date range", () => {
+    const payslips = [makePayslip({ net: 1000, period_key: "2026-07-01" })];
+    const transactions = [makeTransaction({ amount: 200, date: "2026-07-15" })];
+    const stmt = buildIncomeExpenditureStatement(payslips, [], transactions, categories, "2026-08-01", "2026-08-31");
+    expect(stmt.totalIncome).toBe(0);
+    expect(stmt.totalExpenses).toBe(0);
+  });
+
+  it("groups spend against an unknown/deleted category under Other", () => {
+    const transactions = [makeTransaction({ amount: 50, category_key: "no-longer-exists" })];
+    const stmt = buildIncomeExpenditureStatement([], [], transactions, categories, "2026-08-01", "2026-08-31");
+    expect(stmt.expenses).toEqual([{ label: "Other", amount: 50 }]);
+  });
+});
+
+describe("buildCashFlowStatement", () => {
+  it("does not count a credit-card-funded purchase as a cash outflow", () => {
+    const transactions = [makeTransaction({ amount: 200, account: "Credit card" })];
+    const cf = buildCashFlowStatement([], [], transactions, [], [], [], "2026-08-01", "2026-08-31");
+    expect(cf.operating.items).toEqual([]);
+    expect(cf.operating.total).toBe(0);
+  });
+
+  it("counts an Everyday-funded expense as a real cash outflow", () => {
+    const transactions = [makeTransaction({ amount: 200, account: "Everyday" })];
+    const cf = buildCashFlowStatement([], [], transactions, [], [], [], "2026-08-01", "2026-08-31");
+    expect(cf.operating.total).toBe(-200);
+  });
+
+  it("excludes Fun money / Cash spending — no real balance to move", () => {
+    const transactions = [makeTransaction({ amount: 50, account: "Fun money" }), makeTransaction({ amount: 30, account: "Cash" })];
+    const cf = buildCashFlowStatement([], [], transactions, [], [], [], "2026-08-01", "2026-08-31");
+    expect(cf.operating.total).toBe(0);
+  });
+
+  it("counts credit card paydown (a transfer) as the real cash cost of card spending", () => {
+    const transfers = [makeTransfer({ to_account: "cc", amount: 300 })];
+    const cf = buildCashFlowStatement([], [], [], [], [], transfers, "2026-08-01", "2026-08-31");
+    expect(cf.debtRepayment.total).toBe(-300);
+    expect(cf.netCashFlow).toBe(-300);
+  });
+
+  it("counts a cash-funded share purchase as investing, but not one funded from the credit card", () => {
+    const lots: HoldingLot[] = [{ ...lot("AGL", 10, 8), date: "2026-08-10" }, { ...lot("BHP", 5, 40), date: "2026-08-10", account: "cc" }];
+    const cf = buildCashFlowStatement([], [], [], lots, [], [], "2026-08-01", "2026-08-31");
+    expect(cf.investing.items).toEqual([{ label: "Shares purchased", amount: -80 }]);
+  });
+
+  it("counts a cash-funded personal super contribution as investing, but not salary sacrifice", () => {
+    const contributions = [makeSuperContribution({ type: "personal", account: "everyday", amount: 500 }), makeSuperContribution({ id: "s2", type: "salary_sacrifice", account: null, amount: 400 })];
+    const cf = buildCashFlowStatement([], [], [], [], contributions, [], "2026-08-01", "2026-08-31");
+    expect(cf.investing.items).toEqual([{ label: "Personal super contributions", amount: -500 }]);
+  });
+
+  it("nets operating, investing, and debt repayment into netCashFlow", () => {
+    const payslips = [makePayslip({ net: 1000 })];
+    const transactions = [makeTransaction({ amount: 200, account: "Everyday" })];
+    const transfers = [makeTransfer({ to_account: "cc", amount: 150 })];
+    const cf = buildCashFlowStatement(payslips, [], transactions, [], [], transfers, "2026-08-01", "2026-08-31");
+    expect(cf.operating.total).toBe(800);
+    expect(cf.debtRepayment.total).toBe(-150);
+    expect(cf.netCashFlow).toBe(650);
   });
 });
