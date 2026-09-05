@@ -5,7 +5,7 @@ import { Upload, Check, FileEdit, ArrowRight } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { createClient } from "@/lib/supabase/client";
 import { isoFromDate } from "@/lib/period";
-import { actualIncomeForPeriod, fortnightBreakdown, reconcileCategoryRows } from "@/lib/derive";
+import { actualIncomeForPeriod, fortnightBreakdown, reconcileCategoryRows, EMERGENCY_ALLOCATION_ID, DEPOSIT_ALLOCATION_ID } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, INK, FAV, UNFAV, NAVY, inputStyle } from "@/lib/theme";
 import { InfoTip } from "@/components/ui/atoms";
@@ -272,24 +272,20 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
                 <span style={{ fontVariantNumeric: "tabular-nums", color: UNFAV }}>{AUD(breakdown.toCreditCard)}</span>
               </div>
             )}
-            {breakdown.toEmergency > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: FAV }}>→ Emergency fund</span>
-                <span style={{ fontVariantNumeric: "tabular-nums", color: FAV }}>{AUD(breakdown.toEmergency)}</span>
-              </div>
-            )}
-            {breakdown.goalAllocations
-              .filter((g) => g.amount > 0)
-              .map((g) => (
-                <div key={g.id} style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: GOLD }}>→ {g.label}</span>
-                  <span style={{ fontVariantNumeric: "tabular-nums", color: GOLD }}>{AUD(g.amount)}</span>
-                </div>
-              ))}
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, borderTop: `1px solid ${LINE}`, paddingTop: 4, marginTop: 2 }}>
-              <span style={{ color: NAVY }}>→ Deposit</span>
-              <span style={{ fontVariantNumeric: "tabular-nums", color: FAV }}>{AUD(breakdown.toDeposit)}</span>
-            </div>
+            {/* In the order money actually flows per your Pay priority setup (Wealth → Savings) —
+                not a hardcoded emergency-then-goals-then-deposit list. */}
+            {breakdown.orderedAllocations
+              .filter((a) => a.amount > 0)
+              .map((a) => {
+                const color = a.id === DEPOSIT_ALLOCATION_ID ? NAVY : a.id === EMERGENCY_ALLOCATION_ID ? FAV : GOLD;
+                const amountColor = a.id === DEPOSIT_ALLOCATION_ID ? FAV : color;
+                return (
+                  <div key={a.id} style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color }}>→ {a.label}</span>
+                    <span style={{ fontVariantNumeric: "tabular-nums", color: amountColor }}>{AUD(a.amount)}</span>
+                  </div>
+                );
+              })}
           </div>
           <div style={{ fontSize: 11, color: MUTE, marginTop: 8, lineHeight: 1.5 }}>
             Based on {AUD(periodTotal)} confirmed so far this fortnight, against your card/emergency/goal balances as they stood when this fortnight&apos;s pay first landed — a guide

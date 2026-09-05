@@ -921,6 +921,10 @@ describe("fortnightBreakdown", () => {
     const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
     expect(g1.amount).toBe(200); // fully funded first, ahead of emergency
     expect(b.toEmergency).toBeCloseTo(surplus - 200, 5); // gets whatever's left, still under its target
+    // orderedAllocations reflects the actual configured sequence, not a hardcoded one — a UI
+    // rendering this list top to bottom should show Holiday before Emergency fund before Deposit.
+    expect(b.orderedAllocations.map((a) => a.label)).toEqual(["Holiday", "Emergency fund", "Deposit"]);
+    expect(b.orderedAllocations[0].amount).toBe(200);
   });
 
   it("splits a tied 50/50 emergency + deposit tier instead of filling emergency first", () => {

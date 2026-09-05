@@ -1267,6 +1267,12 @@ export function sinkingFundTotal(recurringExpenses: RecurringExpense[], todayISO
   return sinkingFundBreakdown(recurringExpenses, todayISO).reduce((s, i) => s + i.perFortnight, 0);
 }
 
+export interface AllocationLineItem {
+  id: string;
+  label: string;
+  amount: number;
+}
+
 export interface FortnightBreakdown {
   netPay: number;
   categoriesTotal: number;
@@ -1276,6 +1282,10 @@ export interface FortnightBreakdown {
   toGoalsTotal: number;
   goalAllocations: GoalAllocation[];
   toDeposit: number;
+  /** Emergency fund / goals / deposit, in the actual order the surplus was allocated (per the
+   * user's configured pay-priority order) — what a UI should iterate to display "where this pay
+   * goes" in the right sequence, rather than a hardcoded emergency-then-goals-then-deposit list. */
+  orderedAllocations: AllocationLineItem[];
 }
 
 /**
@@ -1322,7 +1332,14 @@ export function fortnightBreakdown(
   });
   const toGoalsTotal = goalAllocations.reduce((s, g) => s + g.amount, 0);
 
-  return { netPay, categoriesTotal, sinkingTotal, toCreditCard, toEmergency, toGoalsTotal, goalAllocations, toDeposit };
+  const goalLabelById = new Map(goals.map((g) => [g.id, g.label]));
+  const orderedAllocations: AllocationLineItem[] = order.flat().map((t) => ({
+    id: t.id,
+    label: t.id === EMERGENCY_ALLOCATION_ID ? "Emergency fund" : t.id === DEPOSIT_ALLOCATION_ID ? "Deposit" : (goalLabelById.get(t.id) ?? "Goal"),
+    amount: t.id === EMERGENCY_ALLOCATION_ID ? toEmergency : t.id === DEPOSIT_ALLOCATION_ID ? toDeposit : (goalAmounts.get(t.id) ?? 0),
+  }));
+
+  return { netPay, categoriesTotal, sinkingTotal, toCreditCard, toEmergency, toGoalsTotal, goalAllocations, toDeposit, orderedAllocations };
 }
 
 /**
