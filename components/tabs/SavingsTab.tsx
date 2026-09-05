@@ -3,7 +3,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { TrendingUp, Sparkles, Home, CreditCard, Target, Trash2, Plus } from "lucide-react";
+import { TrendingUp, Sparkles, Home, CreditCard, Target, Trash2 } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useToast } from "@/components/ToastProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
@@ -24,7 +24,7 @@ import {
   resolveAllocationOrder,
 } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, INK, selStyle } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
 import { Metric, Field, Progress } from "@/components/ui/atoms";
 import PayPriorityPanel from "@/components/PayPriorityPanel";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
@@ -37,12 +37,8 @@ const HORIZON_PERIODS = 78; // roughly 3 years of fortnights
 
 export default function SavingsTab() {
   const isMobile = useIsMobile();
-  const { profile, balances, periods, categories, superContributions, recurringExpenses, goals, addGoal, updateGoal, deleteGoal, undoDeleteGoal, loggedByCat, reconciliations, snapshots, D } =
-    useAppData();
+  const { profile, balances, periods, categories, superContributions, recurringExpenses, goals, updateGoal, deleteGoal, undoDeleteGoal, loggedByCat, reconciliations, snapshots, D } = useAppData();
   const toast = useToast();
-  const [newGoalLabel, setNewGoalLabel] = useState("");
-  const [newGoalTarget, setNewGoalTarget] = useState("");
-  const [goalBusy, setGoalBusy] = useState(false);
   const [goalAmountInputs, setGoalAmountInputs] = useState<Record<string, string>>({});
   const [goalFlash, setGoalFlash] = useState("");
   const [growthPct, setGrowthPct] = useState("7");
@@ -135,20 +131,6 @@ export default function SavingsTab() {
     setTimeout(() => setGoalFlash(""), 6000);
   };
 
-  const onAddGoal = async () => {
-    if (!newGoalLabel.trim() || !(Number(newGoalTarget) > 0)) return;
-    setGoalBusy(true);
-    try {
-      await addGoal(newGoalLabel, Number(newGoalTarget));
-      setNewGoalLabel("");
-      setNewGoalTarget("");
-    } catch (err) {
-      flashGoalError(err);
-    } finally {
-      setGoalBusy(false);
-    }
-  };
-
   const onDeleteGoal = (id: string, label: string) => {
     deleteGoal(id, () => {
       setGoalFlash("Could not remove that goal — it's back");
@@ -165,7 +147,7 @@ export default function SavingsTab() {
     }
   };
 
-  // Goals display in the same order as the "Pay priority" panel below (which is what actually
+  // Goals display in the same order as the "Pay priority" panel above (which is what actually
   // governs funding order now), rather than each goal's own now-secondary `priority` field.
   const goalRankOrder = resolveAllocationOrder(profile.allocation_order, goals)
     .flat()
@@ -252,7 +234,7 @@ export default function SavingsTab() {
           <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15 }}>
             <Target size={16} color={GOLD} /> Goals
           </div>
-          <div style={{ fontSize: 12, color: MUTE }}>funded in the order set on Pay priority below</div>
+          <div style={{ fontSize: 12, color: MUTE }}>funded in the order set on Pay priority above</div>
         </div>
         {goalFlash && (
           <div style={{ background: "#FBEDE9", color: "#8A3320", borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>{goalFlash}</div>
@@ -292,42 +274,9 @@ export default function SavingsTab() {
               ))}
           </div>
         )}
-        <div style={{ display: "flex", gap: 8, paddingTop: 12, borderTop: `1px solid ${LINE}`, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <Field label="New goal" grow>
-            <input
-              type="text"
-              placeholder="e.g. Trip to Japan"
-              value={newGoalLabel}
-              onChange={(e) => setNewGoalLabel(e.target.value)}
-              style={{ ...selStyle, width: "100%", textAlign: "left" }}
-            />
-          </Field>
-          <Field label="Target">
-            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-              <span style={{ color: MUTE, fontSize: 13 }}>$</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                placeholder="0"
-                value={newGoalTarget}
-                onChange={(e) => setNewGoalTarget(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && onAddGoal()}
-                style={{ ...selStyle, width: 90, textAlign: "right" }}
-              />
-            </div>
-          </Field>
-          <button
-            onClick={onAddGoal}
-            disabled={goalBusy || !newGoalLabel.trim() || !(Number(newGoalTarget) > 0)}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: goalBusy ? "default" : "pointer", opacity: goalBusy || !newGoalLabel.trim() || !(Number(newGoalTarget) > 0) ? 0.6 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
-          >
-            <Plus size={14} /> Add
-          </button>
-        </div>
-        <div style={{ fontSize: 11, color: MUTE, marginTop: 10, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 11, color: MUTE, marginTop: 4, lineHeight: 1.5 }}>
           Each goal is its own virtual balance — update &ldquo;saved so far&rdquo; directly as you set money aside for it (e.g. in a
-          separate ANZ Plus sub-account). Reorder with the arrows to change which goal gets funded first once the emergency
-          fund is topped up.
+          separate ANZ Plus sub-account). Add a new goal and change funding order/splits on <b style={{ color: NAVY }}>Pay priority</b> above.
         </div>
       </div>
 
