@@ -20,7 +20,7 @@ import { DEFAULT_CATEGORIES } from "@/lib/categories";
 import { AUD } from "@/lib/money";
 import { NAVY, MUTE, GOLD, LINE, INK, UNFAV, CARD, inputStyle, selStyle } from "@/lib/theme";
 import { Panel, PInput, Derived, Field, Collapsible } from "@/components/ui/atoms";
-import type { Profile } from "@/lib/types";
+import type { Profile, BudgetFrequency } from "@/lib/types";
 
 const RESET_LOGGED_ITEMS: { key: keyof ResetDataSelections; label: string }[] = [
   { key: "transactions", label: "Logged expenses" },
@@ -163,15 +163,16 @@ export default function PlanTab() {
     }
   };
 
-  const commitCategory = async (key: string, field: "label" | "a26" | "a27", raw?: string) => {
+  const commitCategory = async (key: string, field: "label" | "a26" | "a27" | "frequency", raw?: string) => {
     const c = categories.find((cc) => cc.key === key);
     const v = catInputs[key];
     const label = (field === "label" ? raw : v?.label) ?? c?.label ?? "";
     const a26 = (field === "a26" ? raw : v?.a26) ?? String(c?.amount_2026 ?? 0);
     const a27 = (field === "a27" ? raw : v?.a27) ?? String(c?.amount_2027 ?? 0);
+    const frequency = ((field === "frequency" ? raw : c?.frequency) ?? "monthly") as BudgetFrequency;
     if (!label.trim()) return;
     try {
-      await updateCategory(key, { label: label.trim(), amount_2026: Number(a26) || 0, amount_2027: Number(a27) || 0 });
+      await updateCategory(key, { label: label.trim(), amount_2026: Number(a26) || 0, amount_2027: Number(a27) || 0, frequency });
       flash();
     } catch {
       flash("Could not save that category");
@@ -215,9 +216,9 @@ export default function PlanTab() {
       const existingKeys = new Set(categories.map((c) => c.key));
       for (const c of DEFAULT_CATEGORIES) {
         if (existingKeys.has(c.id)) {
-          await updateCategory(c.id, { label: c.label, amount_2026: c.amount2026, amount_2027: c.amount2027 });
+          await updateCategory(c.id, { label: c.label, amount_2026: c.amount2026, amount_2027: c.amount2027, frequency: c.frequency });
         } else {
-          await addCategory(c.label, c.amount2026, c.amount2027, c.id);
+          await addCategory(c.label, c.amount2026, c.amount2027, c.id, c.frequency);
         }
       }
       setInputs(toInputs({ ...profile, ...DEFAULT_PROFILE_SETTINGS }));
@@ -411,15 +412,16 @@ export default function PlanTab() {
           </Panel>
         </div>
         <div style={{ flex: "1 1 380px" }}>
-          <Panel title="Monthly expenses">
-            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr 26px", gap: 6, alignItems: "center", marginBottom: 4 }}>
+          <Panel title="Budgeted expenses">
+            <div style={{ display: "grid", gridTemplateColumns: "1.1fr 74px 1fr 1fr 26px", gap: 6, alignItems: "center", marginBottom: 4 }}>
+              <span />
               <span />
               <span style={{ fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", textAlign: "right" }}>2026 (now)</span>
               <span style={{ fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", textAlign: "right" }}>2027 +</span>
               <span />
             </div>
             {categories.map((c) => (
-              <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr 26px", gap: 6, alignItems: "center", padding: "3px 0" }}>
+              <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.1fr 74px 1fr 1fr 26px", gap: 6, alignItems: "center", padding: "3px 0" }}>
                 <input
                   type="text"
                   value={catInputs[c.key]?.label ?? c.label}
@@ -427,6 +429,14 @@ export default function PlanTab() {
                   onBlur={(e) => commitCategory(c.key, "label", e.target.value)}
                   style={{ ...inputStyle, textAlign: "left", fontSize: 13 }}
                 />
+                <select
+                  value={c.frequency}
+                  onChange={(e) => commitCategory(c.key, "frequency", e.target.value)}
+                  style={{ ...selStyle, fontSize: 11.5, padding: "6px 2px" }}
+                >
+                  <option value="weekly">/wk</option>
+                  <option value="monthly">/mo</option>
+                </select>
                 <input
                   type="number"
                   inputMode="decimal"
@@ -451,14 +461,16 @@ export default function PlanTab() {
                 </button>
               </div>
             ))}
-            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr 26px", gap: 6, marginTop: 8, paddingTop: 8, borderTop: `2px solid ${GOLD}`, fontWeight: 700, fontFamily: "var(--font-space-grotesk), sans-serif", fontVariantNumeric: "tabular-nums" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.1fr 74px 1fr 1fr 26px", gap: 6, marginTop: 8, paddingTop: 8, borderTop: `2px solid ${GOLD}`, fontWeight: 700, fontFamily: "var(--font-space-grotesk), sans-serif", fontVariantNumeric: "tabular-nums" }}>
               <span>Total / mo</span>
+              <span />
               <span style={{ textAlign: "right" }}>{AUD(D.expMo(2026))}</span>
               <span style={{ textAlign: "right" }}>{AUD(D.expMo(2027))}</span>
               <span />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr 26px", gap: 6, marginTop: 4, fontSize: 12, color: MUTE, fontVariantNumeric: "tabular-nums" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.1fr 74px 1fr 1fr 26px", gap: 6, marginTop: 4, fontSize: 12, color: MUTE, fontVariantNumeric: "tabular-nums" }}>
               <span>Per fortnight</span>
+              <span />
               <span style={{ textAlign: "right" }}>{AUD(D.expFN(2026))}</span>
               <span style={{ textAlign: "right" }}>{AUD(D.expFN(2027))}</span>
               <span />
@@ -490,9 +502,10 @@ export default function PlanTab() {
               </button>
             </div>
             <div style={{ fontSize: 11.5, color: MUTE, marginTop: 10, lineHeight: 1.5 }}>
-              Enter monthly figures; the rec converts them to a fortnightly budget (× 12 ÷ 26). New categories start at $0/$0 —
-              set their amounts above once added. Editing here won&apos;t touch your Excel — use{" "}
-              <b style={{ color: NAVY }}>Copy figures for Claude</b> to resync it.
+              Pick /wk or /mo per category, whichever the bill actually comes as — groceries as a weekly figure, insurance as a
+              monthly one, say. Weekly converts to fortnightly exactly (× 2); monthly is annualized then split across 26
+              fortnights (× 12 ÷ 26), same as before. New categories start at $0 — set the amount above once added. Editing
+              here won&apos;t touch your Excel — use <b style={{ color: NAVY }}>Copy figures for Claude</b> to resync it.
             </div>
           </Panel>
         </div>

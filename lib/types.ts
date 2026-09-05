@@ -24,6 +24,8 @@ export interface Profile {
   super_employer_extra: number;
 }
 
+export type BudgetFrequency = "weekly" | "monthly";
+
 export interface BudgetCategoryRow {
   id: string;
   user_id: string;
@@ -32,6 +34,8 @@ export interface BudgetCategoryRow {
   amount_2026: number;
   amount_2027: number;
   sort: number;
+  /** Whether amount_2026/amount_2027 are a weekly or monthly figure — defaults to "monthly" for every category created before this existed. */
+  frequency: BudgetFrequency;
 }
 
 export interface Transaction {

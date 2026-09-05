@@ -178,8 +178,38 @@ describe("applyIncomeToAccount", () => {
 
 const profile: Profile = { user_id: "u1", display_name: null, super_employer_extra: 0, ...DEFAULT_PROFILE_SETTINGS };
 const categories: BudgetCategoryRow[] = [
-  { id: "c1", user_id: "u1", key: "groceries", label: "Groceries", amount_2026: 500, amount_2027: 500, sort: 0 },
+  { id: "c1", user_id: "u1", key: "groceries", label: "Groceries", amount_2026: 500, amount_2027: 500, sort: 0, frequency: "monthly" },
 ];
+
+describe("deriveFinancials — per-category weekly/monthly frequency", () => {
+  it("converts a monthly category to fortnightly by annualizing then splitting across 26 fortnights", () => {
+    const cats: BudgetCategoryRow[] = [{ id: "c1", user_id: "u1", key: "groceries", label: "Groceries", amount_2026: 100, amount_2027: 100, sort: 0, frequency: "monthly" }];
+    const D = deriveFinancials(profile, cats);
+    expect(D.catFN("groceries", 2026)).toBeCloseTo((100 * 12) / 26, 5);
+  });
+
+  it("converts a weekly category to fortnightly exactly, by doubling", () => {
+    const cats: BudgetCategoryRow[] = [{ id: "c1", user_id: "u1", key: "groceries", label: "Groceries", amount_2026: 100, amount_2027: 100, sort: 0, frequency: "weekly" }];
+    const D = deriveFinancials(profile, cats);
+    expect(D.catFN("groceries", 2026)).toBe(200);
+  });
+
+  it("expFN/expMo sum mixed-frequency categories consistently with each other", () => {
+    const cats: BudgetCategoryRow[] = [
+      { id: "c1", user_id: "u1", key: "groceries", label: "Groceries", amount_2026: 100, amount_2027: 100, sort: 0, frequency: "weekly" },
+      { id: "c2", user_id: "u1", key: "gym", label: "Gym", amount_2026: 50, amount_2027: 50, sort: 1, frequency: "monthly" },
+    ];
+    const D = deriveFinancials(profile, cats);
+    const expectedFN = 200 + (50 * 12) / 26;
+    expect(D.expFN(2026)).toBeCloseTo(expectedFN, 5);
+    expect(D.expMo(2026)).toBeCloseTo((expectedFN * 26) / 12, 5);
+  });
+
+  it("an unknown category key contributes 0, not NaN", () => {
+    const D = deriveFinancials(profile, categories);
+    expect(D.catFN("does-not-exist", 2026)).toBe(0);
+  });
+});
 
 describe("periodTotals / averageSpend", () => {
   it("sums each period's categories and averages across periods with any spend", () => {
@@ -396,7 +426,7 @@ describe("buildNetWorthProjection", () => {
   });
 
   it("compounds shares/super at the given annual growth rate and adds the fortnightly super contribution", () => {
-    const zeroExpenseCategories: BudgetCategoryRow[] = [{ id: "c1", user_id: "u1", key: "groceries", label: "Groceries", amount_2026: 0, amount_2027: 0, sort: 0 }];
+    const zeroExpenseCategories: BudgetCategoryRow[] = [{ id: "c1", user_id: "u1", key: "groceries", label: "Groceries", amount_2026: 0, amount_2027: 0, sort: 0, frequency: "monthly" }];
     const D0 = deriveFinancials(profile, zeroExpenseCategories);
     const flatBalances: Balances = { ...startBalances, shares: 1000, superb: 0 };
     const [first] = buildNetWorthProjection(profile, D0, flatBalances, noGoals, periods, profile.pay_anchor, 10, 0, flatScenario, 0, 1);

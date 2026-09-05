@@ -22,6 +22,7 @@ import {
 import type {
   Profile,
   BudgetCategoryRow,
+  BudgetFrequency,
   Transaction,
   Reconciliation,
   Snapshot,
@@ -88,9 +89,9 @@ interface AppDataContextValue {
   loggedByCat: Record<string, Record<string, number>>;
 
   updateProfile: (patch: Partial<Profile>) => Promise<void>;
-  updateCategory: (key: string, patch: Partial<Pick<BudgetCategoryRow, "label" | "amount_2026" | "amount_2027">>) => Promise<void>;
+  updateCategory: (key: string, patch: Partial<Pick<BudgetCategoryRow, "label" | "amount_2026" | "amount_2027" | "frequency">>) => Promise<void>;
   /** Slugifies the label into a new unique key unless `explicitKey` is given (used to recreate a default category with its original key). */
-  addCategory: (label: string, amount2026?: number, amount2027?: number, explicitKey?: string) => Promise<void>;
+  addCategory: (label: string, amount2026?: number, amount2027?: number, explicitKey?: string, frequency?: BudgetFrequency) => Promise<void>;
   deleteCategory: (key: string) => Promise<void>;
   addTransaction: (t: NewTransaction) => Promise<void>;
   /** Bulk-imports (e.g. from a bank statement CSV) in one insert + one combined balance update — see the implementation note on why this isn't just a loop of `addTransaction`. */
@@ -236,7 +237,7 @@ export function AppDataProvider({
   );
 
   const updateCategory = useCallback(
-    async (key: string, patch: Partial<Pick<BudgetCategoryRow, "label" | "amount_2026" | "amount_2027">>) => {
+    async (key: string, patch: Partial<Pick<BudgetCategoryRow, "label" | "amount_2026" | "amount_2027" | "frequency">>) => {
       setCategories((cs) => cs.map((c) => (c.key === key ? { ...c, ...patch } : c)));
       const { error } = await supabase.from("budget_categories").update(patch).eq("user_id", profile.user_id).eq("key", key);
       if (error) throw error;
@@ -245,14 +246,14 @@ export function AppDataProvider({
   );
 
   const addCategory = useCallback(
-    async (label: string, amount2026 = 0, amount2027 = 0, explicitKey?: string) => {
+    async (label: string, amount2026 = 0, amount2027 = 0, explicitKey?: string, frequency: BudgetFrequency = "monthly") => {
       const trimmed = label.trim();
       if (!trimmed) return;
       const key = explicitKey ?? slugifyCategoryKey(trimmed, categories.map((c) => c.key));
       const sort = categories.length > 0 ? Math.max(...categories.map((c) => c.sort)) + 1 : 0;
       const { data, error } = await supabase
         .from("budget_categories")
-        .insert({ user_id: profile.user_id, key, label: trimmed, amount_2026: amount2026, amount_2027: amount2027, sort })
+        .insert({ user_id: profile.user_id, key, label: trimmed, amount_2026: amount2026, amount_2027: amount2027, sort, frequency })
         .select()
         .single();
       if (error) throw error;
@@ -902,7 +903,7 @@ export function AppDataProvider({
             supabase
               .from("budget_categories")
               .upsert(
-                { user_id: uid, key: d.id, label: d.label, amount_2026: d.amount2026, amount_2027: d.amount2027, sort: d.sort },
+                { user_id: uid, key: d.id, label: d.label, amount_2026: d.amount2026, amount_2027: d.amount2027, sort: d.sort, frequency: d.frequency },
                 { onConflict: "user_id,key" }
               )
           );

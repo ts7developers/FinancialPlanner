@@ -30,14 +30,19 @@ export function deriveFinancials(profile: Profile, categories: BudgetCategoryRow
   const ft = netFromPackage(pkg, sg);
   const pt = netFromPackage(pkg * pf, sg);
 
-  const catMo = (id: string, year: number) => {
+  // Fortnightly is the canonical unit here — a weekly figure converts to it exactly (× 2, since
+  // a fortnight is always 2 weeks), while a monthly one only converts approximately (annualize
+  // then divide by 26, since months don't divide evenly into fortnights). `expMo` (the Budget
+  // tab's "Total / mo" row) is derived the other way around from that fortnightly total, so it
+  // stays consistent regardless of which unit any given category was actually entered in.
+  const catFN = (id: string, year: number) => {
     const c = categories.find((c) => c.key === id);
     if (!c) return 0;
-    return Number(year >= 2027 ? c.amount_2027 : c.amount_2026) || 0;
+    const raw = Number(year >= 2027 ? c.amount_2027 : c.amount_2026) || 0;
+    return c.frequency === "weekly" ? raw * 2 : raw * FN_FROM_MO;
   };
-  const catFN = (id: string, year: number) => catMo(id, year) * FN_FROM_MO;
-  const expMo = (year: number) => categories.reduce((s, c) => s + catMo(c.key, year), 0);
-  const expFN = (year: number) => expMo(year) * FN_FROM_MO;
+  const expFN = (year: number) => categories.reduce((s, c) => s + catFN(c.key, year), 0);
+  const expMo = (year: number) => expFN(year) / FN_FROM_MO;
 
   const dep5 = (Number(profile.house_target) || 0) * (Number(profile.deposit_pct) || 0);
   const netCash = dep5 + (Number(profile.buying_costs) || 0) - (Number(profile.fhog) || 0);
