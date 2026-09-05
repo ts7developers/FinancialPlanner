@@ -949,13 +949,51 @@ export function daysUntil(dateISO: string, todayISO: string): number {
   return Math.round((dateFromISO(dateISO).getTime() - dateFromISO(todayISO).getTime()) / dayMs);
 }
 
-/** The next fortnight boundary (pay lands at the start of each period) — `days` is 0 on payday itself. */
-export function nextPaydayInfo(periods: Period[], todayISO: string): { dateISO: string; days: number } | null {
-  if (periods.length === 0) return null;
-  const cur = currentPeriod(periods, todayISO);
-  const target = todayISO <= cur.key ? cur : periods[cur.idx + 1];
-  if (!target) return null;
-  return { dateISO: target.key, days: daysUntil(target.key, todayISO) };
+export const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** 0 (Sunday) – 6 (Saturday), matching `Date.getUTCDay()`. */
+export function weekdayIndex(dateISO: string): number {
+  return dateFromISO(dateISO).getUTCDay();
+}
+
+/** Every fortnight is exactly 14 days, so a period's end always falls on the same weekday — this
+ * is that fixed weekday, used to translate a payday weekday choice into a day-offset and back. */
+export function periodEndWeekday(periods: Period[]): number {
+  return periods.length > 0 ? (weekdayIndex(periods[0].key) + 6) % 7 : 0;
+}
+
+/** The payday for a given fortnight, `offsetDays` after its last day. */
+export function paydayForPeriod(period: Period, offsetDays: number): string {
+  const d = new Date(period.end);
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return isoFromDate(d);
+}
+
+/** Which weekday (0 Sun – 6 Sat) payday falls on, given the fortnight-end weekday + offset. */
+export function paydayWeekday(periodEndWeekdayIdx: number, offsetDays: number): number {
+  return (periodEndWeekdayIdx + offsetDays) % 7;
+}
+
+/** Inverse of `paydayWeekday` — the smallest non-negative offset (0-6) that lands on the chosen weekday. */
+export function offsetForPaydayWeekday(periodEndWeekdayIdx: number, targetWeekday: number): number {
+  return (targetWeekday - periodEndWeekdayIdx + 7) % 7;
+}
+
+/** The soonest payday that hasn't passed yet (today counts) — `days` is 0 on payday itself. */
+export function nextPaydayInfo(periods: Period[], todayISO: string, paydayOffsetDays: number): { dateISO: string; days: number } | null {
+  const today = dateFromISO(todayISO);
+  for (const p of periods) {
+    const payday = paydayForPeriod(p, paydayOffsetDays);
+    if (dateFromISO(payday) >= today) return { dateISO: payday, days: daysUntil(payday, todayISO) };
+  }
+  return null;
+}
+
+/** The most recent fortnight whose payday has actually landed (today counts) — null if none have yet. */
+export function lastPaidPeriod(periods: Period[], todayISO: string, paydayOffsetDays: number): Period | null {
+  const today = dateFromISO(todayISO);
+  const paid = periods.filter((p) => dateFromISO(paydayForPeriod(p, paydayOffsetDays)) <= today);
+  return paid.length > 0 ? paid[paid.length - 1] : null;
 }
 
 /** The soonest-due active recurring bill, or null if there are none active. */
@@ -966,12 +1004,17 @@ export function nextBillDue(recurringExpenses: RecurringExpense[], todayISO: str
   return { description: soonest.description, dateISO: soonest.next_due, days: daysUntil(soonest.next_due, todayISO) };
 }
 
-/** The most recently *ended* fortnight, if it still hasn't been marked reconciled — a nudge to close it out. Null once it's closed, or if no fortnight has ended yet. */
-export function mostRecentUnreconciledPeriod(periods: Period[], reconciliations: Record<string, Reconciliation>, todayISO: string): Period | null {
-  const today = dateFromISO(todayISO);
-  const ended = periods.filter((p) => p.end < today);
-  if (ended.length === 0) return null;
-  const last = ended[ended.length - 1];
+/** The most recently *paid* fortnight, if it still hasn't been marked reconciled — a nudge to
+ * close it out. Gated on payday (not just period end) so it doesn't nag before that pay has
+ * actually landed. Null once it's closed, or if no payday has landed yet. */
+export function mostRecentUnreconciledPeriod(
+  periods: Period[],
+  reconciliations: Record<string, Reconciliation>,
+  todayISO: string,
+  paydayOffsetDays: number
+): Period | null {
+  const last = lastPaidPeriod(periods, todayISO, paydayOffsetDays);
+  if (!last) return null;
   return reconciliations[last.key]?.closed_at ? null : last;
 }
 

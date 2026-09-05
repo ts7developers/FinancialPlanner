@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { Wallet, PiggyBank, Home, TrendingUp, TrendingDown, Minus, Receipt, ScrollText, Camera, Landmark, CalendarClock, BellRing, FileWarning } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { currentPeriod, financialYearStart, isoFromDate, periodLabel } from "@/lib/period";
+import { currentPeriod, financialYearStart, isoFromDate, periodLabel, dayLabel, dateFromISO } from "@/lib/period";
 import {
   buildPieData,
   sumYTD,
@@ -21,7 +21,7 @@ import {
   nextPaydayInfo,
   nextBillDue,
   mostRecentUnreconciledPeriod,
-  daysUntil,
+  lastPaidPeriod,
 } from "@/lib/derive";
 import { AUD, num } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, PIE_COLORS } from "@/lib/theme";
@@ -55,11 +55,14 @@ export default function OverviewTab() {
         : varianceReport.surplusVariance <= -50
           ? "behind"
           : "onTrack";
-  const payday = nextPaydayInfo(periods, today);
+  // Falls back to 2 (this app's real-world default) until migration 0018 has been run.
+  const paydayOffsetDays = profile.payday_offset_days ?? 2;
+  const payday = nextPaydayInfo(periods, today, paydayOffsetDays);
   const billDue = nextBillDue(recurringExpenses, today);
-  const unreconciled = mostRecentUnreconciledPeriod(periods, reconciliations, today);
-  const curPeriodIncome = actualIncomeForPeriod(payslips, miscIncome, curPeriod.key, profile.pay_anchor);
-  const payslipMissing = curPeriodIncome === 0 && daysUntil(curPeriod.key, today) <= 0;
+  const unreconciled = mostRecentUnreconciledPeriod(periods, reconciliations, today, paydayOffsetDays);
+  const lastPaid = lastPaidPeriod(periods, today, paydayOffsetDays);
+  const lastPaidIncome = lastPaid ? actualIncomeForPeriod(payslips, miscIncome, lastPaid.key, profile.pay_anchor) : 0;
+  const payslipMissing = lastPaid !== null && lastPaidIncome === 0;
   const ytd = sumYTD(payslips, financialYearStart(today));
   const taxPaidYTD = ytd.paygwTax + (Number(profile.tax_paid_opening) || 0);
 
@@ -108,7 +111,7 @@ export default function OverviewTab() {
           {payday && (
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: MUTE }}>
               <CalendarClock size={14} color={GOLD} />
-              {payday.days === 0 ? "Payday is today" : `Payday in ${payday.days} day${payday.days === 1 ? "" : "s"}`}
+              {payday.days === 0 ? "Payday is today" : `Payday ${dayLabel(dateFromISO(payday.dateISO))} — ${payday.days} day${payday.days === 1 ? "" : "s"}`}
             </div>
           )}
           {billDue && billDue.days <= 10 && (
@@ -124,9 +127,9 @@ export default function OverviewTab() {
         </div>
         {(payslipMissing || unreconciled) && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 8, borderTop: `1px solid ${LINE}` }}>
-            {payslipMissing && (
-              <Link href="/reconcile" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: NAVY, textDecoration: "none" }}>
-                <FileWarning size={14} color={GOLD} /> This fortnight&apos;s pay hasn&apos;t been logged yet — <b>upload the payslip</b>
+            {payslipMissing && lastPaid && (
+              <Link href={`/reconcile?period=${lastPaid.key}`} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: NAVY, textDecoration: "none" }}>
+                <FileWarning size={14} color={GOLD} /> {periodLabel(lastPaid)}&apos;s pay hasn&apos;t been logged yet — <b>upload the payslip</b>
               </Link>
             )}
             {unreconciled && (

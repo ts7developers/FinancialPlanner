@@ -8,6 +8,7 @@ export const DEFAULT_PROFILE_SETTINGS = {
   pt_fraction: 0.8,
   hecs_threshold: 69528,
   pay_anchor: "2026-08-24",
+  payday_offset_days: 2,
   ft_start: "2026-10-19",
   open_deposit: 3000,
   emergency_target: 5000,

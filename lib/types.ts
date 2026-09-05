@@ -6,7 +6,9 @@ export interface Profile {
   pt_fraction: number;
   /** Legacy field — HECS repayment now uses the real ATO marginal schedule (lib/tax.ts) instead of a single editable threshold. Kept to avoid a migration; no longer read by any calculation. */
   hecs_threshold: number;
-  pay_anchor: string; // ISO date
+  pay_anchor: string; // ISO date — the start of the very first fortnight, not a payday
+  /** Days after each fortnight's last day that pay actually lands (0 = paid on the fortnight's own last day). Since every fortnight is exactly 14 days, the fortnight-end weekday never changes, so this one number fixes which weekday you're always paid on. */
+  payday_offset_days: number;
   ft_start: string; // ISO date
   open_deposit: number;
   emergency_target: number;

@@ -4,9 +4,18 @@ import { useState } from "react";
 import { Copy, RotateCcw, CalendarClock, Trash2, Plus, AlertTriangle } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import type { ResetDataSelections } from "@/components/AppDataProvider";
-import { isoFromDate } from "@/lib/period";
+import { isoFromDate, currentPeriod, periodLabel, dayLabel, dateFromISO } from "@/lib/period";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
-import { BORROW_MULT_LOW, BORROW_MULT_HIGH, sinkingFundTotal } from "@/lib/derive";
+import {
+  BORROW_MULT_LOW,
+  BORROW_MULT_HIGH,
+  sinkingFundTotal,
+  WEEKDAY_NAMES,
+  periodEndWeekday,
+  paydayForPeriod,
+  paydayWeekday,
+  offsetForPaydayWeekday,
+} from "@/lib/derive";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
 import { AUD } from "@/lib/money";
 import { NAVY, MUTE, GOLD, LINE, INK, UNFAV, CARD, inputStyle, selStyle } from "@/lib/theme";
@@ -98,7 +107,7 @@ function toInputs(profile: Profile): ProfileInputs {
 }
 
 export default function PlanTab() {
-  const { profile, categories, recurringExpenses, D, updateProfile, updateCategory, addCategory, deleteCategory, resetData } = useAppData();
+  const { profile, categories, recurringExpenses, periods, D, updateProfile, updateCategory, addCategory, deleteCategory, resetData } = useAppData();
   const recurringFortnightTotal = sinkingFundTotal(recurringExpenses, isoFromDate(new Date()));
   const activeRecurringCount = recurringExpenses.filter((r) => r.active).length;
   const [inputs, setInputs] = useState<ProfileInputs>(() => toInputs(profile));
@@ -119,6 +128,26 @@ export default function PlanTab() {
   const commitDate = async (field: "pay_anchor" | "ft_start", value: string) => {
     try {
       await updateProfile({ [field]: value });
+      flash();
+    } catch {
+      flash("Could not save that");
+    }
+  };
+
+  // Every fortnight is exactly 14 days, so it always ends on the same weekday — that fixes a
+  // one-to-one mapping between "which weekday am I paid on" and the stored day-offset, letting
+  // the settings UI ask the natural question instead of an abstract number of days.
+  const endWeekday = periodEndWeekday(periods);
+  // Falls back to 2 (this app's real-world default) until migration 0018 has been run and the
+  // column actually exists — otherwise this is `undefined` and every weekday computation below is NaN.
+  const paydayOffsetDays = profile.payday_offset_days ?? 2;
+  const currentPaydayWeekday = paydayWeekday(endWeekday, paydayOffsetDays);
+  const today = isoFromDate(new Date());
+  const examplePeriod = periods.length > 0 ? currentPeriod(periods, today) : null;
+
+  const commitPaydayWeekday = async (weekday: number) => {
+    try {
+      await updateProfile({ payday_offset_days: offsetForPaydayWeekday(endWeekday, weekday) });
       flash();
     } catch {
       flash("Could not save that");
@@ -240,7 +269,8 @@ export default function PlanTab() {
       `Salary package (incl super): $${profile.package}`,
       `Super rate: ${(profile.super_rate * 100).toFixed(1)}%`,
       `Part-time fraction: ${(profile.pt_fraction * 100).toFixed(0)}%`,
-      `First pay period starts: ${profile.pay_anchor}`,
+      `A fortnight starts on: ${profile.pay_anchor}`,
+      `Paid on: ${WEEKDAY_NAMES[currentPaydayWeekday]} (${paydayOffsetDays} day${paydayOffsetDays === 1 ? "" : "s"} after each fortnight ends)`,
       `Full-time from: ${profile.ft_start}`,
       `House target: $${profile.house_target}`,
       `Deposit %: ${(profile.deposit_pct * 100).toFixed(1)}%`,
@@ -290,11 +320,32 @@ export default function PlanTab() {
         <div style={{ flex: "1 1 320px", display: "flex", flexDirection: "column", gap: 18 }}>
           <Panel title="Pay cycle" icon={CalendarClock}>
             <PInput
-              label="First pay period starts"
+              label="A fortnight starts on"
               type="date"
               value={profile.pay_anchor}
               onChange={(v) => commitDate("pay_anchor", v)}
             />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "5px 0" }}>
+              <span style={{ fontSize: 13 }}>Paid on</span>
+              <select
+                value={currentPaydayWeekday}
+                onChange={(e) => commitPaydayWeekday(Number(e.target.value))}
+                style={{ ...selStyle, width: 150 }}
+              >
+                {WEEKDAY_NAMES.map((name, idx) => (
+                  <option key={name} value={idx}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {examplePeriod && (
+              <div style={{ fontSize: 11.5, color: MUTE, marginTop: 2, marginBottom: 8, lineHeight: 1.5 }}>
+                Fortnights run {dayLabel(examplePeriod.start)} – {dayLabel(examplePeriod.end)}, every 14 days. Since a fortnight always ends on{" "}
+                {WEEKDAY_NAMES[endWeekday]}, picking a payday weekday above fixes how many days after that your pay lands — e.g. this fortnight (
+                {periodLabel(examplePeriod)}) pays out {dayLabel(dateFromISO(paydayForPeriod(examplePeriod, paydayOffsetDays)))}.
+              </div>
+            )}
             <PInput label="Full-time from" type="date" value={profile.ft_start} onChange={(v) => commitDate("ft_start", v)} />
             <Derived
               rows={[

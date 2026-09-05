@@ -27,6 +27,12 @@ import {
   nextPaydayInfo,
   nextBillDue,
   mostRecentUnreconciledPeriod,
+  lastPaidPeriod,
+  weekdayIndex,
+  periodEndWeekday,
+  paydayForPeriod,
+  paydayWeekday,
+  offsetForPaydayWeekday,
   buildFortnightSplit,
   fortnightCategoryBreakdown,
   sinkingFundBreakdown,
@@ -613,23 +619,67 @@ describe("daysUntil", () => {
   });
 });
 
-describe("nextPaydayInfo", () => {
+describe("payday weekday helpers", () => {
+  const periods = buildPeriods("2026-08-10", "2026-12-31"); // anchor is a Monday
+
+  it("weekdayIndex matches the JS Date convention (0 = Sunday)", () => {
+    expect(weekdayIndex("2026-08-10")).toBe(1); // Monday
+    expect(weekdayIndex("2026-08-23")).toBe(0); // Sunday
+  });
+
+  it("periodEndWeekday is fixed regardless of which fortnight — every period is 14 days", () => {
+    expect(periodEndWeekday(periods)).toBe(0); // Sunday
+    expect(periodEndWeekday([])).toBe(0);
+  });
+
+  it("paydayForPeriod adds the offset to the period's last day", () => {
+    expect(paydayForPeriod(periods[0], 2)).toBe("2026-08-25"); // Sunday 23 Aug + 2 = Tuesday 25 Aug
+    expect(paydayForPeriod(periods[0], 0)).toBe("2026-08-23");
+  });
+
+  it("paydayWeekday/offsetForPaydayWeekday are inverses", () => {
+    const endWeekday = periodEndWeekday(periods); // Sunday = 0
+    expect(paydayWeekday(endWeekday, 2)).toBe(2); // Tuesday
+    expect(offsetForPaydayWeekday(endWeekday, 2)).toBe(2);
+    expect(offsetForPaydayWeekday(endWeekday, paydayWeekday(endWeekday, 5))).toBe(5);
+  });
+});
+
+describe("lastPaidPeriod", () => {
   const periods = buildPeriods("2026-08-10", "2026-12-31");
 
-  it("is today (0 days) on the anchor date itself", () => {
-    expect(nextPaydayInfo(periods, "2026-08-10")).toEqual({ dateISO: "2026-08-10", days: 0 });
+  it("is null before any payday has landed", () => {
+    expect(lastPaidPeriod(periods, "2026-08-20", 2)).toBeNull();
   });
 
-  it("points at the next boundary from mid-fortnight", () => {
-    expect(nextPaydayInfo(periods, "2026-08-15")).toEqual({ dateISO: "2026-08-24", days: 9 });
+  it("returns the fortnight once its payday lands, counting payday itself", () => {
+    expect(lastPaidPeriod(periods, "2026-08-25", 2)?.key).toBe("2026-08-10");
+  });
+});
+
+describe("nextPaydayInfo", () => {
+  // Anchor is a Monday; each fortnight ends the following Sunday. Paid 2 days after
+  // (the Tuesday) — period 0 (10-23 Aug) pays 25 Aug, period 1 (24 Aug-6 Sep) pays 8 Sep.
+  const periods = buildPeriods("2026-08-10", "2026-12-31");
+
+  it("is today (0 days) on payday itself", () => {
+    expect(nextPaydayInfo(periods, "2026-08-25", 2)).toEqual({ dateISO: "2026-08-25", days: 0 });
   });
 
-  it("points at the first period before the anchor date", () => {
-    expect(nextPaydayInfo(periods, "2026-08-01")).toEqual({ dateISO: "2026-08-10", days: 9 });
+  it("points at the upcoming payday from mid-fortnight, not the fortnight boundary", () => {
+    expect(nextPaydayInfo(periods, "2026-08-15", 2)).toEqual({ dateISO: "2026-08-25", days: 10 });
+  });
+
+  it("rolls over to the next fortnight's payday once the current one has passed", () => {
+    expect(nextPaydayInfo(periods, "2026-08-26", 2)).toEqual({ dateISO: "2026-09-08", days: 13 });
+  });
+
+  it("with a 0-day offset, payday is the fortnight's own last day", () => {
+    expect(nextPaydayInfo(periods, "2026-08-20", 0)).toEqual({ dateISO: "2026-08-23", days: 3 });
   });
 
   it("is null with no periods", () => {
-    expect(nextPaydayInfo([], "2026-08-10")).toBeNull();
+    expect(nextPaydayInfo([], "2026-08-10", 2)).toBeNull();
   });
 });
 
@@ -650,22 +700,24 @@ describe("nextBillDue", () => {
 });
 
 describe("mostRecentUnreconciledPeriod", () => {
+  // Same shape as nextPaydayInfo above: period 0 (10-23 Aug) pays 25 Aug with a 2-day offset.
   const periods = buildPeriods("2026-08-10", "2026-12-31");
 
-  it("is null while still inside the first fortnight — nothing has ended yet", () => {
-    expect(mostRecentUnreconciledPeriod(periods, {}, "2026-08-15")).toBeNull();
+  it("is null before that fortnight's payday has actually landed, even after it's ended", () => {
+    expect(mostRecentUnreconciledPeriod(periods, {}, "2026-08-24", 2)).toBeNull();
   });
 
-  it("flags the most recently ended fortnight once it's over and not closed", () => {
-    const found = mostRecentUnreconciledPeriod(periods, {}, "2026-08-25");
-    expect(found?.key).toBe("2026-08-10");
+  it("flags the most recently paid fortnight once payday has landed and it's not closed", () => {
+    expect(mostRecentUnreconciledPeriod(periods, {}, "2026-08-25", 2)?.key).toBe("2026-08-10");
+    // Still the same fortnight the day after — the *next* one's payday (8 Sep) hasn't landed yet.
+    expect(mostRecentUnreconciledPeriod(periods, {}, "2026-08-26", 2)?.key).toBe("2026-08-10");
   });
 
   it("is null once that fortnight is marked closed", () => {
     const reconciliations: Record<string, Reconciliation> = {
-      "2026-08-10": { period_key: "2026-08-10", actual_income: 1000, actual_overrides: {}, closed_at: "2026-08-24T00:00:00.000Z" },
+      "2026-08-10": { period_key: "2026-08-10", actual_income: 1000, actual_overrides: {}, closed_at: "2026-08-25T00:00:00.000Z" },
     };
-    expect(mostRecentUnreconciledPeriod(periods, reconciliations, "2026-08-25")).toBeNull();
+    expect(mostRecentUnreconciledPeriod(periods, reconciliations, "2026-08-25", 2)).toBeNull();
   });
 });
 
