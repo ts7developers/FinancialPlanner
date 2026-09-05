@@ -79,6 +79,7 @@ export default function ExpensesTab() {
     account: "Credit card" as string,
   }));
   const [txnFilter, setTxnFilter] = useState("all");
+  const [txnSearch, setTxnSearch] = useState("");
   const [flashMsg, setFlashMsg] = useState("");
   const [pendingDelete, setPendingDelete] = useState<{ id: string; desc: string } | null>(null);
   const amountRef = useRef<HTMLInputElement>(null);
@@ -204,8 +205,10 @@ export default function ExpensesTab() {
     setPendingDelete(null);
   };
 
+  const txnSearchQuery = txnSearch.trim().toLowerCase();
   const filteredTxns = transactions
     .filter((t) => txnFilter === "all" || periodKeyOf(t.date, profile.pay_anchor) === txnFilter)
+    .filter((t) => !txnSearchQuery || `${t.description ?? ""} ${catLabel(t.category_key)} ${t.account}`.toLowerCase().includes(txnSearchQuery))
     .slice()
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const filterTotal = filteredTxns.reduce((s, t) => s + (Number(t.amount) || 0), 0);
@@ -552,20 +555,31 @@ export default function ExpensesTab() {
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 640px" }}>
           <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${LINE}`, gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${LINE}`, gap: 8, flexWrap: "wrap" }}>
               <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Transactions</div>
-              <select value={txnFilter} onChange={(e) => setTxnFilter(e.target.value)} style={selStyle}>
-                <option value="all">All fortnights</option>
-                {periods.map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {periodLabel(p)}
-                  </option>
-                ))}
-              </select>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <input
+                  type="text"
+                  placeholder="Search description, category, account…"
+                  value={txnSearch}
+                  onChange={(e) => setTxnSearch(e.target.value)}
+                  style={{ ...selStyle, width: 220, textAlign: "left" }}
+                />
+                <select value={txnFilter} onChange={(e) => setTxnFilter(e.target.value)} style={selStyle}>
+                  <option value="all">All fortnights</option>
+                  {periods.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {periodLabel(p)}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             {filteredTxns.length === 0 ? (
               <div style={{ padding: 24, fontSize: 13, color: MUTE, textAlign: "center" }}>
-                No expenses logged yet. Add one above — it flows into the matching category on the Reconcile tab for its fortnight.
+                {transactions.length === 0
+                  ? "No expenses logged yet. Add one above — it flows into the matching category on the Reconcile tab for its fortnight."
+                  : "Nothing matches that search/filter."}
               </div>
             ) : isMobile ? (
               <div>
