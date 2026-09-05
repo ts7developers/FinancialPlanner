@@ -435,7 +435,7 @@ export default function IncomeTab() {
 
       <div style={{ fontSize: 11.5, color: MUTE }}>
         {periodKeyOf(today, profile.pay_anchor) === null && (
-          <>Today falls before your pay cycle starts (see <b style={{ color: NAVY }}>Budget</b>) — YTD figures above only include payslips within tracked fortnights.</>
+          <>Today falls before your pay cycle starts (see <b style={{ color: NAVY }}>Settings</b>) — YTD figures above only include payslips within tracked fortnights.</>
         )}
       </div>
     </div>
