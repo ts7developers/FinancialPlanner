@@ -46,7 +46,16 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
     : goals;
   const breakdown =
     per && periodTotal > 0
-      ? fortnightBreakdown(remainingCategoriesTotal, breakdownBalances, recurringExpenses, breakdownGoals, periodTotal, Number(profile.emergency_target) || 0, isoFromDate(new Date()))
+      ? fortnightBreakdown(
+          remainingCategoriesTotal,
+          breakdownBalances,
+          recurringExpenses,
+          breakdownGoals,
+          periodTotal,
+          Number(profile.emergency_target) || 0,
+          isoFromDate(new Date()),
+          profile.allocation_order
+        )
       : null;
 
   const handleFile = async (file: File) => {
@@ -285,7 +294,8 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
           <div style={{ fontSize: 11, color: MUTE, marginTop: 8, lineHeight: 1.5 }}>
             Based on {AUD(periodTotal)} confirmed so far this fortnight, against your card/emergency/goal balances as they stood when this fortnight&apos;s pay first landed — a guide
             for where to move the money, not automatic, and it won&apos;t reshuffle itself as you actually make those transfers. &ldquo;Still to spend&rdquo; only counts what&apos;s
-            left of the budget, not the full plan — anything already logged (e.g. on the credit card) is already reflected in what that card owed then.
+            left of the budget, not the full plan — anything already logged (e.g. on the credit card) is already reflected in what that card owed then. Change the order money goes to
+            (or split it between two things) under <b style={{ color: NAVY }}>Pay priority</b> on <b style={{ color: NAVY }}>Wealth</b>.
           </div>
         </div>
       )}

@@ -50,11 +50,16 @@ import {
   sumMiscIncomeYTD,
   actualIncomeForPeriod,
   reconcileCategoryRows,
+  allocateTier,
+  resolveAllocationOrder,
+  applyAllocationOrder,
+  EMERGENCY_ALLOCATION_ID,
+  DEPOSIT_ALLOCATION_ID,
 } from "@/lib/derive";
 import { buildPeriods, isFT } from "@/lib/period";
 import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
-import type { Balances, BudgetCategoryRow, HoldingLot, MiscIncome, Payslip, Profile, Reconciliation, Goal } from "@/lib/types";
+import type { Balances, BudgetCategoryRow, HoldingLot, MiscIncome, Payslip, Profile, Reconciliation, Goal, AllocationOrder } from "@/lib/types";
 
 const balances: Balances = {
   user_id: "u1",
@@ -751,6 +756,112 @@ describe("mostRecentUnreconciledPeriod", () => {
   });
 });
 
+describe("allocateTier", () => {
+  it("gives a single item everything up to its capacity", () => {
+    expect(allocateTier(100, [{ id: "a", weight: 100, capacity: 500 }])).toEqual({ allocations: { a: 100 }, leftover: 0 });
+  });
+
+  it("caps a single item at capacity and reports the rest as leftover", () => {
+    expect(allocateTier(100, [{ id: "a", weight: 100, capacity: 40 }])).toEqual({ allocations: { a: 40 }, leftover: 60 });
+  });
+
+  it("splits evenly between two uncapped items with equal weight", () => {
+    const { allocations, leftover } = allocateTier(100, [
+      { id: "a", weight: 50, capacity: Infinity },
+      { id: "b", weight: 50, capacity: Infinity },
+    ]);
+    expect(allocations).toEqual({ a: 50, b: 50 });
+    expect(leftover).toBe(0);
+  });
+
+  it("respects unequal weights (70/30)", () => {
+    const { allocations } = allocateTier(100, [
+      { id: "a", weight: 70, capacity: Infinity },
+      { id: "b", weight: 30, capacity: Infinity },
+    ]);
+    expect(allocations).toEqual({ a: 70, b: 30 });
+  });
+
+  it("redistributes a capped item's leftover share to the other tied item", () => {
+    // a's 50% share (50) exceeds its 20 capacity — the extra 30 should flow to b instead of vanishing.
+    const { allocations, leftover } = allocateTier(100, [
+      { id: "a", weight: 50, capacity: 20 },
+      { id: "b", weight: 50, capacity: Infinity },
+    ]);
+    expect(allocations).toEqual({ a: 20, b: 80 });
+    expect(leftover).toBe(0);
+  });
+
+  it("reports true leftover once every tied item is capped out", () => {
+    const { allocations, leftover } = allocateTier(100, [
+      { id: "a", weight: 50, capacity: 10 },
+      { id: "b", weight: 50, capacity: 15 },
+    ]);
+    expect(allocations).toEqual({ a: 10, b: 15 });
+    expect(leftover).toBe(75);
+  });
+});
+
+describe("resolveAllocationOrder", () => {
+  const goals: Goal[] = [
+    { id: "g1", user_id: "u1", label: "High priority", target_amount: 50, current_amount: 0, priority: 0, created_at: "2026-01-01" },
+    { id: "g2", user_id: "u1", label: "Low priority", target_amount: 100, current_amount: 0, priority: 1, created_at: "2026-01-01" },
+  ];
+
+  it("defaults to emergency, then goals by priority, then deposit", () => {
+    expect(resolveAllocationOrder(null, goals)).toEqual([[{ id: "emergency", weightPct: 100 }], [{ id: "g1", weightPct: 100 }], [{ id: "g2", weightPct: 100 }], [{ id: "deposit", weightPct: 100 }]]);
+  });
+
+  it("leaves an order untouched once every current goal is already in it", () => {
+    const stored: AllocationOrder = [[{ id: "g2", weightPct: 100 }], [{ id: "emergency", weightPct: 50 }, { id: "deposit", weightPct: 50 }], [{ id: "g1", weightPct: 100 }]];
+    expect(resolveAllocationOrder(stored, goals)).toEqual(stored);
+  });
+
+  it("inserts a goal that's new since the order was saved, right before the deposit tier", () => {
+    const stored: AllocationOrder = [[{ id: "g1", weightPct: 100 }], [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }], [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]];
+    const result = resolveAllocationOrder(stored, goals); // g2 is missing from `stored`
+    expect(result).toEqual([[{ id: "g1", weightPct: 100 }], [{ id: "emergency", weightPct: 100 }], [{ id: "g2", weightPct: 100 }], [{ id: "deposit", weightPct: 100 }]]);
+  });
+
+  it("appends a missing goal at the end if deposit isn't in the stored order at all", () => {
+    const stored: AllocationOrder = [[{ id: "g1", weightPct: 100 }]];
+    expect(resolveAllocationOrder(stored, goals)).toEqual([[{ id: "g1", weightPct: 100 }], [{ id: "g2", weightPct: 100 }]]);
+  });
+});
+
+describe("applyAllocationOrder", () => {
+  it("matches the plain waterfall: emergency fully, then deposit gets the rest", () => {
+    const order: AllocationOrder = [[{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }], [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]];
+    const result = applyAllocationOrder(1000, order, 300, new Map());
+    expect(result.toEmergency).toBe(300);
+    expect(result.toDeposit).toBe(700);
+  });
+
+  it("a goal ranked ahead of emergency gets funded first", () => {
+    const order: AllocationOrder = [[{ id: "g1", weightPct: 100 }], [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }], [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]];
+    const result = applyAllocationOrder(1000, order, 300, new Map([["g1", 200]]));
+    expect(result.goalAmounts.get("g1")).toBe(200);
+    expect(result.toEmergency).toBe(300);
+    expect(result.toDeposit).toBe(500);
+  });
+
+  it("splits 50/50 between emergency and deposit when they're tied, until emergency caps out", () => {
+    const order: AllocationOrder = [[{ id: EMERGENCY_ALLOCATION_ID, weightPct: 50 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 50 }]];
+    // Emergency only needs 100 more — its 50% share (500) blows past that, so the excess (400) should flow to deposit.
+    const result = applyAllocationOrder(1000, order, 100, new Map());
+    expect(result.toEmergency).toBe(100);
+    expect(result.toDeposit).toBe(900);
+  });
+
+  it("carries leftover from an exhausted tier to the next one", () => {
+    const order: AllocationOrder = [[{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }], [{ id: "g1", weightPct: 100 }], [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]];
+    const result = applyAllocationOrder(1000, order, 5000, new Map([["g1", 50]])); // emergency absorbs everything it can, nothing reaches g1
+    expect(result.toEmergency).toBe(1000);
+    expect(result.goalAmounts.get("g1") ?? 0).toBe(0);
+    expect(result.toDeposit).toBe(0);
+  });
+});
+
 describe("fortnightBreakdown", () => {
   const today = "2026-08-19";
 
@@ -798,6 +909,27 @@ describe("fortnightBreakdown", () => {
     const g1 = b.goalAllocations.find((g) => g.id === "g1")!;
     expect(g1.amount).toBe(50);
     expect(b.toDeposit).toBeCloseTo(1000 - b.categoriesTotal - b.toGoalsTotal, 5);
+  });
+
+  it("honours a custom allocation order instead of the default emergency-then-deposit waterfall", () => {
+    const noCC = { ...balances, cc: 0, emergency: 0 };
+    const goals: Goal[] = [{ id: "g1", user_id: "u1", label: "Holiday", target_amount: 200, current_amount: 0, priority: 5, created_at: "2026-01-01" }];
+    // Holiday fund ranked ahead of emergency — the opposite of the default order.
+    const order: AllocationOrder = [[{ id: "g1", weightPct: 100 }], [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }], [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]];
+    const b = fortnightBreakdown(400, noCC, [], goals, 1000, profile.emergency_target, today, order);
+    const g1 = b.goalAllocations.find((g) => g.id === "g1")!;
+    const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
+    expect(g1.amount).toBe(200); // fully funded first, ahead of emergency
+    expect(b.toEmergency).toBeCloseTo(surplus - 200, 5); // gets whatever's left, still under its target
+  });
+
+  it("splits a tied 50/50 emergency + deposit tier instead of filling emergency first", () => {
+    const noCC = { ...balances, cc: 0, emergency: 0 };
+    const order: AllocationOrder = [[{ id: EMERGENCY_ALLOCATION_ID, weightPct: 50 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 50 }]];
+    const b = fortnightBreakdown(400, noCC, [], [], 1000, profile.emergency_target, today, order);
+    const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
+    expect(b.toEmergency).toBeCloseTo(surplus / 2, 5);
+    expect(b.toDeposit).toBeCloseTo(surplus / 2, 5);
   });
 });
 

@@ -22,7 +22,23 @@ export interface Profile {
   income_growth_pct: number;
   /** Employer super this FY not captured by a payslip (e.g. a casual job) — already in the real balance, added only to the YTD display figure. */
   super_employer_extra: number;
+  /** Custom order for where fortnightly surplus goes (credit card paydown always comes first,
+   * fixed, ahead of this). Null means "use the default": emergency fund, then each goal in its
+   * own priority order, then the house deposit — see `resolveAllocationOrder`. */
+  allocation_order: AllocationOrder | null;
 }
+
+/** One destination in a pay-priority order: "emergency", "deposit", or a goal's id. */
+export interface AllocationTierItem {
+  id: string;
+  /** Relative share within this tier — only meaningful when the tier has more than one item (a "tie"); a solo item's value is ignored. */
+  weightPct: number;
+}
+
+/** An ordered list of tiers. A solo tier is fully funded before the next tier starts; a tier
+ * with 2+ items splits whatever surplus reaches it across them by weightPct, redistributing any
+ * item's capped-out leftover to the others in the same tier before moving on. */
+export type AllocationOrder = AllocationTierItem[][];
 
 export type BudgetFrequency = "weekly" | "monthly";
 

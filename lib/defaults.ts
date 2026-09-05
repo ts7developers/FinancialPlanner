@@ -20,4 +20,5 @@ export const DEFAULT_PROFILE_SETTINGS = {
   tax_paid_opening: 0,
   partner_income: 0,
   income_growth_pct: 0,
+  allocation_order: null,
 };

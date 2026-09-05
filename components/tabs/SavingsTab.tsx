@@ -3,7 +3,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { TrendingUp, Sparkles, Home, CreditCard, Target, ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
+import { TrendingUp, Sparkles, Home, CreditCard, Target, Trash2, Plus } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useToast } from "@/components/ToastProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
@@ -21,10 +21,12 @@ import {
   withAdaptiveExpenses,
   buildBalanceHistory,
   DEFAULT_FHSS_DEEMED_RATE,
+  resolveAllocationOrder,
 } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, INK, selStyle } from "@/lib/theme";
 import { Metric, Field, Progress } from "@/components/ui/atoms";
+import PayPriorityPanel from "@/components/PayPriorityPanel";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { NetWorthChartRow } from "@/components/charts/NetWorthChart";
 
@@ -163,17 +165,14 @@ export default function SavingsTab() {
     }
   };
 
-  const moveGoalPriority = async (id: string, direction: -1 | 1) => {
-    const sorted = goals.slice().sort((a, b) => a.priority - b.priority);
-    const idx = sorted.findIndex((g) => g.id === id);
-    const swapWith = sorted[idx + direction];
-    if (!swapWith) return;
-    const current = sorted[idx];
-    try {
-      await Promise.all([updateGoal(current.id, { priority: swapWith.priority }), updateGoal(swapWith.id, { priority: current.priority })]);
-    } catch (err) {
-      flashGoalError(err);
-    }
+  // Goals display in the same order as the "Pay priority" panel below (which is what actually
+  // governs funding order now), rather than each goal's own now-secondary `priority` field.
+  const goalRankOrder = resolveAllocationOrder(profile.allocation_order, goals)
+    .flat()
+    .map((t) => t.id);
+  const goalRank = (id: string) => {
+    const idx = goalRankOrder.indexOf(id);
+    return idx === -1 ? goalRankOrder.length : idx;
   };
 
   const balanceHistory = buildBalanceHistory(snapshots, periods);
@@ -246,12 +245,14 @@ export default function SavingsTab() {
         </div>
       )}
 
+      <PayPriorityPanel />
+
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15 }}>
             <Target size={16} color={GOLD} /> Goals
           </div>
-          <div style={{ fontSize: 12, color: MUTE }}>funded after the emergency fund, before the deposit — in priority order</div>
+          <div style={{ fontSize: 12, color: MUTE }}>funded in the order set on Pay priority below</div>
         </div>
         {goalFlash && (
           <div style={{ background: "#FBEDE9", color: "#8A3320", borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>{goalFlash}</div>
@@ -264,8 +265,8 @@ export default function SavingsTab() {
           <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 14 }}>
             {goals
               .slice()
-              .sort((a, b) => a.priority - b.priority)
-              .map((g, i) => (
+              .sort((a, b) => goalRank(a.id) - goalRank(b.id))
+              .map((g) => (
                 <div key={g.id}>
                   <Progress label={g.label} value={Number(g.current_amount) || 0} target={Number(g.target_amount) || 0} colorFrom={GOLD} />
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 10, flexWrap: "wrap" }}>
@@ -273,22 +274,6 @@ export default function SavingsTab() {
                       At current rate, funded by <b style={{ color: NAVY }}>{goalEtaLabel(g.id)}</b>
                     </span>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <button
-                        onClick={() => moveGoalPriority(g.id, -1)}
-                        disabled={i === 0}
-                        title="Fund this one sooner"
-                        style={{ background: "none", border: "none", cursor: i === 0 ? "default" : "pointer", color: i === 0 ? "#E5E0D0" : "#A99B6E", display: "flex" }}
-                      >
-                        <ArrowUp size={14} />
-                      </button>
-                      <button
-                        onClick={() => moveGoalPriority(g.id, 1)}
-                        disabled={i === goals.length - 1}
-                        title="Fund this one later"
-                        style={{ background: "none", border: "none", cursor: i === goals.length - 1 ? "default" : "pointer", color: i === goals.length - 1 ? "#E5E0D0" : "#A99B6E", display: "flex" }}
-                      >
-                        <ArrowDown size={14} />
-                      </button>
                       <input
                         type="number"
                         inputMode="decimal"

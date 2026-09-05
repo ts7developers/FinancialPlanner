@@ -7,7 +7,21 @@ import { netFromPackage, hecsCompulsoryRepayment, incomeTaxAU, litoAU, FN_PER_YE
 import { OTHER_CATEGORY_KEY } from "./categories";
 export { hecsCompulsoryRepayment } from "./tax";
 import type { Account } from "./theme";
-import type { BudgetCategoryRow, Profile, Transaction, Reconciliation, Balances, Payslip, HoldingLot, RecurringFrequency, RecurringExpense, MiscIncome, Goal, Snapshot } from "./types";
+import type {
+  BudgetCategoryRow,
+  Profile,
+  Transaction,
+  Reconciliation,
+  Balances,
+  Payslip,
+  HoldingLot,
+  RecurringFrequency,
+  RecurringExpense,
+  MiscIncome,
+  Goal,
+  Snapshot,
+  AllocationOrder,
+} from "./types";
 
 export interface DerivedFinancials {
   netFTfn: number;
@@ -159,7 +173,7 @@ export function buildNetWorthProjection(
   let cc = Number(balances.cc) || 0;
   let hecs = Number(balances.hecs) || 0;
   const goalBalances = new Map<string, number>(goals.map((g) => [g.id, Number(g.current_amount) || 0]));
-  const orderedGoals = sortGoalsByPriority(goals);
+  const allocationOrder = resolveAllocationOrder(profile.allocation_order, goals);
 
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per, i) => {
     const grownPackage = (isFT(per.key, profile.ft_start) ? basePackage : basePackage * ptFraction) * scenario.multiplierAt(i);
@@ -171,17 +185,12 @@ export function buildNetWorthProjection(
     const toCC = Math.max(0, Math.min(surplus, cc));
     surplus -= toCC;
     cc = Math.max(0, cc - toCC);
-    const toEmergency = Math.max(0, Math.min(surplus, emergencyTarget - emergency));
-    surplus -= toEmergency;
+
+    const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (goalBalances.get(g.id) ?? 0))]));
+    const { toEmergency, toDeposit, goalAmounts } = applyAllocationOrder(surplus, allocationOrder, Math.max(0, emergencyTarget - emergency), goalRemaining);
     emergency += toEmergency;
-    orderedGoals.forEach((g) => {
-      const current = goalBalances.get(g.id) ?? 0;
-      const remaining = Math.max(0, Number(g.target_amount) - current);
-      const amount = Math.max(0, Math.min(surplus, remaining));
-      surplus -= amount;
-      goalBalances.set(g.id, current + amount);
-    });
-    deposit += surplus;
+    goals.forEach((g) => goalBalances.set(g.id, (goalBalances.get(g.id) ?? 0) + (goalAmounts.get(g.id) ?? 0)));
+    deposit += toDeposit;
     shares *= 1 + periodGrowth;
     superb = superb * (1 + periodGrowth) + superFn;
 
@@ -607,6 +616,120 @@ export function netPosition(balances: Balances, goalsTotal = 0): NetPosition {
 /** Custom goals in the order they should be funded from fortnightly surplus — lower `priority` first, ties broken by creation order. */
 export function sortGoalsByPriority(goals: Goal[]): Goal[] {
   return goals.slice().sort((a, b) => a.priority - b.priority || a.created_at.localeCompare(b.created_at));
+}
+
+/** "emergency" and "deposit" are the two built-in destinations; anything else is a goal id. */
+export const EMERGENCY_ALLOCATION_ID = "emergency";
+export const DEPOSIT_ALLOCATION_ID = "deposit";
+
+/**
+ * The order to use when the profile has no custom `allocation_order`: emergency fund, then every
+ * goal in its own existing priority order, then the house deposit — exactly what `fortnightBreakdown`
+ * / `buildFortnightSplit` / `buildNetWorthProjection` did before this was configurable, so nobody's
+ * numbers change until they actually customize it.
+ */
+function defaultAllocationOrder(goals: Goal[]): AllocationOrder {
+  return [[{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }], ...sortGoalsByPriority(goals).map((g) => [{ id: g.id, weightPct: 100 }]), [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]];
+}
+
+/**
+ * Normalizes a stored (possibly customized) order against the *current* set of goals: any goal
+ * not already somewhere in the order (new since it was last saved) is inserted as its own tier
+ * right before wherever "deposit" sits (or at the end, if deposit isn't in there for some
+ * reason) — so a newly-added goal starts getting funded instead of silently sitting at 0
+ * priority forever. Stale ids for since-deleted goals are left in place but harmless: they
+ * resolve to 0 capacity in `applyAllocationOrder` and are simply skipped.
+ */
+export function resolveAllocationOrder(stored: AllocationOrder | null | undefined, goals: Goal[]): AllocationOrder {
+  if (!stored || stored.length === 0) return defaultAllocationOrder(goals);
+  const seen = new Set(stored.flat().map((t) => t.id));
+  const missing = goals.filter((g) => !seen.has(g.id));
+  if (missing.length === 0) return stored;
+  const depositIdx = stored.findIndex((tier) => tier.some((t) => t.id === DEPOSIT_ALLOCATION_ID));
+  const insertAt = depositIdx === -1 ? stored.length : depositIdx;
+  const newTiers = missing.map((g) => [{ id: g.id, weightPct: 100 }]);
+  return [...stored.slice(0, insertAt), ...newTiers, ...stored.slice(insertAt)];
+}
+
+interface AllocationDestination {
+  id: string;
+  weight: number;
+  /** Remaining room before this destination is "full" — Infinity for the deposit, which has no cap. */
+  capacity: number;
+}
+
+/**
+ * Splits `amount` across `items` proportionally by weight, redistributing any item's capped-out
+ * leftover to the others in the same tier (repeatedly, since redistributing can itself cap out
+ * another item) before reporting what's left over for the next tier. A single-item tier is just
+ * "give it min(amount, capacity)" — the general case collapses to that correctly.
+ */
+export function allocateTier(amount: number, items: AllocationDestination[]): { allocations: Record<string, number>; leftover: number } {
+  const pool = items.map((i) => ({ ...i, filled: 0 }));
+  let remaining = Math.max(0, amount);
+  for (let guard = 0; guard < pool.length + 1 && remaining > 1e-9; guard++) {
+    const active = pool.filter((p) => p.capacity - p.filled > 1e-9 && p.weight > 0);
+    if (active.length === 0) break;
+    const totalWeight = active.reduce((s, p) => s + p.weight, 0);
+    let anyCapped = false;
+    for (const p of active) {
+      const share = remaining * (p.weight / totalWeight);
+      const room = p.capacity - p.filled;
+      if (share >= room - 1e-9) {
+        remaining -= room;
+        p.filled += room;
+        anyCapped = true;
+      }
+    }
+    if (!anyCapped) {
+      active.forEach((p) => (p.filled += remaining * (p.weight / totalWeight)));
+      remaining = 0;
+    }
+  }
+  const allocations = Object.fromEntries(pool.map((p) => [p.id, p.filled]));
+  return { allocations, leftover: Math.max(0, remaining) };
+}
+
+export interface AllocationRunResult {
+  toEmergency: number;
+  toDeposit: number;
+  /** Keyed by goal id — only goals that actually received something (or exist in the order) appear here. */
+  goalAmounts: Map<string, number>;
+}
+
+/**
+ * Walks `order` tier by tier, splitting `surplus` across each tier's destinations (see
+ * `allocateTier`) and carrying whatever's left to the next tier. Shared by `fortnightBreakdown`,
+ * `buildFortnightSplit`, and `buildNetWorthProjection` so all three price a custom pay-priority
+ * order identically — credit card paydown isn't part of this; it's a fixed first step each of
+ * those three applies before calling this.
+ */
+export function applyAllocationOrder(surplus: number, order: AllocationOrder, emergencyRemaining: number, goalRemaining: Map<string, number>): AllocationRunResult {
+  let toEmergency = 0;
+  let toDeposit = 0;
+  const goalAmounts = new Map<string, number>();
+  let remaining = Math.max(0, surplus);
+
+  for (const tier of order) {
+    if (remaining <= 1e-9) break;
+    const items: AllocationDestination[] = tier.map((t) => ({
+      id: t.id,
+      weight: t.weightPct,
+      capacity: t.id === DEPOSIT_ALLOCATION_ID ? Infinity : t.id === EMERGENCY_ALLOCATION_ID ? Math.max(0, emergencyRemaining) : Math.max(0, goalRemaining.get(t.id) ?? 0),
+    }));
+    const { allocations, leftover } = allocateTier(remaining, items);
+    for (const [id, amt] of Object.entries(allocations)) {
+      if (amt <= 0) continue;
+      if (id === EMERGENCY_ALLOCATION_ID) toEmergency += amt;
+      else if (id === DEPOSIT_ALLOCATION_ID) toDeposit += amt;
+      else goalAmounts.set(id, (goalAmounts.get(id) ?? 0) + amt);
+    }
+    remaining = leftover;
+  }
+  // Safety net: if "deposit" was somehow missing from the order (shouldn't happen —
+  // resolveAllocationOrder always includes it), don't let leftover surplus vanish.
+  toDeposit += remaining;
+  return { toEmergency, toDeposit, goalAmounts };
 }
 
 /** Accounts stored as "amount owing" — moving money here pays the balance down, not up. */
@@ -1177,7 +1300,8 @@ export function fortnightBreakdown(
   goals: Goal[],
   netPay: number,
   emergencyTarget: number,
-  todayISO: string
+  todayISO: string,
+  allocationOrder?: AllocationOrder | null
 ): FortnightBreakdown {
   const sinkingTotal = sinkingFundTotal(recurringExpenses, todayISO);
   let surplus = Math.max(0, netPay - categoriesTotal - sinkingTotal);
@@ -1187,21 +1311,18 @@ export function fortnightBreakdown(
   surplus -= toCreditCard;
 
   const emergency = Number(balances.emergency) || 0;
-  const toEmergency = Math.max(0, Math.min(surplus, emergencyTarget - emergency));
-  surplus -= toEmergency;
+  const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (Number(g.current_amount) || 0))]));
+  const order = resolveAllocationOrder(allocationOrder, goals);
+  const { toEmergency, toDeposit, goalAmounts } = applyAllocationOrder(surplus, order, Math.max(0, emergencyTarget - emergency), goalRemaining);
 
-  const goalAllocations: GoalAllocation[] = [];
-  let toGoalsTotal = 0;
-  sortGoalsByPriority(goals).forEach((g) => {
+  const goalAllocations: GoalAllocation[] = sortGoalsByPriority(goals).map((g) => {
+    const amount = goalAmounts.get(g.id) ?? 0;
     const current = Number(g.current_amount) || 0;
-    const remaining = Math.max(0, Number(g.target_amount) - current);
-    const amount = Math.max(0, Math.min(surplus, remaining));
-    surplus -= amount;
-    toGoalsTotal += amount;
-    goalAllocations.push({ id: g.id, label: g.label, amount, balance: Math.round(current + amount) });
+    return { id: g.id, label: g.label, amount, balance: Math.round(current + amount) };
   });
+  const toGoalsTotal = goalAllocations.reduce((s, g) => s + g.amount, 0);
 
-  return { netPay, categoriesTotal, sinkingTotal, toCreditCard, toEmergency, toGoalsTotal, goalAllocations, toDeposit: surplus };
+  return { netPay, categoriesTotal, sinkingTotal, toCreditCard, toEmergency, toGoalsTotal, goalAllocations, toDeposit };
 }
 
 /**
@@ -1233,6 +1354,7 @@ export function buildFortnightSplit(
   let cc = Number(balances.cc) || 0;
   const goalBalances = new Map<string, number>(goals.map((g) => [g.id, Number(g.current_amount) || 0]));
   const orderedGoals = sortGoalsByPriority(goals);
+  const allocationOrder = resolveAllocationOrder(profile.allocation_order, goals);
 
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per) => {
     const netPay = plannedIncomeFN(per, profile, D);
@@ -1241,24 +1363,22 @@ export function buildFortnightSplit(
     const toCreditCard = Math.max(0, Math.min(surplus, cc));
     surplus -= toCreditCard;
     cc = Math.max(0, cc - toCreditCard);
-    const toEmergency = Math.max(0, Math.min(surplus, emergencyTarget - emergency));
-    surplus -= toEmergency;
+
+    const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (goalBalances.get(g.id) ?? 0))]));
+    const { toEmergency, toDeposit, goalAmounts } = applyAllocationOrder(surplus, allocationOrder, Math.max(0, emergencyTarget - emergency), goalRemaining);
     emergency += toEmergency;
 
-    const goalAllocations: GoalAllocation[] = [];
-    let toGoalsTotal = 0;
-    orderedGoals.forEach((g) => {
-      const current = goalBalances.get(g.id) ?? 0;
-      const remaining = Math.max(0, Number(g.target_amount) - current);
-      const amount = Math.max(0, Math.min(surplus, remaining));
-      surplus -= amount;
-      toGoalsTotal += amount;
-      const balance = current + amount;
+    // Every goal appears here each period — even at $0 — so a consumer tracking a goal's running
+    // balance across periods (e.g. Savings' ETA projection) always finds it, rather than falling
+    // back to "not found" on a period where this particular goal happened to get nothing.
+    const goalAllocations: GoalAllocation[] = orderedGoals.map((g) => {
+      const amount = goalAmounts.get(g.id) ?? 0;
+      const balance = (goalBalances.get(g.id) ?? 0) + amount;
       goalBalances.set(g.id, balance);
-      goalAllocations.push({ id: g.id, label: g.label, amount, balance: Math.round(balance) });
+      return { id: g.id, label: g.label, amount, balance: Math.round(balance) };
     });
+    const toGoalsTotal = goalAllocations.reduce((s, g) => s + g.amount, 0);
 
-    const toDeposit = surplus;
     deposit += toDeposit;
     return {
       key: per.key,
