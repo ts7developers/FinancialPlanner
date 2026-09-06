@@ -210,6 +210,13 @@ export function AppDataProvider({
   );
   const [snapshots, setSnapshots] = useState(initialSnapshots);
   const [balances, setBalances] = useState(initialBalances);
+  // Every balance mutator reads this instead of the `balances` state variable when computing its
+  // patch. `balances` (via closures/useCallback deps) can be stale if two mutations fire within
+  // the same render tick — e.g. bulk-importing, or two tabs' actions landing close together —
+  // since each closure was created against whatever `balances` was as of the last render, not the
+  // other mutation's result. The ref is mutated synchronously inside `updateBalances` (the one
+  // place `setBalances` is ever called), so it's always current regardless of render timing.
+  const balancesRef = useRef(balances);
   const [payslips, setPayslips] = useState(initialPayslips);
   const [transfers, setTransfers] = useState(initialTransfers);
   const [holdings, setHoldings] = useState(initialHoldings);
@@ -273,7 +280,10 @@ export function AppDataProvider({
 
   const updateBalances = useCallback(
     async (patch: Partial<Omit<Balances, "user_id">>) => {
-      setBalances((b) => ({ ...b, ...patch }));
+      // Mutate the ref synchronously first — if another mutator's patch is computed (from the ref)
+      // before this update's DB round-trip resolves, it still builds on this one's result.
+      balancesRef.current = { ...balancesRef.current, ...patch };
+      setBalances(balancesRef.current);
       const { error } = await supabase.from("balances").update(patch).eq("user_id", profile.user_id);
       if (error) throw error;
     },
@@ -290,16 +300,16 @@ export function AppDataProvider({
       if (error) throw error;
       setTransactions((ts) => [data as Transaction, ...ts]);
       // Everyday/ANZ Plus/Holiday spend reduces that balance; credit card spend increases what's owed.
-      const balancePatch = applyExpenseToBalance(balances, t.account, t.amount, 1);
+      const balancePatch = applyExpenseToBalance(balancesRef.current, t.account, t.amount, 1);
       if (balancePatch) await updateBalances(balancePatch);
     },
-    [supabase, profile.user_id, balances, updateBalances]
+    [supabase, profile.user_id, updateBalances]
   );
 
-  /** For CSV import: inserts every row in one request and applies ONE combined balance patch —
-   * looping `addTransaction` here would silently drop all but the last row's balance effect,
-   * since each call computes its patch from this render's `balances` closure rather than the
-   * previous call's result. Folding onto a local copy first sidesteps that entirely. */
+  /** For CSV import: inserts every row in one request and applies ONE combined balance patch,
+   * rather than looping `addTransaction` (N inserts + N balance round-trips for what should be
+   * one atomic-feeling import). Folding every row's effect onto a local copy of `balancesRef`
+   * first, then committing once, gets the same correct result with far less chatter. */
   const addTransactionsBulk = useCallback(
     async (rows: NewTransaction[]) => {
       if (rows.length === 0) return;
@@ -310,7 +320,7 @@ export function AppDataProvider({
       if (error) throw error;
       setTransactions((ts) => [...(data as Transaction[]), ...ts]);
 
-      let working = balances;
+      let working = balancesRef.current;
       const touched = new Set<keyof Omit<Balances, "user_id">>();
       for (const t of rows) {
         const patch = applyExpenseToBalance(working, t.account, Number(t.amount) || 0, 1);
@@ -324,7 +334,7 @@ export function AppDataProvider({
         await updateBalances(finalPatch);
       }
     },
-    [supabase, profile.user_id, balances, updateBalances]
+    [supabase, profile.user_id, updateBalances]
   );
 
   // Deferred-delete buffer for the Expenses ledger's "Undo" toast: the row disappears from
@@ -338,7 +348,7 @@ export function AppDataProvider({
       const txn = transactions.find((t) => t.id === id);
       if (!txn) return;
       setTransactions((ts) => ts.filter((t) => t.id !== id));
-      const balancePatch = applyExpenseToBalance(balances, txn.account, Number(txn.amount) || 0, -1);
+      const balancePatch = applyExpenseToBalance(balancesRef.current, txn.account, Number(txn.amount) || 0, -1);
       if (balancePatch) updateBalances(balancePatch);
       const timer = setTimeout(async () => {
         delete pendingDeletes.current[id];
@@ -347,7 +357,7 @@ export function AppDataProvider({
           // The optimistic removal never actually persisted — put the transaction and its
           // balance effect back rather than leaving local state silently diverged from the DB.
           setTransactions((ts) => [txn, ...ts]);
-          const revertPatch = applyExpenseToBalance(balances, txn.account, Number(txn.amount) || 0, 1);
+          const revertPatch = applyExpenseToBalance(balancesRef.current, txn.account, Number(txn.amount) || 0, 1);
           if (revertPatch) updateBalances(revertPatch);
           onFailure?.();
           return;
@@ -355,7 +365,7 @@ export function AppDataProvider({
       }, UNDO_WINDOW_MS);
       pendingDeletes.current[id] = { txn, timer };
     },
-    [supabase, transactions, balances, updateBalances]
+    [supabase, transactions, updateBalances]
   );
 
   const undoDeleteTransaction = useCallback(
@@ -365,10 +375,10 @@ export function AppDataProvider({
       clearTimeout(pending.timer);
       delete pendingDeletes.current[id];
       setTransactions((ts) => [pending.txn, ...ts]);
-      const balancePatch = applyExpenseToBalance(balances, pending.txn.account, Number(pending.txn.amount) || 0, 1);
+      const balancePatch = applyExpenseToBalance(balancesRef.current, pending.txn.account, Number(pending.txn.amount) || 0, 1);
       if (balancePatch) updateBalances(balancePatch);
     },
-    [balances, updateBalances]
+    [updateBalances]
   );
 
   const setReconciliation = useCallback(
@@ -399,17 +409,15 @@ export function AppDataProvider({
 
   const takeSnapshot = useCallback(async () => {
     const key = periodKeyOf(isoFromDate(new Date()), profile.pay_anchor) || isoFromDate(new Date());
+    const b = balancesRef.current;
     const { data, error } = await supabase
       .from("snapshots")
-      .upsert(
-        { user_id: profile.user_id, period_key: key, deposit: balances.anzplus, emergency: balances.emergency, cc: balances.cc, hecs: balances.hecs },
-        { onConflict: "user_id,period_key" }
-      )
+      .upsert({ user_id: profile.user_id, period_key: key, deposit: b.anzplus, emergency: b.emergency, cc: b.cc, hecs: b.hecs }, { onConflict: "user_id,period_key" })
       .select()
       .single();
     if (error) throw error;
     setSnapshots((ss) => [...ss.filter((s) => s.period_key !== key), data as Snapshot].sort((a, b) => a.period_key.localeCompare(b.period_key)));
-  }, [supabase, profile.user_id, profile.pay_anchor, balances]);
+  }, [supabase, profile.user_id, profile.pay_anchor]);
 
   const addPayslip = useCallback((payslip: Payslip) => {
     setPayslips((ps) => [...ps.filter((p) => p.id !== payslip.id), payslip]);
@@ -451,16 +459,16 @@ export function AppDataProvider({
       const breakdownBaseline =
         existingBaseline ??
         (periodTotal > 0
-          ? { cc: Number(balances.cc) || 0, emergency: Number(balances.emergency) || 0, goals: goals.map((g) => ({ id: g.id, current_amount: Number(g.current_amount) || 0 })) }
+          ? { cc: Number(balancesRef.current.cc) || 0, emergency: Number(balancesRef.current.emergency) || 0, goals: goals.map((g) => ({ id: g.id, current_amount: Number(g.current_amount) || 0 })) }
           : null);
       await setReconciliation(periodKey, { actual_income: periodTotal > 0 ? periodTotal : null, breakdown_baseline: breakdownBaseline });
       // Land just the delta in Everyday: the first confirmation posts the full net; re-confirming
       // an already-posted payslip (e.g. after correcting a misread figure) posts only the
       // difference from what was posted before, so a correction is reflected instead of ignored.
       const delta = fields.net - previouslyPostedNet;
-      if (delta !== 0) await updateBalances(applyIncomeToBalance(balances, delta));
+      if (delta !== 0) await updateBalances(applyIncomeToBalance(balancesRef.current, delta));
     },
-    [supabase, setReconciliation, payslips, miscIncome, profile.pay_anchor, balances, updateBalances, reconciliations, goals]
+    [supabase, setReconciliation, payslips, miscIncome, profile.pay_anchor, updateBalances, reconciliations, goals]
   );
 
   const addMiscIncome = useCallback(
@@ -474,7 +482,7 @@ export function AppDataProvider({
       if (error) throw error;
       const effectiveMiscIncome = [data as MiscIncome, ...miscIncome];
       setMiscIncome(effectiveMiscIncome);
-      await updateBalances(applyIncomeToAccount(balances, account, amount));
+      await updateBalances(applyIncomeToAccount(balancesRef.current, account, amount));
       const periodKey = periodKeyOf(date, profile.pay_anchor);
       if (periodKey) {
         const periodTotal = actualIncomeForPeriod(payslips, effectiveMiscIncome, periodKey, profile.pay_anchor);
@@ -482,12 +490,12 @@ export function AppDataProvider({
         const breakdownBaseline =
           existingBaseline ??
           (periodTotal > 0
-            ? { cc: Number(balances.cc) || 0, emergency: Number(balances.emergency) || 0, goals: goals.map((g) => ({ id: g.id, current_amount: Number(g.current_amount) || 0 })) }
+            ? { cc: Number(balancesRef.current.cc) || 0, emergency: Number(balancesRef.current.emergency) || 0, goals: goals.map((g) => ({ id: g.id, current_amount: Number(g.current_amount) || 0 })) }
             : null);
         await setReconciliation(periodKey, { actual_income: periodTotal > 0 ? periodTotal : null, breakdown_baseline: breakdownBaseline });
       }
     },
-    [supabase, profile.user_id, profile.pay_anchor, balances, updateBalances, payslips, miscIncome, setReconciliation, reconciliations, goals]
+    [supabase, profile.user_id, profile.pay_anchor, updateBalances, payslips, miscIncome, setReconciliation, reconciliations, goals]
   );
 
   const deleteMiscIncome = useCallback(
@@ -498,7 +506,7 @@ export function AppDataProvider({
       setMiscIncome(effectiveMiscIncome);
       const { error } = await supabase.from("misc_income").delete().eq("id", id);
       if (error) throw error;
-      await updateBalances(applyIncomeToAccount(balances, entry.account as keyof Omit<Balances, "user_id">, entry.amount, -1));
+      await updateBalances(applyIncomeToAccount(balancesRef.current, entry.account as keyof Omit<Balances, "user_id">, entry.amount, -1));
       const periodKey = periodKeyOf(entry.date, profile.pay_anchor);
       if (periodKey) {
         const periodTotal = actualIncomeForPeriod(payslips, effectiveMiscIncome, periodKey, profile.pay_anchor);
@@ -510,7 +518,7 @@ export function AppDataProvider({
         });
       }
     },
-    [supabase, miscIncome, balances, updateBalances, payslips, profile.pay_anchor, setReconciliation, reconciliations]
+    [supabase, miscIncome, updateBalances, payslips, profile.pay_anchor, setReconciliation, reconciliations]
   );
 
   const addGoal = useCallback(
@@ -580,9 +588,9 @@ export function AppDataProvider({
         .single();
       if (error) throw error;
       setTransfers((ts) => [data as Transfer, ...ts]);
-      await updateBalances(applyTransfer(balances, from, to, amount));
+      await updateBalances(applyTransfer(balancesRef.current, from, to, amount));
     },
-    [supabase, profile.user_id, balances, updateBalances]
+    [supabase, profile.user_id, updateBalances]
   );
 
   const addOrUpdateHolding = useCallback(
@@ -621,15 +629,15 @@ export function AppDataProvider({
         const estimatedValue = holding.last_price != null ? holding.last_price * holding.shares : totalCost;
         const refundByAccount = new Map<string, number>();
         codeLots.forEach((l) => refundByAccount.set(l.account, (refundByAccount.get(l.account) ?? 0) + l.shares * l.price));
-        const patch: Partial<Omit<Balances, "user_id">> = { shares: roundCents((Number(balances.shares) || 0) - estimatedValue) };
+        const patch: Partial<Omit<Balances, "user_id">> = { shares: roundCents((Number(balancesRef.current.shares) || 0) - estimatedValue) };
         refundByAccount.forEach((refund, account) => {
           const key = account as keyof Omit<Balances, "user_id">;
-          patch[key] = roundCents((Number(balances[key]) || 0) + refund);
+          patch[key] = roundCents((Number(balancesRef.current[key]) || 0) + refund);
         });
         await updateBalances(patch);
       }
     },
-    [supabase, holdings, holdingLots, profile.user_id, balances, updateBalances]
+    [supabase, holdings, holdingLots, profile.user_id, updateBalances]
   );
 
   const refreshHoldingPrices = useCallback(async () => {
@@ -703,9 +711,9 @@ export function AppDataProvider({
         .single();
       if (holdingErr) throw holdingErr;
       setHoldings((hs) => [...hs.filter((h) => h.code !== normalizedCode), holdingRow as Holding].sort((a, b) => a.code.localeCompare(b.code)));
-      await updateBalances(applyTransfer(balances, account, "shares", shares * price));
+      await updateBalances(applyTransfer(balancesRef.current, account, "shares", shares * price));
     },
-    [supabase, profile.user_id, holdings, balances, updateBalances]
+    [supabase, profile.user_id, holdings, updateBalances]
   );
 
   // Reverses what addHoldingLot did: removes the lot, subtracts its shares back off that code's
@@ -723,10 +731,10 @@ export function AppDataProvider({
         setHoldings((hs) => hs.map((h) => (h.id === holding.id ? { ...h, shares: newShareTotal } : h)));
         const { error: shareErr } = await supabase.from("holdings").update({ shares: newShareTotal }).eq("id", holding.id);
         if (shareErr) throw shareErr;
-        await updateBalances(applyTransfer(balances, "shares", lot.account as keyof Omit<Balances, "user_id">, lot.shares * lot.price));
+        await updateBalances(applyTransfer(balancesRef.current, "shares", lot.account as keyof Omit<Balances, "user_id">, lot.shares * lot.price));
       }
     },
-    [supabase, holdingLots, holdings, balances, updateBalances]
+    [supabase, holdingLots, holdings, updateBalances]
   );
 
   const addSuperContribution = useCallback(
@@ -760,11 +768,11 @@ export function AppDataProvider({
       if (error) throw error;
       setSuperContributions((cs) => [data as SuperContribution, ...cs]);
       if (affectsBalance) {
-        const patch = fundingAccount ? applyTransfer(balances, fundingAccount, "superb", amount) : applyIncomeToAccount(balances, "superb", amount);
+        const patch = fundingAccount ? applyTransfer(balancesRef.current, fundingAccount, "superb", amount) : applyIncomeToAccount(balancesRef.current, "superb", amount);
         await updateBalances(patch);
       }
     },
-    [supabase, profile.user_id, balances, updateBalances]
+    [supabase, profile.user_id, updateBalances]
   );
 
   const deleteSuperContribution = useCallback(
@@ -776,12 +784,12 @@ export function AppDataProvider({
       if (contribution?.affects_balance) {
         const fundingAccount = contribution.account as keyof Omit<Balances, "user_id"> | null;
         const patch = fundingAccount
-          ? applyTransfer(balances, "superb", fundingAccount, contribution.amount)
-          : applyIncomeToAccount(balances, "superb", contribution.amount, -1);
+          ? applyTransfer(balancesRef.current, "superb", fundingAccount, contribution.amount)
+          : applyIncomeToAccount(balancesRef.current, "superb", contribution.amount, -1);
         await updateBalances(patch);
       }
     },
-    [supabase, superContributions, balances, updateBalances]
+    [supabase, superContributions, updateBalances]
   );
 
   const addRecurringExpense = useCallback(

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, RotateCcw, CalendarClock, Trash2, AlertTriangle } from "lucide-react";
+import { Copy, RotateCcw, CalendarClock, Trash2, AlertTriangle, Download } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import type { ResetDataSelections } from "@/components/AppDataProvider";
 import { isoFromDate, currentPeriod, periodLabel, dayLabel, dateFromISO } from "@/lib/period";
@@ -99,7 +99,28 @@ function toInputs(profile: Profile): ProfileInputs {
 }
 
 export default function SettingsTab() {
-  const { profile, categories, periods, D, updateProfile, updateCategory, addCategory, resetData } = useAppData();
+  const {
+    profile,
+    categories,
+    periods,
+    D,
+    updateProfile,
+    updateCategory,
+    addCategory,
+    resetData,
+    transactions,
+    reconciliations,
+    snapshots,
+    balances,
+    payslips,
+    transfers,
+    holdings,
+    holdingLots,
+    superContributions,
+    recurringExpenses,
+    miscIncome,
+    goals,
+  } = useAppData();
   const [inputs, setInputs] = useState<ProfileInputs>(() => toInputs(profile));
   const [flashMsg, setFlashMsg] = useState("");
 
@@ -231,6 +252,37 @@ export default function SettingsTab() {
     }
   };
 
+  // Everything the app tracks, straight from what's already loaded in memory — no extra fetch
+  // needed. A plain JSON dump rather than anything fancier: the point is a safety net you can
+  // keep somewhere before using "Start fresh" below, not a re-importable backup format.
+  const onExportData = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      profile,
+      categories,
+      transactions,
+      reconciliations,
+      snapshots,
+      balances,
+      payslips,
+      transfers,
+      holdings,
+      holdingLots,
+      superContributions,
+      recurringExpenses,
+      miscIncome,
+      goals,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `financial-plan-backup-${isoFromDate(new Date())}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    flash("Downloaded");
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -343,6 +395,18 @@ export default function SettingsTab() {
         </div>
         <div style={{ flex: "1 1 380px", display: "flex", flexDirection: "column", gap: 18 }}>
           <NotificationsPanel />
+          <Panel title="Backup" icon={Download}>
+            <div style={{ fontSize: 12.5, color: MUTE, marginBottom: 12, lineHeight: 1.5 }}>
+              A full JSON download of everything the app tracks — every transaction, payslip, balance, goal, and setting. Worth
+              grabbing one before using <b style={{ color: NAVY }}>Start fresh</b> below, or just every so often as a safety net.
+            </div>
+            <button
+              onClick={onExportData}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: NAVY, border: `1px solid ${LINE}`, borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+            >
+              <Download size={14} /> Download backup (.json)
+            </button>
+          </Panel>
           <Collapsible title="Start fresh" icon={AlertTriangle} defaultOpen subtitle="Tick what to wipe if you haven't been tracking accurately and want to refill it — everything else stays untouched.">
             <div style={{ padding: "0 18px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
