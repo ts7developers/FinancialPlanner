@@ -11,6 +11,7 @@ import { DEFAULT_CATEGORIES } from "@/lib/categories";
 import { AUD } from "@/lib/money";
 import { NAVY, MUTE, GOLD, LINE, UNFAV, CARD, inputStyle, selStyle } from "@/lib/theme";
 import { Panel, PInput, Derived, Collapsible } from "@/components/ui/atoms";
+import NotificationsPanel from "@/components/NotificationsPanel";
 import type { Profile } from "@/lib/types";
 
 const RESET_LOGGED_ITEMS: { key: keyof ResetDataSelections; label: string }[] = [
@@ -340,7 +341,8 @@ export default function SettingsTab() {
             </div>
           </Panel>
         </div>
-        <div style={{ flex: "1 1 380px" }}>
+        <div style={{ flex: "1 1 380px", display: "flex", flexDirection: "column", gap: 18 }}>
+          <NotificationsPanel />
           <Collapsible title="Start fresh" icon={AlertTriangle} defaultOpen subtitle="Tick what to wipe if you haven't been tracking accurately and want to refill it — everything else stays untouched.">
             <div style={{ padding: "0 18px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
