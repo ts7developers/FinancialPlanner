@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCSV, parseFlexibleDate, parseAmount, parseBankCSV, isLikelyDuplicateTransaction } from "@/lib/csv";
+import { parseCSV, parseFlexibleDate, parseAmount, parseBankCSV, isLikelyDuplicateTransaction, escapeCSVField, toCSV } from "@/lib/csv";
 
 describe("parseCSV", () => {
   it("splits a simple comma-separated file into rows/fields", () => {
@@ -107,5 +107,35 @@ describe("isLikelyDuplicateTransaction", () => {
   it("doesn't flag a different date or amount", () => {
     expect(isLikelyDuplicateTransaction("2026-08-15", 52.3, existing)).toBe(false);
     expect(isLikelyDuplicateTransaction("2026-08-14", 10, existing)).toBe(false);
+  });
+});
+
+describe("escapeCSVField", () => {
+  it("leaves a plain field alone", () => {
+    expect(escapeCSVField("Groceries")).toBe("Groceries");
+  });
+
+  it("quotes a field containing a comma", () => {
+    expect(escapeCSVField("Woolworths, Chatswood")).toBe('"Woolworths, Chatswood"');
+  });
+
+  it("quotes and doubles embedded quotes", () => {
+    expect(escapeCSVField('She said "hi"')).toBe('"She said ""hi"""');
+  });
+
+  it("quotes a field containing a newline", () => {
+    expect(escapeCSVField("line one\nline two")).toBe('"line one\nline two"');
+  });
+});
+
+describe("toCSV", () => {
+  it("builds a header + data rows with CRLF line endings", () => {
+    const csv = toCSV(["Date", "Description", "Amount"], [["2026-08-14", "Woolworths", 52.3]]);
+    expect(csv).toBe("Date,Description,Amount\r\n2026-08-14,Woolworths,52.3\r\n");
+  });
+
+  it("round-trips through parseCSV for a field that needs quoting", () => {
+    const csv = toCSV(["Description"], [["Woolworths, Chatswood"]]);
+    expect(parseCSV(csv)).toEqual([["Description"], ["Woolworths, Chatswood"]]);
   });
 });

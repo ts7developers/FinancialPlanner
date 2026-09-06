@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Plus, Trash2, Wallet, Receipt, ListChecks, Flame, Repeat, Pause, Play, Zap, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Wallet, Receipt, ListChecks, Flame, Repeat, Pause, Play, Zap, ChevronDown, Download } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useToast } from "@/components/ToastProvider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { periodKeyOf, periodLabel, isoFromDate } from "@/lib/period";
 import { OTHER_CATEGORY_KEY } from "@/lib/categories";
+import { toCSV } from "@/lib/csv";
 import { periodTotals, averageSpend, buildActualSpendTrend, daysUntil, type PieSlice } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, PIE_COLORS, selStyle } from "@/lib/theme";
@@ -212,6 +213,21 @@ export default function ExpensesTab() {
     .slice()
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const filterTotal = filteredTxns.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+  const onExportCsv = () => {
+    const csv = toCSV(
+      ["Date", "Description", "Category", "Account", "Amount"],
+      filteredTxns.map((t) => [t.date, t.description ?? "", catLabel(t.category_key), t.account, t.amount])
+    );
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `expenses-${txnFilter === "all" ? "all" : txnFilter}-${isoFromDate(new Date())}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const byAccount = ACCOUNTS.map((acc) => ({
     acc,
     total: filteredTxns.filter((t) => t.account === acc).reduce((s, t) => s + (Number(t.amount) || 0), 0),
@@ -573,6 +589,26 @@ export default function ExpensesTab() {
                     </option>
                   ))}
                 </select>
+                <button
+                  onClick={onExportCsv}
+                  disabled={filteredTxns.length === 0}
+                  title="Export the rows currently shown (respects search/fortnight filter) as a CSV"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "transparent",
+                    color: filteredTxns.length === 0 ? "#C7C2B4" : NAVY,
+                    border: `1px solid ${LINE}`,
+                    borderRadius: 8,
+                    padding: "8px 12px",
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: filteredTxns.length === 0 ? "default" : "pointer",
+                  }}
+                >
+                  <Download size={14} /> Export CSV
+                </button>
               </div>
             </div>
             {filteredTxns.length === 0 ? (

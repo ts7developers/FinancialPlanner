@@ -168,3 +168,15 @@ export function parseBankCSV(text: string): ParseBankCSVResult {
 export function isLikelyDuplicateTransaction(date: string, amount: number, existing: { date: string; amount: number }[]): boolean {
   return existing.some((t) => t.date === date && Math.abs((Number(t.amount) || 0) - amount) < 0.005);
 }
+
+/** Quotes a field only when it actually needs it (contains a comma, quote, or newline) — doubling any embedded quotes, per RFC4180. */
+export function escapeCSVField(value: string): string {
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+/** Builds a CSV document (CRLF line endings, per RFC4180) from a header row and data rows — the inverse of `parseCSV`. */
+export function toCSV(header: string[], rows: (string | number)[][]): string {
+  const lines = [header, ...rows].map((row) => row.map((cell) => escapeCSVField(String(cell))).join(","));
+  return lines.join("\r\n") + "\r\n";
+}
