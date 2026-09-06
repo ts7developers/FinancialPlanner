@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCSV, parseFlexibleDate, parseAmount, parseBankCSV, isLikelyDuplicateTransaction, escapeCSVField, toCSV } from "@/lib/csv";
+import { parseCSV, parseFlexibleDate, parseAmount, parseBankCSV, isLikelyDuplicateTransaction, escapeCSVField, toCSV, detectRecurringCandidates } from "@/lib/csv";
 
 describe("parseCSV", () => {
   it("splits a simple comma-separated file into rows/fields", () => {
@@ -137,5 +137,67 @@ describe("toCSV", () => {
   it("round-trips through parseCSV for a field that needs quoting", () => {
     const csv = toCSV(["Description"], [["Woolworths, Chatswood"]]);
     expect(parseCSV(csv)).toEqual([["Description"], ["Woolworths, Chatswood"]]);
+  });
+});
+
+describe("detectRecurringCandidates", () => {
+  it("flags a same description/amount pair recurring roughly monthly", () => {
+    const rows = [
+      { date: "2026-06-15", description: "Spotify", amount: 15.99 },
+      { date: "2026-07-15", description: "Spotify", amount: 15.99 },
+      { date: "2026-08-14", description: "Spotify", amount: 15.99 },
+    ];
+    const candidates = detectRecurringCandidates(rows, []);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ description: "Spotify", amount: 15.99, frequency: "monthly", occurrences: 3, lastDate: "2026-08-14" });
+  });
+
+  it("classifies a ~7-day gap as weekly and a ~14-day gap as fortnightly", () => {
+    const weekly = detectRecurringCandidates(
+      [
+        { date: "2026-08-01", description: "Cleaner", amount: 80 },
+        { date: "2026-08-08", description: "Cleaner", amount: 80 },
+      ],
+      []
+    );
+    expect(weekly[0].frequency).toBe("weekly");
+
+    const fortnightly = detectRecurringCandidates(
+      [
+        { date: "2026-08-01", description: "Lawn mowing", amount: 60 },
+        { date: "2026-08-15", description: "Lawn mowing", amount: 60 },
+      ],
+      []
+    );
+    expect(fortnightly[0].frequency).toBe("fortnightly");
+  });
+
+  it("ignores a one-off (only a single occurrence)", () => {
+    expect(detectRecurringCandidates([{ date: "2026-08-01", description: "One-off gift", amount: 50 }], [])).toEqual([]);
+  });
+
+  it("ignores irregular gaps that don't fit any recurring band", () => {
+    const rows = [
+      { date: "2026-08-01", description: "Random shop", amount: 20 },
+      { date: "2026-08-04", description: "Random shop", amount: 20 },
+      { date: "2026-08-20", description: "Random shop", amount: 20 },
+    ];
+    expect(detectRecurringCandidates(rows, [])).toEqual([]);
+  });
+
+  it("doesn't suggest something already tracked as a recurring expense", () => {
+    const rows = [
+      { date: "2026-06-15", description: "Netflix", amount: 22.99 },
+      { date: "2026-07-15", description: "Netflix", amount: 22.99 },
+    ];
+    expect(detectRecurringCandidates(rows, ["Netflix"])).toEqual([]);
+  });
+
+  it("treats a different amount for the same description as a separate group", () => {
+    const rows = [
+      { date: "2026-06-15", description: "Gym", amount: 50 },
+      { date: "2026-07-15", description: "Gym", amount: 55 },
+    ];
+    expect(detectRecurringCandidates(rows, [])).toEqual([]);
   });
 });

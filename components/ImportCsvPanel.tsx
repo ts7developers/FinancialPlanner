@@ -1,10 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Upload, FileSpreadsheet, Check, X } from "lucide-react";
+import { Upload, FileSpreadsheet, Check, X, Repeat } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useToast } from "@/components/ToastProvider";
-import { parseBankCSV, isLikelyDuplicateTransaction } from "@/lib/csv";
+import { parseBankCSV, isLikelyDuplicateTransaction, detectRecurringCandidates, type RecurringCandidate } from "@/lib/csv";
 import { AUD } from "@/lib/money";
 import { ACCOUNTS, CARD, LINE, MUTE, GOLD, INK, NAVY, UNFAV, selStyle } from "@/lib/theme";
 import { Collapsible } from "@/components/ui/atoms";
@@ -20,11 +20,18 @@ interface ImportRow {
   isDuplicate: boolean;
 }
 
+interface CandidateRow extends RecurringCandidate {
+  categoryKey: string;
+  account: Account;
+  status: "pending" | "busy" | "added";
+}
+
 export default function ImportCsvPanel({ catOptions }: { catOptions: { key: string; label: string }[] }) {
-  const { transactions, addTransactionsBulk } = useAppData();
+  const { transactions, addTransactionsBulk, recurringExpenses, addRecurringExpense } = useAppData();
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<ImportRow[] | null>(null);
+  const [candidates, setCandidates] = useState<CandidateRow[]>([]);
   const [skippedCount, setSkippedCount] = useState(0);
   const [fileError, setFileError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,12 +63,33 @@ export default function ImportCsvPanel({ catOptions }: { catOptions: { key: stri
         };
       })
     );
+
+    const detected = detectRecurringCandidates(
+      usable.filter((r): r is typeof r & { date: string; amount: number } => r.date !== null).map((r) => ({ date: r.date, description: r.description, amount: r.amount })),
+      recurringExpenses.map((r) => r.description)
+    );
+    setCandidates(detected.map((c) => ({ ...c, categoryKey: catOptions[0]?.key ?? "other", account: "Credit card", status: "pending" })));
   };
 
   const updateRow = (i: number, patch: Partial<ImportRow>) => setRows((rs) => rs && rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const updateCandidate = (i: number, patch: Partial<CandidateRow>) => setCandidates((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+
+  const onAddCandidate = async (i: number) => {
+    const c = candidates[i];
+    updateCandidate(i, { status: "busy" });
+    try {
+      await addRecurringExpense(c.description, c.amount, c.categoryKey, c.account, c.frequency, c.nextDue);
+      updateCandidate(i, { status: "added" });
+      toast(`Added "${c.description}" as a recurring bill`);
+    } catch {
+      updateCandidate(i, { status: "pending" });
+      toast("Could not add that recurring bill — try again");
+    }
+  };
 
   const reset = () => {
     setRows(null);
+    setCandidates([]);
     setFileError("");
     if (fileInput.current) fileInput.current.value = "";
   };
@@ -246,6 +274,64 @@ export default function ImportCsvPanel({ catOptions }: { catOptions: { key: stri
                 </button>
               </div>
             </div>
+
+            {candidates.length > 0 && (
+              <div style={{ border: `1px solid ${LINE}`, borderRadius: 10, padding: 12, background: "#FBF9F2", display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: NAVY }}>
+                  <Repeat size={14} color={GOLD} /> Possible recurring bills spotted in this statement
+                </div>
+                {candidates.map((c, i) => (
+                  <div key={`${c.description}-${c.amount}`} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12.5 }}>
+                    <span style={{ flex: "1 1 200px", color: NAVY }}>
+                      {c.description} — {AUD(c.amount)} · {c.frequency} ({c.occurrences}× in this import)
+                    </span>
+                    <select value={c.categoryKey} onChange={(e) => updateCandidate(i, { categoryKey: e.target.value })} disabled={c.status !== "pending"} style={{ ...selStyle, height: 30, fontSize: 12, width: 120 }}>
+                      {catOptions.map((cat) => (
+                        <option key={cat.key} value={cat.key}>
+                          {cat.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={c.account}
+                      onChange={(e) => updateCandidate(i, { account: e.target.value as Account })}
+                      disabled={c.status !== "pending"}
+                      style={{ ...selStyle, height: 30, fontSize: 12, width: 110 }}
+                    >
+                      {ACCOUNTS.map((a) => (
+                        <option key={a} value={a}>
+                          {a}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => onAddCandidate(i)}
+                      disabled={c.status !== "pending"}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 5,
+                        background: c.status === "added" ? "transparent" : GOLD,
+                        color: c.status === "added" ? "#2E7D5B" : INK,
+                        border: c.status === "added" ? "none" : "none",
+                        borderRadius: 8,
+                        padding: "6px 11px",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: c.status === "pending" ? "pointer" : "default",
+                        opacity: c.status === "busy" ? 0.7 : 1,
+                        fontFamily: "var(--font-space-grotesk), sans-serif",
+                      }}
+                    >
+                      <Check size={13} /> {c.status === "added" ? "Added" : c.status === "busy" ? "Adding…" : "Add as recurring"}
+                    </button>
+                  </div>
+                ))}
+                <div style={{ fontSize: 11, color: MUTE, lineHeight: 1.4 }}>
+                  Detected from this statement alone (same description + amount, evenly spaced) — review the category/account before adding, they default to a guess.
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

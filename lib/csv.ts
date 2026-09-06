@@ -1,6 +1,9 @@
 // Bank-statement CSV import — pure parsing/detection logic, kept separate from the upload UI
 // (components/ImportCsvPanel.tsx) so it's independently testable, same convention as period.ts/tax.ts.
 
+import { dateFromISO, isoFromDate } from "./period";
+import type { RecurringFrequency } from "./types";
+
 /** Minimal RFC4180-ish parser: quoted fields, escaped `""`, commas/newlines inside quotes, CRLF or LF. */
 export function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
@@ -179,4 +182,68 @@ export function escapeCSVField(value: string): string {
 export function toCSV(header: string[], rows: (string | number)[][]): string {
   const lines = [header, ...rows].map((row) => row.map((cell) => escapeCSVField(String(cell))).join(","));
   return lines.join("\r\n") + "\r\n";
+}
+
+export interface RecurringCandidate {
+  description: string;
+  amount: number;
+  frequency: RecurringFrequency;
+  occurrences: number;
+  lastDate: string;
+  /** Estimated next occurrence — lastDate plus the observed average gap. */
+  nextDue: string;
+}
+
+// Tolerance bands around each frequency's nominal gap (in days) — wide enough to absorb a bank's
+// processing-date jitter (a "monthly" subscription rarely lands exactly 30 days apart) without
+// collapsing into a neighbouring band.
+const FREQUENCY_BANDS: { min: number; max: number; frequency: RecurringFrequency }[] = [
+  { min: 5, max: 9, frequency: "weekly" },
+  { min: 12, max: 16, frequency: "fortnightly" },
+  { min: 25, max: 35, frequency: "monthly" },
+  { min: 80, max: 100, frequency: "quarterly" },
+  { min: 350, max: 380, frequency: "yearly" },
+];
+
+/**
+ * Groups CSV rows by (description, amount) and flags any group of 2+ whose dates fall roughly
+ * evenly spaced into one of the standard recurring-bill cadences — a candidate to offer adding as
+ * a real Recurring Expense instead of re-typing it by hand next time it shows up in a statement.
+ * Skips anything that already looks like an existing recurring expense (substring match either
+ * direction, case-insensitive) so it doesn't keep re-suggesting the same subscription forever.
+ */
+export function detectRecurringCandidates(rows: { date: string; description: string; amount: number }[], existingDescriptions: string[]): RecurringCandidate[] {
+  const existingLower = existingDescriptions.map((d) => d.trim().toLowerCase());
+  const groups = new Map<string, { date: string; description: string; amount: number }[]>();
+  rows.forEach((r) => {
+    const desc = r.description.trim();
+    if (!desc) return;
+    const key = `${desc.toLowerCase()}|${r.amount.toFixed(2)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(r);
+  });
+
+  const candidates: RecurringCandidate[] = [];
+  groups.forEach((group) => {
+    if (group.length < 2) return;
+    const sorted = group.slice().sort((a, b) => a.date.localeCompare(b.date));
+    const dayMs = 86400000;
+    const gaps: number[] = [];
+    for (let i = 1; i < sorted.length; i++) {
+      gaps.push((dateFromISO(sorted[i].date).getTime() - dateFromISO(sorted[i - 1].date).getTime()) / dayMs);
+    }
+    const avgGap = gaps.reduce((s, g) => s + g, 0) / gaps.length;
+    const band = FREQUENCY_BANDS.find((f) => avgGap >= f.min && avgGap <= f.max);
+    if (!band) return;
+
+    const description = sorted[0].description.trim();
+    if (existingLower.some((d) => d.includes(description.toLowerCase()) || description.toLowerCase().includes(d))) return;
+
+    const lastDate = sorted[sorted.length - 1].date;
+    const nextDate = new Date(dateFromISO(lastDate));
+    nextDate.setUTCDate(nextDate.getUTCDate() + Math.round(avgGap));
+    candidates.push({ description, amount: sorted[0].amount, frequency: band.frequency, occurrences: sorted.length, lastDate, nextDue: isoFromDate(nextDate) });
+  });
+
+  return candidates.sort((a, b) => b.occurrences - a.occurrences);
 }
