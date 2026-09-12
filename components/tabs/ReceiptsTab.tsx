@@ -1,16 +1,17 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Upload, Trash2, ExternalLink, Plus, FileText, Receipt as ReceiptIcon } from "lucide-react";
+import { Upload, Trash2, ExternalLink, Plus, FileText, Printer, Download, Pencil, Check, X, Receipt as ReceiptIcon } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useToast } from "@/components/ToastProvider";
 import { createClient } from "@/lib/supabase/client";
 import { isoFromDate, financialYearStart } from "@/lib/period";
+import { toCSV } from "@/lib/csv";
 import { DEDUCTION_CATEGORIES, DEDUCTION_CATEGORY_LABELS, receiptsForFinancialYear, receiptTotalsByCategory } from "@/lib/receipts";
 import { AUD } from "@/lib/money";
 import { LINE, MUTE, MUTE_ICON, GOLD, ON_ACCENT_DARK, NAVY, FAV, UNFAV, SURFACE_SUBTLE, selStyle } from "@/lib/theme";
 import { Panel, Field, Metric } from "@/components/ui/atoms";
-import type { DeductionCategory } from "@/lib/types";
+import type { DeductionCategory, Receipt } from "@/lib/types";
 
 function fyStartFor(offset: number, thisFYStart: string): string {
   return `${Number(thisFYStart.slice(0, 4)) + offset}-07-01`;
@@ -22,7 +23,7 @@ function fyLabel(fyStartISO: string): string {
 }
 
 export default function ReceiptsTab() {
-  const { profile, receipts, transactions, addReceipt, deleteReceipt, undoDeleteReceipt } = useAppData();
+  const { profile, receipts, transactions, addReceipt, updateReceipt, deleteReceipt, undoDeleteReceipt } = useAppData();
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -106,6 +107,52 @@ export default function ReceiptsTab() {
     toast(`Removed "${label}"`, { actionLabel: "Undo", onAction: () => undoDeleteReceipt(id) });
   };
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDate, setEditDate] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editCategory, setEditCategory] = useState<DeductionCategory>("other");
+  const [editBusy, setEditBusy] = useState(false);
+
+  const startEdit = (r: Receipt) => {
+    setEditingId(r.id);
+    setEditDate(r.date);
+    setEditDescription(r.description);
+    setEditAmount(String(r.amount));
+    setEditCategory(r.deduction_category);
+  };
+
+  const saveEdit = async (id: string) => {
+    if (!editDate || !editDescription.trim() || !(Number(editAmount) > 0)) {
+      toast("Add a date, description and amount");
+      return;
+    }
+    setEditBusy(true);
+    try {
+      await updateReceipt(id, { date: editDate, description: editDescription.trim(), amount: Number(editAmount), deduction_category: editCategory });
+      setEditingId(null);
+      toast("Updated");
+    } catch {
+      toast("Could not save that — try again");
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  const onExportCsv = () => {
+    const csv = toCSV(
+      ["Date", "Description", "Category", "Amount", "Linked to an Expense"],
+      fyReceipts.map((r) => [r.date, r.description, DEDUCTION_CATEGORY_LABELS[r.deduction_category], r.amount, r.transaction_id ? "Yes" : "No"])
+    );
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `receipts-fy${fyStart.slice(0, 4)}-${isoFromDate(new Date())}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div>
@@ -123,6 +170,7 @@ export default function ReceiptsTab() {
         ))}
       </div>
 
+      <div className="no-print">
       <Panel title="Log a deductible item" icon={Plus}>
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           <button
@@ -191,9 +239,10 @@ export default function ReceiptsTab() {
         </div>
         {error && <div style={{ fontSize: 12, color: UNFAV, marginTop: 8 }}>{error}</div>}
       </Panel>
+      </div>
 
-      <Panel title="All receipts" icon={FileText}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+      <Panel title={`All receipts — ${fyLabel(fyStart)}`} icon={FileText}>
+        <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
           <select value={fyStart} onChange={(e) => setFyStart(e.target.value)} style={{ ...selStyle, width: 160 }}>
             {[0, -1, -2].map((offset) => {
               const start = fyStartFor(offset, thisFYStart);
@@ -204,34 +253,88 @@ export default function ReceiptsTab() {
               );
             })}
           </select>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={onExportCsv}
+              disabled={fyReceipts.length === 0}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: fyReceipts.length === 0 ? MUTE_ICON : NAVY, border: `1px solid ${LINE}`, borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600, cursor: fyReceipts.length === 0 ? "default" : "pointer" }}
+            >
+              <Download size={14} /> Export CSV
+            </button>
+            <button
+              onClick={() => window.print()}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: NAVY, border: `1px solid ${LINE}`, borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
+            >
+              <Printer size={14} /> Print / Save as PDF
+            </button>
+          </div>
         </div>
 
         {fyReceipts.length === 0 ? (
           <div style={{ fontSize: 12.5, color: MUTE }}>Nothing logged for {fyLabel(fyStart)} yet.</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {fyReceipts.map((r) => (
-              <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 12px", background: SURFACE_SUBTLE, border: `1px solid ${LINE}`, borderRadius: 8, flexWrap: "wrap" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: NAVY }}>{r.description}</div>
-                  <div style={{ fontSize: 11.5, color: MUTE }}>
-                    {r.date} · {DEDUCTION_CATEGORY_LABELS[r.deduction_category]}
-                    {r.transaction_id && " · from Expenses"}
-                  </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums", color: NAVY }}>{AUD(r.amount)}</span>
-                  {r.file_path && (
-                    <button onClick={() => onViewReceipt(r.file_path!)} title="View receipt" style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
-                      <ExternalLink size={15} />
-                    </button>
-                  )}
-                  <button onClick={() => onDelete(r.id, r.description)} title="Remove" style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
-                    <Trash2 size={15} />
+            {fyReceipts.map((r) =>
+              editingId === r.id ? (
+                <div key={r.id} style={{ display: "flex", gap: 8, alignItems: "flex-end", padding: "9px 12px", background: SURFACE_SUBTLE, border: `1px solid ${GOLD}`, borderRadius: 8, flexWrap: "wrap" }}>
+                  <Field label="Date">
+                    <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} style={{ ...selStyle, width: 140 }} />
+                  </Field>
+                  <Field label="Description">
+                    <input type="text" value={editDescription} onChange={(e) => setEditDescription(e.target.value)} style={{ ...selStyle, width: 180, textAlign: "left" }} />
+                  </Field>
+                  <Field label="Amount">
+                    <input type="number" inputMode="decimal" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} style={{ ...selStyle, width: 90 }} />
+                  </Field>
+                  <Field label="Category">
+                    <select value={editCategory} onChange={(e) => setEditCategory(e.target.value as DeductionCategory)} style={{ ...selStyle, width: 200, textAlign: "left" }}>
+                      {DEDUCTION_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {DEDUCTION_CATEGORY_LABELS[c]}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <button
+                    onClick={() => saveEdit(r.id)}
+                    disabled={editBusy}
+                    title="Save"
+                    style={{ display: "flex", alignItems: "center", gap: 5, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 8, padding: "9px 12px", fontSize: 12.5, fontWeight: 600, cursor: editBusy ? "default" : "pointer", height: 36 }}
+                  >
+                    <Check size={14} /> Save
+                  </button>
+                  <button onClick={() => setEditingId(null)} title="Cancel" style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex", height: 36, alignItems: "center" }}>
+                    <X size={16} />
                   </button>
                 </div>
-              </div>
-            ))}
+              ) : (
+                <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 12px", background: SURFACE_SUBTLE, border: `1px solid ${LINE}`, borderRadius: 8, flexWrap: "wrap" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: NAVY }}>{r.description}</div>
+                    <div style={{ fontSize: 11.5, color: MUTE }}>
+                      {r.date} · {DEDUCTION_CATEGORY_LABELS[r.deduction_category]}
+                      {r.transaction_id && " · from Expenses"}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums", color: NAVY }}>{AUD(r.amount)}</span>
+                    <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      {r.file_path && (
+                        <button onClick={() => onViewReceipt(r.file_path!)} title="View receipt" style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
+                          <ExternalLink size={15} />
+                        </button>
+                      )}
+                      <button onClick={() => startEdit(r)} title="Edit" style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
+                        <Pencil size={15} />
+                      </button>
+                      <button onClick={() => onDelete(r.id, r.description)} title="Remove" style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            )}
           </div>
         )}
       </Panel>

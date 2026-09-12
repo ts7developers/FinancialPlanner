@@ -23,6 +23,7 @@ import {
   mostRecentUnreconciledPeriod,
   lastPaidPeriod,
 } from "@/lib/derive";
+import { receiptsForFinancialYear } from "@/lib/receipts";
 import { AUD, num } from "@/lib/money";
 import { SURFACE_SUBTLE, CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, PIE_COLORS } from "@/lib/theme";
 import { Metric, Progress, InfoTip } from "@/components/ui/atoms";
@@ -38,7 +39,7 @@ const BorrowingCapacityChart = dynamic(() => import("@/components/charts/Borrowi
 
 export default function OverviewTab() {
   const isMobile = useIsMobile();
-  const { profile, categories, balances, planPath, snapshots, periods, payslips, miscIncome, recurringExpenses, loggedByCat, reconciliations, superContributions, D } = useAppData();
+  const { profile, categories, balances, planPath, snapshots, periods, payslips, miscIncome, recurringExpenses, loggedByCat, reconciliations, superContributions, receipts, D } = useAppData();
 
   const today = isoFromDate(new Date());
   const curPeriod = currentPeriod(periods, today);
@@ -65,6 +66,8 @@ export default function OverviewTab() {
   const payslipMissing = lastPaid !== null && lastPaidIncome === 0;
   const ytd = sumYTD(payslips, financialYearStart(today));
   const taxPaidYTD = ytd.paygwTax + (Number(profile.tax_paid_opening) || 0);
+  const fyReceipts = receiptsForFinancialYear(receipts, financialYearStart(today));
+  const deductionsYTD = fyReceipts.reduce((s, r) => s + (Number(r.amount) || 0), 0);
 
   const fhss = fhssSummary(
     superContributions.map((c) => ({ date: c.date, amount: c.amount, taxDeductible: c.tax_deductible })),
@@ -194,6 +197,12 @@ export default function OverviewTab() {
               ? `incl. ${AUD(profile.tax_paid_opening)} opening balance`
               : "from confirmed payslips"
           }
+        />
+        <Metric
+          icon={Receipt}
+          label="Deductions (FY YTD)"
+          value={AUD(deductionsYTD)}
+          sub={fyReceipts.length > 0 ? `${fyReceipts.length} item${fyReceipts.length === 1 ? "" : "s"} on Receipts` : "none logged yet"}
         />
         <Metric icon={TrendingUp} label="Planned surplus / fn" value={AUD(D.netFTfn - D.expFN(2027))} sub="2027+, all costs running" />
         <Metric icon={PiggyBank} label="Emergency fund" value={AUD(num(balances.emergency))} sub={`target ${AUD(profile.emergency_target)}`} accent={FAV} />
