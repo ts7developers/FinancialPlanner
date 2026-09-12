@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bell, BellOff } from "lucide-react";
 import { Panel } from "@/components/ui/atoms";
-import { GOLD, INK, MUTE, LINE } from "@/lib/theme";
+import { UNFAV, GOLD, ON_ACCENT_DARK, MUTE, LINE } from "@/lib/theme";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -101,7 +101,7 @@ export default function NotificationsPanel() {
             alignItems: "center",
             gap: 6,
             background: subscribed ? "transparent" : GOLD,
-            color: subscribed ? MUTE : INK,
+            color: subscribed ? MUTE : ON_ACCENT_DARK,
             border: subscribed ? `1px solid ${LINE}` : "none",
             borderRadius: 8,
             padding: "9px 15px",
@@ -115,7 +115,7 @@ export default function NotificationsPanel() {
           {subscribed ? <BellOff size={14} /> : <Bell size={14} />} {busy ? "Working…" : subscribed ? "Turn off reminders" : "Enable reminders"}
         </button>
       )}
-      {error && <div style={{ fontSize: 12, color: "#C0492F", marginTop: 8 }}>{error}</div>}
+      {error && <div style={{ fontSize: 12, color: UNFAV, marginTop: 8 }}>{error}</div>}
     </Panel>
   );
 }

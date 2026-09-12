@@ -9,7 +9,7 @@ import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
 import { BORROW_MULT_LOW, BORROW_MULT_HIGH, WEEKDAY_NAMES, periodEndWeekday, paydayForPeriod, paydayWeekday, offsetForPaydayWeekday } from "@/lib/derive";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
 import { AUD } from "@/lib/money";
-import { NAVY, MUTE, GOLD, LINE, UNFAV, CARD, inputStyle, selStyle } from "@/lib/theme";
+import { WARN_BG, WARN_TEXT, SURFACE_DARK, NAVY, MUTE, GOLD, LINE, UNFAV, CARD, inputStyle, selStyle } from "@/lib/theme";
 import { Panel, PInput, Derived, Collapsible } from "@/components/ui/atoms";
 import NotificationsPanel from "@/components/NotificationsPanel";
 import type { Profile } from "@/lib/types";
@@ -296,7 +296,7 @@ export default function SettingsTab() {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button
             onClick={copyForClaude}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: NAVY, color: "#fff", border: "none", borderRadius: 8, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif" }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: SURFACE_DARK, color: "#fff", border: "none", borderRadius: 8, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif" }}
           >
             <Copy size={14} /> Copy figures for Claude
           </button>
@@ -453,8 +453,8 @@ export default function SettingsTab() {
                 </div>
               </div>
 
-              <div style={{ background: "#FBEDE9", border: `1px solid ${UNFAV}`, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ fontSize: 12.5, color: "#8A3320", lineHeight: 1.5 }}>
+              <div style={{ background: WARN_BG, border: `1px solid ${UNFAV}`, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ fontSize: 12.5, color: WARN_TEXT, lineHeight: 1.5 }}>
                   {resetAnySelected ? `This permanently deletes: ${resetSelectedKeys.map((k) => RESET_LABELS[k]).join(", ")}. This can't be undone.` : "Tick at least one item above to enable the reset."}
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

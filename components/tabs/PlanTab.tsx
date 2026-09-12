@@ -6,7 +6,7 @@ import { useAppData } from "@/components/AppDataProvider";
 import { isoFromDate } from "@/lib/period";
 import { sinkingFundTotal } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { NAVY, MUTE, GOLD, LINE, INK, inputStyle, selStyle } from "@/lib/theme";
+import { MUTE_ICON, ON_ACCENT_DARK, SURFACE_SUBTLE, NAVY, MUTE, GOLD, LINE, inputStyle, selStyle } from "@/lib/theme";
 import { Panel, Field } from "@/components/ui/atoms";
 import type { BudgetFrequency } from "@/lib/types";
 
@@ -115,7 +115,7 @@ export default function PlanTab() {
               onBlur={(e) => commitCategory(c.key, "a27", e.target.value)}
               style={inputStyle}
             />
-            <button onClick={() => onDeleteCategory(c.key, catInputs[c.key]?.label ?? c.label)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex", justifyContent: "center" }}>
+            <button onClick={() => onDeleteCategory(c.key, catInputs[c.key]?.label ?? c.label)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex", justifyContent: "center" }}>
               <Trash2 size={14} />
             </button>
           </div>
@@ -135,7 +135,7 @@ export default function PlanTab() {
           <span />
         </div>
         {activeRecurringCount > 0 && (
-          <div style={{ marginTop: 12, padding: "10px 12px", background: "#F4EFE1", borderRadius: 8, fontSize: 12, color: NAVY, lineHeight: 1.5 }}>
+          <div style={{ marginTop: 12, padding: "10px 12px", background: SURFACE_SUBTLE, borderRadius: 8, fontSize: 12, color: NAVY, lineHeight: 1.5 }}>
             Plus <b>{AUD(recurringFortnightTotal, 2)}/fn</b> set aside for {activeRecurringCount} recurring bill{activeRecurringCount === 1 ? "" : "s"} on{" "}
             <b>Expenses</b> (rego, insurance, subscriptions) — not counted in the totals above, so check nothing&apos;s budgeted in both places at once.
           </div>
@@ -154,7 +154,7 @@ export default function PlanTab() {
           <button
             onClick={onAddCategory}
             disabled={newCatBusy || !newCatLabel.trim()}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: newCatBusy ? "default" : "pointer", opacity: newCatBusy || !newCatLabel.trim() ? 0.6 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: newCatBusy ? "default" : "pointer", opacity: newCatBusy || !newCatLabel.trim() ? 0.6 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
           >
             <Plus size={14} /> Add
           </button>

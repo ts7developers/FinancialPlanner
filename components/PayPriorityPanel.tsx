@@ -4,7 +4,7 @@ import { useState } from "react";
 import { RotateCcw, ListOrdered, Plus, X } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { resolveAllocationOrder, EMERGENCY_ALLOCATION_ID, DEPOSIT_ALLOCATION_ID, EXTRA_BALANCE_DESTINATIONS } from "@/lib/derive";
-import { LINE, MUTE, GOLD, INK, NAVY, UNFAV, selStyle } from "@/lib/theme";
+import { GOLD_MUTE, ON_ACCENT_DARK, SURFACE_SUBTLE, LINE, MUTE, GOLD, NAVY, UNFAV, PIE_COLORS, selStyle } from "@/lib/theme";
 import { Panel, Field } from "@/components/ui/atoms";
 import type { AllocationOrder, Goal } from "@/lib/types";
 
@@ -103,9 +103,36 @@ export default function PayPriorityPanel() {
         proportionally, so they don&apos;t need to add up to exactly 100 — but aiming for 100 keeps it easy to reason about. Once a destination reaches its target, its leftover
         share flows to the rest automatically.
       </div>
+
+      {totalPct > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", height: 14, borderRadius: 7, overflow: "hidden", border: `1px solid ${LINE}` }}>
+            {order
+              .filter((t) => t.weightPct > 0)
+              .map((t, i) => (
+                <div
+                  key={t.id}
+                  title={`${destinationLabel(t.id, goals)} — ${((t.weightPct / totalPct) * 100).toFixed(0)}%`}
+                  style={{ width: `${(t.weightPct / totalPct) * 100}%`, background: PIE_COLORS[i % PIE_COLORS.length] }}
+                />
+              ))}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", marginTop: 8 }}>
+            {order
+              .filter((t) => t.weightPct > 0)
+              .map((t, i) => (
+                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: MUTE }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 3, background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0 }} />
+                  {destinationLabel(t.id, goals)} · {((t.weightPct / totalPct) * 100).toFixed(0)}%
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {order.map((t) => (
-          <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 10px", background: "#FBF9F2", border: `1px solid ${LINE}`, borderRadius: 8 }}>
+          <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 10px", background: SURFACE_SUBTLE, border: `1px solid ${LINE}`, borderRadius: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: NAVY }}>{destinationLabel(t.id, goals)}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <input
@@ -113,11 +140,11 @@ export default function PayPriorityPanel() {
                 inputMode="decimal"
                 value={t.weightPct}
                 onChange={(e) => setWeight(t.id, Number(e.target.value))}
-                style={{ ...selStyle, width: 60, height: 28, fontSize: 12, textAlign: "right" }}
+                style={{ ...selStyle, width: 64, height: 36, fontSize: 12, textAlign: "right" }}
               />
               <span style={{ color: MUTE, fontSize: 12 }}>%</span>
               {t.id !== EMERGENCY_ALLOCATION_ID && t.id !== DEPOSIT_ALLOCATION_ID && (
-                <button onClick={() => removeDestination(t.id)} disabled={busy} title="Remove" style={{ background: "none", border: "none", cursor: "pointer", color: "#A99B6E", display: "flex" }}>
+                <button onClick={() => removeDestination(t.id)} disabled={busy} title="Remove" style={{ background: "none", border: "none", cursor: "pointer", color: GOLD_MUTE, display: "flex" }}>
                   <X size={14} />
                 </button>
               )}
@@ -153,7 +180,7 @@ export default function PayPriorityPanel() {
           <button
             onClick={onAddGoal}
             disabled={goalBusy || !newGoalLabel.trim() || !(Number(newGoalTarget) > 0)}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", height: 36, fontFamily: "var(--font-space-grotesk), sans-serif" }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 8, padding: "9px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", height: 36, fontFamily: "var(--font-space-grotesk), sans-serif" }}
           >
             <Plus size={14} /> Add goal
           </button>

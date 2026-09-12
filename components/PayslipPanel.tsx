@@ -7,7 +7,7 @@ import { useFortnightBreakdown } from "@/components/useFortnightBreakdown";
 import { createClient } from "@/lib/supabase/client";
 import { EMERGENCY_ALLOCATION_ID, DEPOSIT_ALLOCATION_ID } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, INK, FAV, UNFAV, NAVY, inputStyle } from "@/lib/theme";
+import { CARD, LINE, MUTE, GOLD, INK, ON_ACCENT_DARK, FAV, UNFAV, NAVY, inputStyle } from "@/lib/theme";
 import { InfoTip } from "@/components/ui/atoms";
 import type { PayslipExtraction } from "@/lib/payslipSchema";
 import type { Payslip } from "@/lib/types";
@@ -137,7 +137,7 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
           <button
             onClick={handleConfirm}
             disabled={busy}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif" }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif" }}
           >
             <Check size={14} /> Confirm &amp; add to Everyday
           </button>
@@ -264,7 +264,7 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
           </div>
         </div>
       )}
-      {error && <div style={{ fontSize: 12, color: "#C0492F", marginTop: 8 }}>{error}</div>}
+      {error && <div style={{ fontSize: 12, color: UNFAV, marginTop: 8 }}>{error}</div>}
     </div>
   );
 }

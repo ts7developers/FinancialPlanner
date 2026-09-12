@@ -3,7 +3,7 @@
 import { useRouter, usePathname } from "next/navigation";
 import { Plus } from "lucide-react";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { GOLD, INK } from "@/lib/theme";
+import { GOLD, ON_ACCENT_DARK } from "@/lib/theme";
 
 /** Mobile-only shortcut to the expense form — desktop already keeps it visible at all times. */
 export default function QuickAddFab() {
@@ -26,7 +26,7 @@ export default function QuickAddFab() {
         height: 54,
         borderRadius: "50%",
         background: GOLD,
-        color: INK,
+        color: ON_ACCENT_DARK,
         border: "none",
         boxShadow: "0 8px 20px rgba(22,32,58,.3)",
         display: "flex",

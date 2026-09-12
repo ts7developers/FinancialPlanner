@@ -4,7 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { requestSignInLink, signInWithPin, type RequestLinkState, type PinSignInState } from "../actions";
 import { getRememberedEmail, setRememberedEmail, clearRememberedEmail } from "@/lib/pinAuth";
-import { NAVY, MUTE } from "@/lib/theme";
+import { NAVY, MUTE, UNFAV } from "@/lib/theme";
 import AuthShell, { fieldLabelStyle, fieldStyle, pinFieldStyle, authButtonStyle } from "@/components/AuthShell";
 
 const initialRequestState: RequestLinkState = {};
@@ -74,7 +74,7 @@ export default function LoginPage() {
             </label>
             <input id="email" name="email" type="email" required defaultValue={email} placeholder="you@example.com" style={fieldStyle} />
           </div>
-          {requestState.error && <div style={{ fontSize: 12.5, color: "#C0492F" }}>{requestState.error}</div>}
+          {requestState.error && <div style={{ fontSize: 12.5, color: UNFAV }}>{requestState.error}</div>}
           <button type="submit" disabled={requestPending} style={authButtonStyle(requestPending)}>
             {requestPending ? "Sending…" : "Send me a link"}
           </button>
@@ -116,7 +116,7 @@ export default function LoginPage() {
               style={pinFieldStyle}
             />
           </div>
-          {pinSignInState.error && <div style={{ fontSize: 12.5, color: "#C0492F" }}>{pinSignInState.error}</div>}
+          {pinSignInState.error && <div style={{ fontSize: 12.5, color: UNFAV }}>{pinSignInState.error}</div>}
           <button type="submit" disabled={pinSignInPending} style={authButtonStyle(pinSignInPending)}>
             {pinSignInPending ? "Signing in…" : "Unlock"}
           </button>
@@ -156,7 +156,7 @@ export default function LoginPage() {
           </label>
           <input id="pin" name="pin" type="password" inputMode="numeric" autoComplete="current-password" maxLength={6} required placeholder="••••••" style={pinFieldStyle} />
         </div>
-        {pinSignInState.error && <div style={{ fontSize: 12.5, color: "#C0492F" }}>{pinSignInState.error}</div>}
+        {pinSignInState.error && <div style={{ fontSize: 12.5, color: UNFAV }}>{pinSignInState.error}</div>}
         <button type="submit" disabled={pinSignInPending} style={authButtonStyle(pinSignInPending)}>
           {pinSignInPending ? "Signing in…" : "Unlock"}
         </button>

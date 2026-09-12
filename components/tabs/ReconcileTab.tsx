@@ -8,7 +8,7 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import { currentPeriod, dateFromISO, dayLabel, financialYearStart, isFT, isoFromDate, periodLabel } from "@/lib/period";
 import { plannedIncomeFN, reconcileCategoryRows, summarizeReconciliation, sumYTD, buildVarianceReport, buildVarianceInsights, actualIncomeForPeriod, paydayForPeriod } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, INK, GOLD_SOFT, FAV, UNFAV, inputStyle } from "@/lib/theme";
+import { FAV_BG, FAV_TEXT, SURFACE_SUBTLE, SURFACE_DARK, SURFACE_DARK_2, ON_ACCENT_GOLD, WARN_BG, WARN_TEXT, ON_ACCENT_DARK, CARD, LINE, MUTE, GOLD, GOLD_SOFT, NAVY, FAV, UNFAV, inputStyle } from "@/lib/theme";
 import { Row, Cell2, VarTag, Stat, Collapsible, InfoTip } from "@/components/ui/atoms";
 import PayslipPanel from "@/components/PayslipPanel";
 
@@ -170,7 +170,7 @@ export default function ReconcileTab() {
             alignItems: "center",
             gap: 6,
             background: autofillablePayAmount <= 0 ? "transparent" : GOLD,
-            color: autofillablePayAmount <= 0 ? MUTE : INK,
+            color: autofillablePayAmount <= 0 ? MUTE : ON_ACCENT_DARK,
             border: autofillablePayAmount <= 0 ? `1px solid ${LINE}` : "none",
             borderRadius: 8,
             padding: "6px 12px",
@@ -192,7 +192,7 @@ export default function ReconcileTab() {
             alignItems: "center",
             gap: 6,
             background: autofillableCount === 0 ? "transparent" : GOLD,
-            color: autofillableCount === 0 ? MUTE : INK,
+            color: autofillableCount === 0 ? MUTE : ON_ACCENT_DARK,
             border: autofillableCount === 0 ? `1px solid ${LINE}` : "none",
             borderRadius: 8,
             padding: "6px 12px",
@@ -212,7 +212,7 @@ export default function ReconcileTab() {
             display: "flex",
             alignItems: "center",
             gap: 6,
-            background: NAVY,
+            background: SURFACE_DARK,
             color: "#fff",
             border: "none",
             borderRadius: 8,
@@ -286,14 +286,14 @@ export default function ReconcileTab() {
       </div>
 
       {!summary.anyActual && !loggedByCat[period] && (
-        <div style={{ background: "#F4EFE1", border: `1px solid ${GOLD_SOFT}`, borderRadius: 12, padding: "12px 16px", fontSize: 12.5, color: NAVY, lineHeight: 1.5 }}>
+        <div style={{ background: SURFACE_SUBTLE, border: `1px solid ${GOLD_SOFT}`, borderRadius: 12, padding: "12px 16px", fontSize: 12.5, color: NAVY, lineHeight: 1.5 }}>
           Nothing logged for this fortnight yet. Log expenses on <b>Expenses</b> and they&apos;ll fill in below automatically — or type an actual straight into a row to override it.
         </div>
       )}
 
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden" }}>
         {!isMobile && (
-          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", background: NAVY, color: "#fff", fontSize: 11.5, fontWeight: 600, letterSpacing: ".04em", textTransform: "uppercase" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", background: SURFACE_DARK, color: "#fff", fontSize: 11.5, fontWeight: 600, letterSpacing: ".04em", textTransform: "uppercase" }}>
             <div style={{ padding: "11px 16px" }}>Line</div>
             <div style={{ padding: "11px 16px", textAlign: "right" }}>Planned</div>
             <div style={{ padding: "11px 16px", textAlign: "right" }}>Actual</div>
@@ -321,7 +321,7 @@ export default function ReconcileTab() {
           }
           variance={summary.actInc === null ? null : summary.actInc - planInc}
         />
-        <div style={{ padding: "8px 16px 4px", fontSize: 11, letterSpacing: ".05em", textTransform: "uppercase", color: MUTE, background: "#FBF9F2" }}>Expenses</div>
+        <div style={{ padding: "8px 16px 4px", fontSize: 11, letterSpacing: ".05em", textTransform: "uppercase", color: MUTE, background: SURFACE_SUBTLE }}>Expenses</div>
         {catRows.map((r) => (
           <Row
             key={r.id}
@@ -348,7 +348,7 @@ export default function ReconcileTab() {
           />
         ))}
         {isMobile ? (
-          <div style={{ background: "#F4EFE1", borderTop: `2px solid ${GOLD}`, padding: "12px 14px", fontFamily: "var(--font-space-grotesk), sans-serif" }}>
+          <div style={{ background: SURFACE_SUBTLE, borderTop: `2px solid ${GOLD}`, padding: "12px 14px", fontFamily: "var(--font-space-grotesk), sans-serif" }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
               <span>Total expenses</span>
               {summary.anyActual ? <VarTag v={summary.expVar} /> : <span style={{ color: MUTE }}>—</span>}
@@ -359,7 +359,7 @@ export default function ReconcileTab() {
             </div>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", background: "#F4EFE1", borderTop: `2px solid ${GOLD}`, fontWeight: 700, fontFamily: "var(--font-space-grotesk), sans-serif" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", background: SURFACE_SUBTLE, borderTop: `2px solid ${GOLD}`, fontWeight: 700, fontFamily: "var(--font-space-grotesk), sans-serif" }}>
             <Cell2>Total expenses</Cell2>
             <Cell2 right>{AUD(summary.totPlanExp)}</Cell2>
             <Cell2 right>{summary.anyActual ? AUD(summary.totActExp) : "—"}</Cell2>
@@ -368,9 +368,9 @@ export default function ReconcileTab() {
         )}
       </div>
 
-      <div style={{ background: `linear-gradient(120deg, ${INK}, ${NAVY})`, color: "#fff", borderRadius: 14, padding: "18px 20px", display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ background: `linear-gradient(120deg, ${SURFACE_DARK}, ${SURFACE_DARK_2})`, color: "#fff", borderRadius: 14, padding: "18px 20px", display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <div style={{ fontSize: 11, letterSpacing: ".1em", textTransform: "uppercase", color: GOLD_SOFT }}>Surplus this fortnight</div>
+          <div style={{ fontSize: 11, letterSpacing: ".1em", textTransform: "uppercase", color: ON_ACCENT_GOLD }}>Surplus this fortnight</div>
           <div style={{ display: "flex", gap: 26, marginTop: 6 }}>
             <Stat k="Planned" v={AUD(summary.planSurplus)} />
             <Stat k="Actual" v={summary.anyActual ? AUD(summary.actSurplus) : "—"} />
@@ -420,8 +420,8 @@ export default function ReconcileTab() {
                       padding: "8px 12px",
                       borderRadius: 8,
                       fontSize: 12.5,
-                      background: ins.favorable ? "#EAF5EE" : "#FBEDE9",
-                      color: ins.favorable ? "#1E5C3B" : "#8A3320",
+                      background: ins.favorable ? FAV_BG : WARN_BG,
+                      color: ins.favorable ? FAV_TEXT : WARN_TEXT,
                     }}
                   >
                     {ins.favorable ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
@@ -459,7 +459,7 @@ export default function ReconcileTab() {
 function Stat2({ label, value, sign }: { label: string; value: string; sign?: number }) {
   const color = sign === undefined ? NAVY : sign >= 0 ? FAV : UNFAV;
   return (
-    <div style={{ background: "#FBF9F2", border: `1px solid ${LINE}`, borderRadius: 10, padding: "9px 14px", minWidth: 140 }}>
+    <div style={{ background: SURFACE_SUBTLE, border: `1px solid ${LINE}`, borderRadius: 10, padding: "9px 14px", minWidth: 140 }}>
       <div style={{ fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600 }}>{label}</div>
       <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontSize: 17, fontWeight: 600, color, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
         {sign !== undefined && sign !== 0 ? (sign > 0 ? "+" : "−") : ""}

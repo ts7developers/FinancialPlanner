@@ -1,9 +1,10 @@
 "use client";
 
 import { useIsMobile } from "@/lib/useIsMobile";
-import { INK, NAVY, GOLD } from "@/lib/theme";
+import { SURFACE_DARK, SURFACE_DARK_2, GOLD } from "@/lib/theme";
 import TabNav from "./TabNav";
 import SignOutButton from "./SignOutButton";
+import ThemeToggle from "./ThemeToggle";
 
 export default function AppHeader() {
   const isMobile = useIsMobile();
@@ -12,7 +13,7 @@ export default function AppHeader() {
     <div
       className="no-print"
       style={{
-        background: `linear-gradient(120deg, ${INK}, ${NAVY} 70%)`,
+        background: `linear-gradient(120deg, ${SURFACE_DARK}, ${SURFACE_DARK_2} 70%)`,
         color: "#fff",
         padding: isMobile ? "16px 16px 0" : "22px 26px 0",
         position: "sticky",
@@ -35,7 +36,10 @@ export default function AppHeader() {
               </div>
             )}
           </div>
-          <SignOutButton />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <ThemeToggle />
+            <SignOutButton />
+          </div>
         </div>
         <div style={{ marginTop: isMobile ? 12 : 18 }}>
           <TabNav isMobile={isMobile} />

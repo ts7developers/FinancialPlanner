@@ -24,7 +24,7 @@ import {
   lastPaidPeriod,
 } from "@/lib/derive";
 import { AUD, num } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, PIE_COLORS } from "@/lib/theme";
+import { SURFACE_SUBTLE, CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, PIE_COLORS } from "@/lib/theme";
 import { Metric, Progress, InfoTip } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import Link from "next/link";
@@ -165,7 +165,7 @@ export default function OverviewTab() {
                 flex: isMobile ? "1 1 100%" : "0 1 auto",
               }}
             >
-              <span style={{ width: 30, height: 30, borderRadius: 8, background: "#F1ECDD", color: GOLD, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <span style={{ width: 30, height: 30, borderRadius: 8, background: SURFACE_SUBTLE, color: GOLD, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <Icon size={16} />
               </span>
               <span>

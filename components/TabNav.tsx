@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PAPER, NAVY, GOLD } from "@/lib/theme";
+import { PAPER, NAVY, GOLD, SURFACE_DARK } from "@/lib/theme";
 import { NAV_GROUPS } from "@/lib/navGroups";
 
 export default function TabNav({ isMobile }: { isMobile: boolean }) {
@@ -20,7 +20,7 @@ export default function TabNav({ isMobile }: { isMobile: boolean }) {
           bottom: 0,
           zIndex: 25,
           display: "flex",
-          background: NAVY,
+          background: SURFACE_DARK,
           borderTop: "1px solid rgba(255,255,255,.08)",
           paddingBottom: "env(safe-area-inset-bottom)",
         }}

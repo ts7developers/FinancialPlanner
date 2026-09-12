@@ -1,5 +1,4 @@
 import type { MetadataRoute } from "next";
-import { NAVY, PAPER } from "@/lib/theme";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -8,8 +7,11 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Fortnightly plan-vs-actual finance reconciliation.",
     start_url: "/overview",
     display: "standalone",
-    background_color: PAPER,
-    theme_color: NAVY,
+    // Fixed literals, not lib/theme's CSS-variable exports — a manifest.json field isn't resolved
+    // through a stylesheet, so `var(...)` would just be an invalid, meaningless string here. Same
+    // light-mode brand colors as the OS splash screen regardless of the in-app theme toggle.
+    background_color: "#F7F5EF",
+    theme_color: "#1F2A44",
     icons: [
       { src: "/icons/192", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icons/192", sizes: "192x192", type: "image/png", purpose: "maskable" },

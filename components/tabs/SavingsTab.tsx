@@ -24,7 +24,7 @@ import {
   resolveAllocationOrder,
 } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
+import { MUTE_ICON, ON_ACCENT_DARK, SURFACE_SUBTLE, WARN_BG, WARN_TEXT, CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
 import { Metric, Field, Progress } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { NetWorthChartRow } from "@/components/charts/NetWorthChart";
@@ -183,7 +183,7 @@ export default function SavingsTab() {
             FHSS net releasable <b style={{ color: NAVY }}>{AUD(fhss.estimatedNetReleasable)}</b>
           </span>
           <span style={{ color: MUTE }}>
-            Still needed <b style={{ color: depositRemaining > 0 ? "#C0492F" : FAV }}>{AUD(depositRemaining)}</b>
+            Still needed <b style={{ color: depositRemaining > 0 ? UNFAV : FAV }}>{AUD(depositRemaining)}</b>
           </span>
           <span style={{ color: MUTE }}>
             At current rate <b style={{ color: NAVY }}>{etaLabel}</b>
@@ -236,7 +236,7 @@ export default function SavingsTab() {
           </div>
         </div>
         {goalFlash && (
-          <div style={{ background: "#FBEDE9", color: "#8A3320", borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>{goalFlash}</div>
+          <div style={{ background: WARN_BG, color: WARN_TEXT, borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>{goalFlash}</div>
         )}
         {goals.length === 0 ? (
           <div style={{ fontSize: 12.5, color: MUTE, marginBottom: 14 }}>
@@ -264,7 +264,7 @@ export default function SavingsTab() {
                         title="Update how much you've actually saved toward this goal"
                         style={{ ...selStyle, width: 90, textAlign: "right", fontSize: 12 }}
                       />
-                      <button onClick={() => onDeleteGoal(g.id, g.label)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                      <button onClick={() => onDeleteGoal(g.id, g.label)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -280,17 +280,17 @@ export default function SavingsTab() {
       </div>
 
       {adaptiveCategories.length > 0 && (
-        <div style={{ background: "#FBEDE9", border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: "#8A3320" }}>
+        <div style={{ background: WARN_BG, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: WARN_TEXT }}>
             This projection uses recent actuals, not the Budget plan, for {adaptiveCategories.length} categor{adaptiveCategories.length === 1 ? "y" : "ies"}
           </div>
-          <div style={{ fontSize: 11.5, color: "#8A3320", marginBottom: 8, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 11.5, color: WARN_TEXT, marginBottom: 8, lineHeight: 1.5 }}>
             3+ fortnights running consistently over or under plan (same streak flagged on <b>Reconcile</b>) — the net worth
             projection below reacts to that instead of assuming the old plan number forever.
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px" }}>
             {adaptiveCategories.map((r) => (
-              <span key={r.id} style={{ fontSize: 12, color: "#8A3320" }}>
+              <span key={r.id} style={{ fontSize: 12, color: WARN_TEXT }}>
                 {r.label} <span style={{ color: "#B87A69" }}>plan {AUD(r.planRate)}</span> → <b>{AUD(r.effectiveRate)}</b>
               </span>
             ))}
@@ -311,8 +311,8 @@ export default function SavingsTab() {
                   key={s.id}
                   onClick={() => setScenarioId(s.id)}
                   style={{
-                    background: on ? GOLD : "#F4EFE1",
-                    color: on ? "#16203A" : NAVY,
+                    background: on ? GOLD : SURFACE_SUBTLE,
+                    color: on ? ON_ACCENT_DARK : NAVY,
                     border: "none",
                     borderRadius: 999,
                     padding: "7px 14px",

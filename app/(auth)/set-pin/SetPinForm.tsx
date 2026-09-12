@@ -4,7 +4,7 @@ import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { setPin, type SetPinState } from "../actions";
 import { setRememberedEmail } from "@/lib/pinAuth";
-import { NAVY, MUTE } from "@/lib/theme";
+import { NAVY, MUTE, UNFAV } from "@/lib/theme";
 import AuthShell, { fieldLabelStyle, pinFieldStyle, authButtonStyle } from "@/components/AuthShell";
 
 const initialState: SetPinState = {};
@@ -36,7 +36,7 @@ export default function SetPinForm({ email }: { email: string }) {
           </label>
           <input id="pin" name="pin" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} required placeholder="••••••" autoFocus style={pinFieldStyle} />
         </div>
-        {state.error && <div style={{ fontSize: 12.5, color: "#C0492F" }}>{state.error}</div>}
+        {state.error && <div style={{ fontSize: 12.5, color: UNFAV }}>{state.error}</div>}
         <button type="submit" disabled={pending} style={authButtonStyle(pending)}>
           {pending ? "Saving…" : "Save PIN & continue"}
         </button>

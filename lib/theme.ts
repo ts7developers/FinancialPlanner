@@ -3,17 +3,45 @@
 import type { CSSProperties } from "react";
 import type { Balances } from "./types";
 
-export const INK = "#16203A";
-export const NAVY = "#1F2A44";
-export const NAVY2 = "#2C3A5C";
-export const GOLD = "#C6A052";
-export const GOLD_SOFT = "#E7D6A8";
-export const PAPER = "#F7F5EF";
-export const CARD = "#FFFFFF";
-export const LINE = "#E4E0D4";
-export const FAV = "#2E7D5B";
-export const UNFAV = "#C0492F";
-export const MUTE = "#6B7280";
+// Every value below resolves to a CSS custom property (defined for both light and dark in
+// globals.css) rather than a literal hex, so toggling the theme repaints every component that
+// imports these — no other file needs to change when the palette itself changes.
+export const INK = "var(--ink)";
+export const NAVY = "var(--navy)";
+export const NAVY2 = "var(--navy-2)";
+export const GOLD = "var(--gold)";
+export const GOLD_SOFT = "var(--gold-soft)";
+export const PAPER = "var(--paper)";
+export const CARD = "var(--card)";
+export const LINE = "var(--line)";
+export const FAV = "var(--fav)";
+export const UNFAV = "var(--unfav)";
+export const MUTE = "var(--mute)";
+
+// Semantic tokens for the small set of ad-hoc colors that were previously repeated as literal
+// hex strings across components — centralized here so they theme correctly too, since a bright
+// light-pink "error" banner or light-green "success" banner would otherwise look broken sitting
+// in a dark UI.
+export const SURFACE_SUBTLE = "var(--surface-subtle)";
+export const MUTE_ICON = "var(--mute-icon)";
+export const WARN_BG = "var(--warn-bg)";
+export const WARN_TEXT = "var(--warn-text)";
+export const FAV_BG = "var(--fav-bg)";
+export const FAV_TEXT = "var(--fav-text)";
+export const GOLD_MUTE = "var(--gold-mute)";
+
+// Fixed (non-theme-reactive) dark-navy accent — for banners, table headers, and the active nav
+// pill that are meant to read as "a dark chip" in both light and dark mode, as opposed to
+// NAVY/INK above which are primary *text* colors that intentionally invert with the theme. Text
+// sitting on these two stays a literal white; text sitting on GOLD stays ON_ACCENT_DARK, since
+// gold is a similar mid-tone in both palettes and dark text remains the readable choice on it.
+export const SURFACE_DARK = "#1F2A44";
+export const SURFACE_DARK_2 = "#2C3A5C";
+export const ON_ACCENT_DARK = "#16203A";
+/** A light gold label color for text sitting on SURFACE_DARK — unlike GOLD_SOFT (which
+ * intentionally inverts to a dark muted-gold for use as a subtle fill/border on a normal card),
+ * this one stays light in both themes since SURFACE_DARK itself never lightens. */
+export const ON_ACCENT_GOLD = "#E7D6A8";
 
 export const PIE_COLORS = [
   "#1F2A44", "#C6A052", "#2E7D5B", "#5B6B8C", "#B08636",
@@ -45,14 +73,16 @@ export const BALANCE_FIELDS: [keyof Omit<Balances, "user_id">, string][] = [
   ["hecs", "HECS-HELP (owing)"],
 ];
 
+// Padding (not just font-size) sets the touch target here — ~40px tall including the border,
+// comfortably inside the ~40-44px thumb-tap guideline since this app runs as a phone PWA.
 export const selStyle: CSSProperties = {
-  padding: "7px 9px",
+  padding: "10px 11px",
   border: `1px solid ${LINE}`,
   borderRadius: 8,
   fontFamily: "var(--font-inter), sans-serif",
   fontSize: 13,
   color: NAVY,
-  background: "#FCFBF7",
+  background: "var(--input-bg)",
 };
 
 export const chartTooltipStyle: CSSProperties = {
@@ -62,12 +92,14 @@ export const chartTooltipStyle: CSSProperties = {
   fontFamily: "Inter",
   boxShadow: "0 8px 24px rgba(22,32,58,.12)",
   padding: "8px 12px",
+  background: CARD,
+  color: NAVY,
 };
 
 export const inputStyle: CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
-  padding: "7px 9px",
+  padding: "10px 11px",
   border: `1px solid ${LINE}`,
   borderRadius: 8,
   fontFamily: "var(--font-inter), sans-serif",
@@ -75,5 +107,5 @@ export const inputStyle: CSSProperties = {
   textAlign: "right",
   fontVariantNumeric: "tabular-nums",
   color: NAVY,
-  background: "#FCFBF7",
+  background: "var(--input-bg)",
 };

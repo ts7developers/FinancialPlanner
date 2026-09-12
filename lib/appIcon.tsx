@@ -1,4 +1,8 @@
-import { INK, GOLD } from "@/lib/theme";
+// Fixed literals, not lib/theme's CSS-variable exports — this renders via Satori (next/og),
+// which can't parse `var(...)` in a style object. An app icon is a static brand mark anyway, so
+// it doesn't need to react to the in-app light/dark toggle the way the rest of the UI does.
+const ICON_BG = "#1F2A44";
+const ICON_GOLD = "#C6A052";
 
 // Shared monogram used by app/icon.tsx, app/apple-icon.tsx, and app/icons/{192,512}/route.tsx —
 // a navy badge with a gold "F" and a ledger-style underline accent, scaled by `size`.
@@ -17,13 +21,13 @@ export function appIconElement(size: number) {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        background: INK,
+        background: ICON_BG,
         borderRadius: radius,
       }}
     >
       <div
         style={{
-          color: GOLD,
+          color: ICON_GOLD,
           fontSize,
           fontWeight: 700,
           fontFamily: "sans-serif",
@@ -36,7 +40,7 @@ export function appIconElement(size: number) {
         style={{
           width: barWidth,
           height: barHeight,
-          background: GOLD,
+          background: ICON_GOLD,
           borderRadius: barHeight,
           marginTop: Math.round(size * 0.06),
         }}

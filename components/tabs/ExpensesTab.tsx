@@ -12,7 +12,7 @@ import { OTHER_CATEGORY_KEY } from "@/lib/categories";
 import { toCSV } from "@/lib/csv";
 import { periodTotals, averageSpend, buildActualSpendTrend, daysUntil, type PieSlice } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, PIE_COLORS, selStyle } from "@/lib/theme";
+import { GOLD_MUTE, MUTE_ICON, UNFAV, ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, ON_ACCENT_DARK, SURFACE_DARK, SURFACE_DARK_2, SURFACE_SUBTLE, NAVY, FAV, PIE_COLORS, selStyle } from "@/lib/theme";
 import { Field, Toast, Metric } from "@/components/ui/atoms";
 import ImportCsvPanel from "@/components/ImportCsvPanel";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
@@ -266,8 +266,8 @@ export default function ExpensesTab() {
                   key={id}
                   onClick={() => setForm((f) => ({ ...f, catId: id }))}
                   style={{
-                    background: on ? GOLD : "#F4EFE1",
-                    color: on ? INK : NAVY,
+                    background: on ? GOLD : SURFACE_SUBTLE,
+                    color: on ? ON_ACCENT_DARK : NAVY,
                     border: "none",
                     borderRadius: 999,
                     padding: "6px 12px",
@@ -285,7 +285,7 @@ export default function ExpensesTab() {
         {isMobile ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <Field label="Amount">
-              <div style={{ display: "flex", alignItems: "center", gap: 4, border: `1px solid ${LINE}`, borderRadius: 8, background: "#FCFBF7", padding: "4px 10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, border: `1px solid ${LINE}`, borderRadius: 8, background: SURFACE_SUBTLE, padding: "4px 10px" }}>
                 <span style={{ color: MUTE, fontSize: 20 }}>$</span>
                 <input
                   ref={amountRef}
@@ -324,7 +324,7 @@ export default function ExpensesTab() {
             <Field label="Date">
               <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} style={{ ...selStyle, width: "100%", height: 42 }} />
             </Field>
-            <button onClick={addTxn} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, background: GOLD, color: INK, border: "none", borderRadius: 10, padding: "13px", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif" }}>
+            <button onClick={addTxn} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 10, padding: "13px", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif" }}>
               <Plus size={18} /> Add expense
             </button>
           </div>
@@ -369,13 +369,13 @@ export default function ExpensesTab() {
                 ))}
               </select>
             </Field>
-            <button onClick={addTxn} style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}>
+            <button onClick={addTxn} style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}>
               <Plus size={15} /> Add
             </button>
           </div>
         )}
         {dateBeforeAnchor && (
-          <div style={{ fontSize: 12, color: "#C0492F", marginTop: 10 }}>
+          <div style={{ fontSize: 12, color: UNFAV, marginTop: 10 }}>
             This date is before your pay cycle starts (see <b>Settings</b>) — it&apos;ll still update balances, but won&apos;t auto-fill into Reconcile or the plan-vs-actual charts.
           </div>
         )}
@@ -409,14 +409,14 @@ export default function ExpensesTab() {
                   <button
                     onClick={() => onLogRecurring(r)}
                     disabled={recBusy === r.id}
-                    style={{ display: "flex", alignItems: "center", gap: 5, background: GOLD, color: INK, border: "none", borderRadius: 7, padding: "7px 12px", fontSize: 12.5, fontWeight: 700, cursor: recBusy === r.id ? "default" : "pointer", opacity: recBusy === r.id ? 0.6 : 1, fontFamily: "var(--font-space-grotesk), sans-serif" }}
+                    style={{ display: "flex", alignItems: "center", gap: 5, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 7, padding: "7px 12px", fontSize: 12.5, fontWeight: 700, cursor: recBusy === r.id ? "default" : "pointer", opacity: recBusy === r.id ? 0.6 : 1, fontFamily: "var(--font-space-grotesk), sans-serif" }}
                   >
                     <Plus size={13} /> Log it
                   </button>
-                  <button onClick={() => onToggleRecurring(r)} title="Pause" style={{ background: "none", border: "none", cursor: "pointer", color: "#A99B6E", display: "flex" }}>
+                  <button onClick={() => onToggleRecurring(r)} title="Pause" style={{ background: "none", border: "none", cursor: "pointer", color: GOLD_MUTE, display: "flex" }}>
                     <Pause size={14} />
                   </button>
-                  <button onClick={() => onDeleteRecurring(r)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                  <button onClick={() => onDeleteRecurring(r)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -444,10 +444,10 @@ export default function ExpensesTab() {
                   {FREQ_LABEL[r.frequency]} · next {r.next_due.slice(5)} · in {daysUntil(r.next_due, today)}d
                 </span>
                 <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500, flex: "0 0 auto" }}>{AUD(Number(r.amount), 2)}</span>
-                <button onClick={() => onToggleRecurring(r)} title="Pause" style={{ background: "none", border: "none", cursor: "pointer", color: "#A99B6E", display: "flex" }}>
+                <button onClick={() => onToggleRecurring(r)} title="Pause" style={{ background: "none", border: "none", cursor: "pointer", color: GOLD_MUTE, display: "flex" }}>
                   <Pause size={13} />
                 </button>
-                <button onClick={() => onDeleteRecurring(r)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                <button onClick={() => onDeleteRecurring(r)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -465,7 +465,7 @@ export default function ExpensesTab() {
                 <button onClick={() => onToggleRecurring(r)} title="Resume" style={{ background: "none", border: "none", cursor: "pointer", color: FAV, display: "flex" }}>
                   <Play size={13} />
                 </button>
-                <button onClick={() => onDeleteRecurring(r)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                <button onClick={() => onDeleteRecurring(r)} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -522,12 +522,12 @@ export default function ExpensesTab() {
           <Field label="Next due">
             <input type="date" value={recForm.nextDue} onChange={(e) => setRecForm((f) => ({ ...f, nextDue: e.target.value }))} style={{ ...selStyle, width: 140 }} />
           </Field>
-          <button onClick={addRecurring} style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}>
+          <button onClick={addRecurring} style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}>
             <Plus size={15} /> Add
           </button>
         </div>
         {recDateBeforeAnchor && (
-          <div style={{ fontSize: 12, color: "#C0492F", marginTop: 10 }}>
+          <div style={{ fontSize: 12, color: UNFAV, marginTop: 10 }}>
             This due date is before your pay cycle starts (see <b>Settings</b>) — logging it will still update balances, but won&apos;t auto-fill into Reconcile.
           </div>
         )}
@@ -598,7 +598,7 @@ export default function ExpensesTab() {
                     alignItems: "center",
                     gap: 6,
                     background: "transparent",
-                    color: filteredTxns.length === 0 ? "#C7C2B4" : NAVY,
+                    color: filteredTxns.length === 0 ? MUTE_ICON : NAVY,
                     border: `1px solid ${LINE}`,
                     borderRadius: 8,
                     padding: "8px 12px",
@@ -629,12 +629,12 @@ export default function ExpensesTab() {
                       </div>
                     </div>
                     <span style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{AUD(Number(t.amount), 2)}</span>
-                    <button onClick={() => onDelete(t)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", padding: 8, display: "flex" }}>
+                    <button onClick={() => onDelete(t)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, padding: 8, display: "flex" }}>
                       <Trash2 size={16} />
                     </button>
                   </div>
                 ))}
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 14px", background: "#F4EFE1", borderTop: `2px solid ${GOLD}`, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 700 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 14px", background: SURFACE_SUBTLE, borderTop: `2px solid ${GOLD}`, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 700 }}>
                   <span>Total</span>
                   <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(filterTotal, 2)}</span>
                 </div>
@@ -644,19 +644,19 @@ export default function ExpensesTab() {
                 {filteredTxns.map((t) => (
                   <div key={t.id} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "84px 1fr 108px 120px 96px 34px", alignItems: "center", padding: "8px 14px", borderBottom: `1px solid ${LINE}`, fontSize: 13 }}>
                     <span style={{ color: MUTE, fontVariantNumeric: "tabular-nums" }}>{(t.date || "").slice(5)}</span>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.description || <span style={{ color: "#C7C2B4" }}>—</span>}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.description || <span style={{ color: MUTE_ICON }}>—</span>}</span>
                     <span style={{ fontSize: 11.5, color: MUTE }}>{catLabel(t.category_key)}</span>
                     <span style={{ fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}>
                       <span style={{ width: 8, height: 8, borderRadius: 2, background: ACC_COLOR[t.account as keyof typeof ACC_COLOR] || MUTE }} />
                       {t.account}
                     </span>
                     <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{AUD(Number(t.amount), 2)}</span>
-                    <button onClick={() => onDelete(t)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex", justifyContent: "center" }}>
+                    <button onClick={() => onDelete(t)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex", justifyContent: "center" }}>
                       <Trash2 size={14} />
                     </button>
                   </div>
                 ))}
-                <div style={{ display: "grid", gridTemplateColumns: "84px 1fr 108px 120px 96px 34px", padding: "11px 14px", background: "#F4EFE1", borderTop: `2px solid ${GOLD}`, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 700 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "84px 1fr 108px 120px 96px 34px", padding: "11px 14px", background: SURFACE_SUBTLE, borderTop: `2px solid ${GOLD}`, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 700 }}>
                   <span style={{ gridColumn: "1 / 5" }}>Total {txnFilter === "all" ? "(all)" : ""}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{AUD(filterTotal, 2)}</span>
                   <span />
@@ -682,7 +682,7 @@ export default function ExpensesTab() {
               ))
             )}
           </div>
-          <div style={{ background: `linear-gradient(120deg, ${INK}, ${NAVY})`, borderRadius: 14, padding: 16, fontSize: 12, color: "#C4CDE0", lineHeight: 1.55 }}>
+          <div style={{ background: `linear-gradient(120deg, ${SURFACE_DARK}, ${SURFACE_DARK_2})`, borderRadius: 14, padding: 16, fontSize: 12, color: "#C4CDE0", lineHeight: 1.55 }}>
             Each expense auto-fills the matching line on <b style={{ color: "#E7D6A8" }}>Reconcile</b> for its fortnight, and adjusts the linked account balance on <b style={{ color: "#E7D6A8" }}>Accounts</b> — spend on Credit card increases what&apos;s owed; spend from Everyday, ANZ Plus or Holiday comes off that balance. Fun money and Cash aren&apos;t tracked balances, so those don&apos;t move anything.
           </div>
         </div>

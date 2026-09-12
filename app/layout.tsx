@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, Inter } from "next/font/google";
-import { PAPER, NAVY } from "@/lib/theme";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+import ThemeInit from "@/components/ThemeInit";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -28,15 +28,25 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: NAVY,
+  // A <meta> tag can't resolve a CSS custom property, so this follows the system light/dark
+  // media query directly rather than importing NAVY/PAPER from lib/theme (which are `var(...)`
+  // strings meant for inline styles, not meta content). Doesn't react to the in-app toggle
+  // overriding system preference — a minor cosmetic gap, not worth a client component here.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#1F2A44" },
+    { media: "(prefers-color-scheme: dark)", color: "#10131b" },
+  ],
   width: "device-width",
   initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable}`}>
-      <body style={{ background: PAPER, margin: 0 }}>
+    <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable}`} suppressHydrationWarning>
+      <head>
+        <ThemeInit />
+      </head>
+      <body style={{ margin: 0 }}>
         {children}
         <ServiceWorkerRegister />
       </body>

@@ -6,7 +6,7 @@ import { useAppData } from "@/components/AppDataProvider";
 import { isoFromDate, financialYearStart } from "@/lib/period";
 import { sumYTD, fhssSummary, FHSS_ANNUAL_CAP, FHSS_LIFETIME_CAP, DEFAULT_FHSS_DEEMED_RATE } from "@/lib/derive";
 import { AUD, num } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, FAV, selStyle, BALANCE_FIELDS } from "@/lib/theme";
+import { MUTE_ICON, ON_ACCENT_DARK, UNFAV, CARD, LINE, MUTE, GOLD, NAVY, FAV, selStyle, BALANCE_FIELDS } from "@/lib/theme";
 import { Metric, Progress, Field } from "@/components/ui/atoms";
 import type { SuperContribution, Balances } from "@/lib/types";
 
@@ -144,7 +144,7 @@ export default function SuperTab() {
             Assessable (concessional + earnings) <b style={{ color: NAVY }}>{AUD(fhss.assessableAmount)}</b>
           </span>
           <span style={{ color: MUTE }}>
-            Est. tax on release <b style={{ color: "#C0492F" }}>{AUD(fhss.estimatedTax)}</b>
+            Est. tax on release <b style={{ color: UNFAV }}>{AUD(fhss.estimatedTax)}</b>
           </span>
         </div>
         <div style={{ fontSize: 11, color: MUTE, marginTop: 12, lineHeight: 1.5 }}>
@@ -213,7 +213,7 @@ export default function SuperTab() {
           <button
             onClick={onAdd}
             disabled={busy}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: NAVY, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
           >
             <Plus size={14} /> Add
           </button>
@@ -232,7 +232,7 @@ export default function SuperTab() {
             Used only to estimate deemed earnings above — check the ATO&apos;s current shortfall interest charge rate for the closest figure.
           </div>
         </div>
-        {error && <div style={{ fontSize: 12, color: "#C0492F", marginTop: 8 }}>{error}</div>}
+        {error && <div style={{ fontSize: 12, color: UNFAV, marginTop: 8 }}>{error}</div>}
         {flashMsg && <div style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginTop: 8 }}>{flashMsg}</div>}
       </div>
 
@@ -251,7 +251,7 @@ export default function SuperTab() {
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontWeight: 500 }}>{AUD(c.amount, 2)}</span>
-                  <button onClick={() => onDelete(c.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                  <button onClick={() => onDelete(c.id)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
                     <Trash2 size={14} />
                   </button>
                 </div>

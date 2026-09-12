@@ -1,4 +1,4 @@
-import { INK, NAVY, GOLD, CARD, LINE, MUTE, GOLD_SOFT } from "@/lib/theme";
+import { SURFACE_SUBTLE, SURFACE_DARK, SURFACE_DARK_2, ON_ACCENT_DARK, ON_ACCENT_GOLD, NAVY, GOLD, CARD, LINE, MUTE } from "@/lib/theme";
 
 export const fieldLabelStyle: React.CSSProperties = {
   fontSize: 10.5,
@@ -19,7 +19,7 @@ export const fieldStyle: React.CSSProperties = {
   fontFamily: "var(--font-inter), sans-serif",
   fontSize: 15,
   color: NAVY,
-  background: "#FCFBF7",
+  background: SURFACE_SUBTLE,
 };
 
 export const pinFieldStyle: React.CSSProperties = {
@@ -33,7 +33,7 @@ export const pinFieldStyle: React.CSSProperties = {
 export function authButtonStyle(pending: boolean): React.CSSProperties {
   return {
     background: GOLD,
-    color: INK,
+    color: ON_ACCENT_DARK,
     border: "none",
     borderRadius: 10,
     padding: "12px",
@@ -50,7 +50,7 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
     <div
       style={{
         minHeight: "100vh",
-        background: `linear-gradient(120deg, ${INK}, ${NAVY} 70%)`,
+        background: `linear-gradient(120deg, ${SURFACE_DARK}, ${SURFACE_DARK_2} 70%)`,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -67,7 +67,7 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
           </h1>
         </div>
         <div style={{ background: CARD, borderRadius: 14, padding: 24, border: `1px solid ${LINE}` }}>{children}</div>
-        <div style={{ fontSize: 11, color: GOLD_SOFT, marginTop: 16, textAlign: "center", opacity: 0.8 }}>
+        <div style={{ fontSize: 11, color: ON_ACCENT_GOLD, marginTop: 16, textAlign: "center", opacity: 0.8 }}>
           General information to help you track, not financial advice.
         </div>
       </div>

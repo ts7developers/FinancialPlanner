@@ -6,7 +6,7 @@ import { useAppData } from "@/components/AppDataProvider";
 import { AUD, num } from "@/lib/money";
 import { netPosition, applyTransfer, computeHoldingPL } from "@/lib/derive";
 import { dateFromISO, dayLabel } from "@/lib/period";
-import { CARD, LINE, MUTE, GOLD, INK, NAVY, GOLD_SOFT, FAV, UNFAV, inputStyle, selStyle, BALANCE_FIELDS } from "@/lib/theme";
+import { MUTE_ICON, ON_ACCENT_DARK, ON_ACCENT_GOLD, SURFACE_DARK, SURFACE_DARK_2, CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, UNFAV, inputStyle, selStyle, BALANCE_FIELDS } from "@/lib/theme";
 import { Stat, Field } from "@/components/ui/atoms";
 import type { Balances } from "@/lib/types";
 
@@ -176,7 +176,7 @@ export default function AccountsTab() {
             <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 16 }}>Current balances</div>
             <button
               onClick={onSnapshot}
-              style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 8, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-space-grotesk), sans-serif" }}
             >
               <Camera size={14} /> Snapshot
             </button>
@@ -212,8 +212,8 @@ export default function AccountsTab() {
           {flashMsg && <div style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginTop: 8 }}>{flashMsg}</div>}
         </div>
         <div style={{ flex: "1 1 300px", display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ background: `linear-gradient(120deg, ${INK}, ${NAVY})`, color: "#fff", borderRadius: 14, padding: 20 }}>
-            <div style={{ fontSize: 11, letterSpacing: ".1em", textTransform: "uppercase", color: GOLD_SOFT }}>Net position</div>
+          <div style={{ background: `linear-gradient(120deg, ${SURFACE_DARK}, ${SURFACE_DARK_2})`, color: "#fff", borderRadius: 14, padding: 20 }}>
+            <div style={{ fontSize: 11, letterSpacing: ".1em", textTransform: "uppercase", color: ON_ACCENT_GOLD }}>Net position</div>
             <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontSize: 32, fontWeight: 700, marginTop: 4, fontVariantNumeric: "tabular-nums", color: net >= 0 ? "#fff" : "#F0A08C" }}>
               {net < 0 ? "−" : ""}
               {AUD(Math.abs(net))}
@@ -281,12 +281,12 @@ export default function AccountsTab() {
           <button
             onClick={onTransfer}
             disabled={transferBusy}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: transferBusy ? "default" : "pointer", opacity: transferBusy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: transferBusy ? "default" : "pointer", opacity: transferBusy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
           >
             <ArrowRightLeft size={14} /> Transfer
           </button>
         </div>
-        {transferError && <div style={{ fontSize: 12, color: "#C0492F", marginTop: 8 }}>{transferError}</div>}
+        {transferError && <div style={{ fontSize: 12, color: UNFAV, marginTop: 8 }}>{transferError}</div>}
         {transfers.length > 0 && (
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${LINE}`, display: "flex", flexDirection: "column", gap: 2 }}>
             {transfers.slice(0, 5).map((t) => (
@@ -363,7 +363,7 @@ export default function AccountsTab() {
                   <span style={{ flex: 1, textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
                     {h.last_price != null ? AUD(h.last_price * h.shares, 2) : "—"}
                   </span>
-                  <button onClick={() => onDeleteHolding(h.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                  <button onClick={() => onDeleteHolding(h.id)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -448,7 +448,7 @@ export default function AccountsTab() {
             <button
               onClick={onLogBuy}
               disabled={holdingBusy}
-              style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: holdingBusy ? "default" : "pointer", opacity: holdingBusy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: holdingBusy ? "default" : "pointer", opacity: holdingBusy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
             >
               <Plus size={14} /> Log buy
             </button>
@@ -457,7 +457,7 @@ export default function AccountsTab() {
             Adds to that code&apos;s share count and its average cost, and debits the account it was paid from. Correct the Shares number above directly for sells or fixes — sells aren&apos;t tracked as lots and don&apos;t touch any balance.
           </div>
         </div>
-        {holdingError && <div style={{ fontSize: 12, color: "#C0492F", marginTop: 8 }}>{holdingError}</div>}
+        {holdingError && <div style={{ fontSize: 12, color: UNFAV, marginTop: 8 }}>{holdingError}</div>}
         {holdingLots.length > 0 && (
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${LINE}`, display: "flex", flexDirection: "column", gap: 2 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: MUTE, marginBottom: 4 }}>Recent buys</div>
@@ -468,7 +468,7 @@ export default function AccountsTab() {
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span>{AUD(l.shares * l.price, 2)}</span>
-                  <button onClick={() => onDeleteHoldingLot(l.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                  <button onClick={() => onDeleteHoldingLot(l.id)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
                     <Trash2 size={13} />
                   </button>
                 </div>

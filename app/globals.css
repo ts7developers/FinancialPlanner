@@ -1,4 +1,82 @@
-/* Palette values mirror lib/theme.ts (spec §8) — kept in sync manually since CSS can't import TS. */
+/* Palette values mirror lib/theme.ts (spec §8) — kept in sync manually since CSS can't import TS.
+   Every color lib/theme.ts exports resolves to one of these custom properties, so a component
+   never needs to know which theme is active — it just imports NAVY/CARD/etc as usual. */
+
+:root {
+  --ink: #16203a;
+  --navy: #1f2a44;
+  --navy-2: #2c3a5c;
+  --gold: #c6a052;
+  --gold-soft: #e7d6a8;
+  --paper: #f7f5ef;
+  --card: #ffffff;
+  --line: #e4e0d4;
+  --fav: #2e7d5b;
+  --unfav: #c0492f;
+  --mute: #6b7280;
+  --surface-subtle: #fbf9f2;
+  --mute-icon: #c7c2b4;
+  --input-bg: #fcfbf7;
+  --warn-bg: #fbede9;
+  --warn-text: #8a3320;
+  --fav-bg: #eaf5ee;
+  --fav-text: #1e5c3b;
+  --gold-mute: #a99b6e;
+  --ledger-row-hover: #faf7ee;
+  color-scheme: light;
+}
+
+/* System preference is the default when the user hasn't chosen explicitly (no data-theme yet). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #edeff5;
+    --navy: #e7eaf2;
+    --navy-2: #c9cedd;
+    --gold: #d9bb72;
+    --gold-soft: #4a4023;
+    --paper: #10131b;
+    --card: #1a1f2b;
+    --line: #2b3141;
+    --fav: #4cae87;
+    --unfav: #e0705a;
+    --mute: #97a0b4;
+    --surface-subtle: #1f2530;
+    --mute-icon: #4c5468;
+    --input-bg: #171b26;
+    --warn-bg: #3a1f1a;
+    --warn-text: #e3a28f;
+    --fav-bg: #16281f;
+    --fav-text: #7ecdaa;
+    --gold-mute: #b9a878;
+    --ledger-row-hover: #1c212c;
+    color-scheme: dark;
+  }
+}
+
+/* An explicit user choice (see ThemeToggle) always wins over system preference, either way. */
+:root[data-theme="dark"] {
+  --ink: #edeff5;
+  --navy: #e7eaf2;
+  --navy-2: #c9cedd;
+  --gold: #d9bb72;
+  --gold-soft: #4a4023;
+  --paper: #10131b;
+  --card: #1a1f2b;
+  --line: #2b3141;
+  --fav: #4cae87;
+  --unfav: #e0705a;
+  --mute: #97a0b4;
+  --surface-subtle: #1f2530;
+  --mute-icon: #4c5468;
+  --input-bg: #171b26;
+  --warn-bg: #3a1f1a;
+  --warn-text: #e3a28f;
+  --fav-bg: #16281f;
+  --fav-text: #7ecdaa;
+  --gold-mute: #b9a878;
+  --ledger-row-hover: #1c212c;
+  color-scheme: dark;
+}
 
 html {
   height: 100%;
@@ -13,7 +91,8 @@ body {
 body {
   min-height: 100%;
   font-family: var(--font-inter), "Inter", system-ui, sans-serif;
-  color: #1f2a44; /* NAVY */
+  color: var(--navy);
+  background: var(--paper);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -29,7 +108,7 @@ a {
 
 input:focus,
 select:focus {
-  outline: 2px solid #c6a052; /* GOLD */
+  outline: 2px solid var(--gold);
   outline-offset: 0;
 }
 
@@ -38,7 +117,7 @@ select:focus {
 }
 
 .ledger-row:hover {
-  background: #faf7ee;
+  background: var(--ledger-row-hover);
 }
 
 ::-webkit-scrollbar {
@@ -47,7 +126,7 @@ select:focus {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #e4e0d4; /* LINE */
+  background: var(--line);
   border-radius: 8px;
 }
 

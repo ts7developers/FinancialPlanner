@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAVY, GOLD, INK } from "@/lib/theme";
+import { SURFACE_SUBTLE, NAVY, GOLD, ON_ACCENT_DARK } from "@/lib/theme";
 import { NAV_GROUPS } from "@/lib/navGroups";
 
 /** Renders a small pill switcher between sibling pages within the current nav group — e.g.
@@ -28,8 +28,8 @@ export default function SubNav() {
               fontWeight: 600,
               fontFamily: "var(--font-space-grotesk), sans-serif",
               textDecoration: "none",
-              background: on ? GOLD : "#F1ECDD",
-              color: on ? INK : NAVY,
+              background: on ? GOLD : SURFACE_SUBTLE,
+              color: on ? ON_ACCENT_DARK : NAVY,
             }}
           >
             {m.label}

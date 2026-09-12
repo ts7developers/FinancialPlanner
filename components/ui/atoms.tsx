@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, Info, type LucideIcon } from "lucide-react";
-import { CARD, LINE, MUTE, GOLD, GOLD_SOFT, NAVY, INK, FAV, UNFAV } from "@/lib/theme";
+import { MUTE_ICON, SURFACE_SUBTLE, SURFACE_DARK, CARD, LINE, MUTE, GOLD, GOLD_SOFT, NAVY, FAV, UNFAV } from "@/lib/theme";
 import { AUD } from "@/lib/money";
 
 /** A card whose body starts hidden (or shown, via `defaultOpen`) behind a clickable header — for secondary/detail sections that would otherwise make a busy tab even longer. The header stays visible either way, so a `subtitle` summary is never lost when collapsed. */
@@ -59,7 +59,7 @@ export function Row({
       <div style={{ padding: "11px 14px", borderBottom: `1px solid ${LINE}` }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: 14, fontWeight: isIncome ? 700 : 600 }}>{label}</span>
-          {variance === null ? <span style={{ fontSize: 12, color: "#C7C2B4" }}>—</span> : <VarTag v={variance} />}
+          {variance === null ? <span style={{ fontSize: 12, color: MUTE_ICON }}>—</span> : <VarTag v={variance} />}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
           <span style={{ fontSize: 12, color: MUTE, flexShrink: 0, width: 82 }}>Plan {AUD(plan)}</span>
@@ -79,7 +79,7 @@ export function Row({
       </div>
       <div style={{ padding: "6px 12px" }}>{actualEl}</div>
       <div style={{ padding: "9px 16px", textAlign: "right" }}>
-        {variance === null ? <span style={{ color: "#C7C2B4" }}>—</span> : <VarTag v={variance} />}
+        {variance === null ? <span style={{ color: MUTE_ICON }}>—</span> : <VarTag v={variance} />}
       </div>
     </div>
   );
@@ -131,7 +131,7 @@ export function Progress({
           {AUD(value)} / {AUD(target)} · {pct.toFixed(0)}%
         </span>
       </div>
-      <div style={{ height: 10, background: "#EEEADD", borderRadius: 999, overflow: "hidden" }}>
+      <div style={{ height: 10, background: SURFACE_SUBTLE, borderRadius: 999, overflow: "hidden" }}>
         <div style={{ width: `${pct}%`, height: "100%", background: `linear-gradient(90deg, ${colorFrom}, ${GOLD_SOFT})`, transition: "width .5s" }} />
       </div>
     </div>
@@ -230,7 +230,7 @@ export function PInput({
             textAlign: type === "date" ? "left" : "right",
             fontVariantNumeric: "tabular-nums",
             color: NAVY,
-            background: "#FCFBF7",
+            background: SURFACE_SUBTLE,
           }}
         />
         {suffix && <span style={{ color: MUTE, fontSize: 13 }}>{suffix}</span>}
@@ -279,7 +279,7 @@ export function Toast({ message, actionLabel, onAction }: { message: string; act
         display: "flex",
         alignItems: "center",
         gap: 14,
-        background: INK,
+        background: SURFACE_DARK,
         color: "#fff",
         borderRadius: 10,
         padding: "11px 12px 11px 16px",
@@ -325,7 +325,7 @@ export function InfoTip({ text, iconColor = MUTE }: { text: string; iconColor?: 
             bottom: "calc(100% + 7px)",
             left: "50%",
             transform: "translateX(-50%)",
-            background: INK,
+            background: SURFACE_DARK,
             color: "#fff",
             fontSize: 11.5,
             fontWeight: 400,

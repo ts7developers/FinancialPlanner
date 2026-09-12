@@ -6,7 +6,7 @@ import { useAppData } from "@/components/AppDataProvider";
 import { useToast } from "@/components/ToastProvider";
 import { parseBankCSV, isLikelyDuplicateTransaction, detectRecurringCandidates, type RecurringCandidate } from "@/lib/csv";
 import { AUD } from "@/lib/money";
-import { ACCOUNTS, CARD, LINE, MUTE, GOLD, INK, NAVY, UNFAV, selStyle } from "@/lib/theme";
+import { SURFACE_SUBTLE, SURFACE_DARK, ON_ACCENT_DARK, WARN_BG, ACCOUNTS, CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
 import { Collapsible } from "@/components/ui/atoms";
 import type { Account } from "@/lib/theme";
 
@@ -186,7 +186,7 @@ export default function ImportCsvPanel({ catOptions }: { catOptions: { key: stri
             <div style={{ border: `1px solid ${LINE}`, borderRadius: 10, overflow: "auto", maxHeight: 420 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                 <thead>
-                  <tr style={{ background: NAVY, color: "#fff", textAlign: "left" }}>
+                  <tr style={{ background: SURFACE_DARK, color: "#fff", textAlign: "left" }}>
                     <th style={{ padding: "8px 6px" }} />
                     <th style={{ padding: "8px 6px" }}>Date</th>
                     <th style={{ padding: "8px 6px" }}>Description</th>
@@ -197,7 +197,7 @@ export default function ImportCsvPanel({ catOptions }: { catOptions: { key: stri
                 </thead>
                 <tbody>
                   {rows.map((r, i) => (
-                    <tr key={i} style={{ borderTop: `1px solid ${LINE}`, background: r.isDuplicate ? "#FBEDE9" : CARD }}>
+                    <tr key={i} style={{ borderTop: `1px solid ${LINE}`, background: r.isDuplicate ? WARN_BG : CARD }}>
                       <td style={{ padding: "5px 6px" }}>
                         <input type="checkbox" checked={r.include} onChange={(e) => updateRow(i, { include: e.target.checked })} />
                       </td>
@@ -259,7 +259,7 @@ export default function ImportCsvPanel({ catOptions }: { catOptions: { key: stri
                     alignItems: "center",
                     gap: 6,
                     background: readyRows.length === 0 ? "transparent" : GOLD,
-                    color: readyRows.length === 0 ? MUTE : INK,
+                    color: readyRows.length === 0 ? MUTE : ON_ACCENT_DARK,
                     border: readyRows.length === 0 ? `1px solid ${LINE}` : "none",
                     borderRadius: 8,
                     padding: "9px 15px",
@@ -276,7 +276,7 @@ export default function ImportCsvPanel({ catOptions }: { catOptions: { key: stri
             </div>
 
             {candidates.length > 0 && (
-              <div style={{ border: `1px solid ${LINE}`, borderRadius: 10, padding: 12, background: "#FBF9F2", display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ border: `1px solid ${LINE}`, borderRadius: 10, padding: 12, background: SURFACE_SUBTLE, display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: NAVY }}>
                   <Repeat size={14} color={GOLD} /> Possible recurring bills spotted in this statement
                 </div>
@@ -312,7 +312,7 @@ export default function ImportCsvPanel({ catOptions }: { catOptions: { key: stri
                         alignItems: "center",
                         gap: 5,
                         background: c.status === "added" ? "transparent" : GOLD,
-                        color: c.status === "added" ? "#2E7D5B" : INK,
+                        color: c.status === "added" ? FAV : ON_ACCENT_DARK,
                         border: c.status === "added" ? "none" : "none",
                         borderRadius: 8,
                         padding: "6px 11px",

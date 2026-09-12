@@ -21,7 +21,7 @@ import {
   SALARY_SCENARIOS,
 } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, UNFAV, selStyle, BALANCE_FIELDS } from "@/lib/theme";
+import { MUTE_ICON, ON_ACCENT_DARK, SURFACE_SUBTLE, WARN_BG, WARN_TEXT, CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, selStyle, BALANCE_FIELDS } from "@/lib/theme";
 import { Metric, Field, Collapsible } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { IncomeTrendPoint } from "@/components/charts/IncomeTrendChart";
@@ -158,8 +158,8 @@ export default function IncomeTab() {
                   key={s.id}
                   onClick={() => setScenarioId(s.id)}
                   style={{
-                    background: on ? GOLD : "#F4EFE1",
-                    color: on ? "#16203A" : NAVY,
+                    background: on ? GOLD : SURFACE_SUBTLE,
+                    color: on ? ON_ACCENT_DARK : NAVY,
                     border: "none",
                     borderRadius: 999,
                     padding: "7px 14px",
@@ -232,7 +232,7 @@ export default function IncomeTab() {
           <button
             onClick={onAddMisc}
             disabled={miscBusy}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: INK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: miscBusy ? "default" : "pointer", opacity: miscBusy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: miscBusy ? "default" : "pointer", opacity: miscBusy ? 0.7 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
           >
             <Plus size={14} /> Add
           </button>
@@ -244,11 +244,11 @@ export default function IncomeTab() {
               <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "6px 0" }}>
                 <span style={{ color: MUTE }}>
                   {m.date} {m.description ? `· ${m.description}` : ""}
-                  {m.account && <span style={{ color: "#C7C2B4" }}> · {BALANCE_FIELDS.find(([k]) => k === m.account)?.[1] ?? m.account}</span>}
+                  {m.account && <span style={{ color: MUTE_ICON }}> · {BALANCE_FIELDS.find(([k]) => k === m.account)?.[1] ?? m.account}</span>}
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{AUD(m.amount, 2)}</span>
-                  <button onClick={() => onDeleteMisc(m.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C7C2B4", display: "flex" }}>
+                  <button onClick={() => onDeleteMisc(m.id)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -299,14 +299,14 @@ export default function IncomeTab() {
               {split.map((p) => (
                 <div key={p.key} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px 100px 90px 90px 90px 100px", alignItems: "center", padding: "8px 18px", borderTop: `1px solid ${LINE}`, fontSize: 13, minWidth: 860 }}>
                   <span>
-                    {p.label} <span style={{ color: "#C7C2B4", fontSize: 11 }}>{p.isFT ? "FT" : "PT"}</span>
+                    {p.label} <span style={{ color: MUTE_ICON, fontSize: 11 }}>{p.isFT ? "FT" : "PT"}</span>
                   </span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{AUD(p.netPay)}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: MUTE }}>{AUD(p.categoriesTotal)}</span>
-                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.sinkingTotal > 0 ? MUTE : "#C7C2B4" }}>{p.sinkingTotal > 0 ? AUD(p.sinkingTotal) : "—"}</span>
-                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toCreditCard > 0 ? UNFAV : "#C7C2B4", fontWeight: p.toCreditCard > 0 ? 500 : 400 }}>{p.toCreditCard > 0 ? AUD(p.toCreditCard) : "—"}</span>
-                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toEmergency > 0 ? FAV : "#C7C2B4" }}>{p.toEmergency > 0 ? AUD(p.toEmergency) : "—"}</span>
-                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toGoalsTotal > 0 ? GOLD : "#C7C2B4" }}>{p.toGoalsTotal > 0 ? AUD(p.toGoalsTotal) : "—"}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.sinkingTotal > 0 ? MUTE : MUTE_ICON }}>{p.sinkingTotal > 0 ? AUD(p.sinkingTotal) : "—"}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toCreditCard > 0 ? UNFAV : MUTE_ICON, fontWeight: p.toCreditCard > 0 ? 500 : 400 }}>{p.toCreditCard > 0 ? AUD(p.toCreditCard) : "—"}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toEmergency > 0 ? FAV : MUTE_ICON }}>{p.toEmergency > 0 ? AUD(p.toEmergency) : "—"}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toGoalsTotal > 0 ? GOLD : MUTE_ICON }}>{p.toGoalsTotal > 0 ? AUD(p.toGoalsTotal) : "—"}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: FAV, fontWeight: 500 }}>{AUD(p.toDeposit)}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{AUD(p.depositBalance)}</span>
                 </div>
@@ -314,7 +314,7 @@ export default function IncomeTab() {
             </div>
           )}
         </div>
-        <div style={{ padding: "14px 18px", borderTop: `2px solid ${GOLD}`, background: "#F4EFE1" }}>
+        <div style={{ padding: "14px 18px", borderTop: `2px solid ${GOLD}`, background: SURFACE_SUBTLE }}>
           <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Budgeted categories this fortnight ({AUD(categoryBreakdown.reduce((s, c) => s + c.amount, 0))} total)</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px" }}>
             {categoryBreakdown
@@ -327,18 +327,18 @@ export default function IncomeTab() {
           </div>
         </div>
         {adaptiveCategories.length > 0 && (
-          <div style={{ padding: "14px 18px", borderTop: `1px solid ${LINE}`, background: "#FBEDE9" }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4, color: "#8A3320" }}>
+          <div style={{ padding: "14px 18px", borderTop: `1px solid ${LINE}`, background: WARN_BG }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4, color: WARN_TEXT }}>
               Using recent actuals instead of the Budget plan for {adaptiveCategories.length} categor{adaptiveCategories.length === 1 ? "y" : "ies"}
             </div>
-            <div style={{ fontSize: 11, color: "#8A3320", marginBottom: 8, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 11, color: WARN_TEXT, marginBottom: 8, lineHeight: 1.5 }}>
               These have run consistently over or under budget for 3+ fortnights running (same pattern flagged on <b>Reconcile</b>) — the
               waterfall above uses their recent average instead of the plan, so it reflects what&apos;s actually happening rather than a
               number that&apos;s stopped matching reality. Edit the plan on <b>Budget</b> once you&apos;re confident it&apos;s the new normal.
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px" }}>
               {adaptiveCategories.map((r) => (
-                <span key={r.id} style={{ fontSize: 12, color: "#8A3320" }}>
+                <span key={r.id} style={{ fontSize: 12, color: WARN_TEXT }}>
                   {r.label} <span style={{ color: "#B87A69" }}>plan {AUD(r.planRate)}</span> → <b>{AUD(r.effectiveRate)}</b>
                 </span>
               ))}
@@ -358,7 +358,7 @@ export default function IncomeTab() {
               {sinkingFunds.map((s) => (
                 <span key={s.label} style={{ fontSize: 12, color: MUTE }}>
                   {s.label}{" "}
-                  <span style={{ color: "#C7C2B4" }}>
+                  <span style={{ color: MUTE_ICON }}>
                     ({s.frequency}
                     {(s.frequency === "yearly" || s.frequency === "quarterly") && `, due ${s.nextDue.slice(5)}`})
                   </span>{" "}

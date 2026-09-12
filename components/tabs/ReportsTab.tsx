@@ -6,7 +6,7 @@ import { useAppData } from "@/components/AppDataProvider";
 import { isoFromDate, dateFromISO, dayLabel, financialYearStart } from "@/lib/period";
 import { buildBalanceSheet, buildIncomeExpenditureStatement, buildCashFlowStatement } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { CARD, LINE, MUTE, GOLD, NAVY, INK, FAV, UNFAV, selStyle } from "@/lib/theme";
+import { FAV_BG, SURFACE_SUBTLE, WARN_BG, CARD, LINE, MUTE, GOLD, NAVY, ON_ACCENT_DARK, FAV, UNFAV, selStyle } from "@/lib/theme";
 import type { ReportLineItem } from "@/lib/derive";
 
 type ReportKind = "balance" | "income" | "cashflow";
@@ -89,8 +89,8 @@ export default function ReportsTab() {
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
-                background: kind === r.id ? GOLD : "#F1ECDD",
-                color: kind === r.id ? INK : NAVY,
+                background: kind === r.id ? GOLD : SURFACE_SUBTLE,
+                color: kind === r.id ? ON_ACCENT_DARK : NAVY,
                 border: "none",
                 borderRadius: 8,
                 padding: "8px 14px",
@@ -150,7 +150,7 @@ export default function ReportsTab() {
                 marginTop: 6,
                 padding: "10px 14px",
                 borderRadius: 8,
-                background: balanceSheet.netWorth >= 0 ? "#EAF5EE" : "#FBEDE9",
+                background: balanceSheet.netWorth >= 0 ? FAV_BG : WARN_BG,
                 fontFamily: "var(--font-space-grotesk), sans-serif",
               }}
             >
@@ -177,7 +177,7 @@ export default function ReportsTab() {
                 marginTop: 6,
                 padding: "10px 14px",
                 borderRadius: 8,
-                background: incomeStatement.net >= 0 ? "#EAF5EE" : "#FBEDE9",
+                background: incomeStatement.net >= 0 ? FAV_BG : WARN_BG,
                 fontFamily: "var(--font-space-grotesk), sans-serif",
               }}
             >
@@ -205,7 +205,7 @@ export default function ReportsTab() {
                 marginTop: 6,
                 padding: "10px 14px",
                 borderRadius: 8,
-                background: cashFlow.netCashFlow >= 0 ? "#EAF5EE" : "#FBEDE9",
+                background: cashFlow.netCashFlow >= 0 ? FAV_BG : WARN_BG,
                 fontFamily: "var(--font-space-grotesk), sans-serif",
               }}
             >

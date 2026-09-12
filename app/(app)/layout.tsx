@@ -6,7 +6,7 @@ import { ToastProvider } from "@/components/ToastProvider";
 import AppHeader from "@/components/AppHeader";
 import QuickAddFab from "@/components/QuickAddFab";
 import PageContent from "@/components/PageContent";
-import { PAPER } from "@/lib/theme";
+import { PAPER, NAVY } from "@/lib/theme";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -35,7 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   } = await fetchAppData(user.id);
 
   return (
-    <div style={{ background: PAPER, minHeight: "100vh", color: "#1F2A44" }}>
+    <div style={{ background: PAPER, minHeight: "100vh", color: NAVY }}>
       <ToastProvider>
         <AppHeader />
         <AppDataProvider
