@@ -7,6 +7,7 @@ import { isoFromDate, dateFromISO, dayLabel, financialYearStart } from "@/lib/pe
 import { buildBalanceSheet, buildIncomeExpenditureStatement, buildCashFlowStatement } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { FAV_BG, SURFACE_SUBTLE, WARN_BG, CARD, LINE, MUTE, GOLD, NAVY, ON_ACCENT_DARK, FAV, UNFAV, selStyle } from "@/lib/theme";
+import { InfoTip } from "@/components/ui/atoms";
 import type { ReportLineItem } from "@/lib/derive";
 
 type ReportKind = "balance" | "income" | "cashflow";
@@ -36,10 +37,10 @@ function fmtRange(startISO: string, endISO: string): string {
   return `${dayLabel(dateFromISO(startISO))} '${String(dateFromISO(startISO).getUTCFullYear()).slice(2)} – ${dayLabel(dateFromISO(endISO))} '${String(dateFromISO(endISO).getUTCFullYear()).slice(2)}`;
 }
 
-function Section({ title, items, total, totalLabel, emptyNote }: { title: string; items: ReportLineItem[]; total: number; totalLabel: string; emptyNote?: string }) {
+function Section({ title, items, total, totalLabel, emptyNote }: { title: React.ReactNode; items: ReportLineItem[]; total: number; totalLabel: string; emptyNote?: string }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase", color: MUTE, fontWeight: 600, marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase", color: MUTE, fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center" }}>{title}</div>
       {items.length === 0 ? (
         <div style={{ fontSize: 12.5, color: MUTE, fontStyle: "italic" }}>{emptyNote ?? "Nothing this period"}</div>
       ) : (
@@ -193,9 +194,39 @@ export default function ReportsTab() {
 
         {kind === "cashflow" && (
           <>
-            <Section title={cashFlow.operating.label} items={cashFlow.operating.items} total={cashFlow.operating.total} totalLabel="Net operating cash flow" />
-            <Section title={cashFlow.investing.label} items={cashFlow.investing.items} total={cashFlow.investing.total} totalLabel="Net investing cash flow" />
-            <Section title={cashFlow.debtRepayment.label} items={cashFlow.debtRepayment.items} total={cashFlow.debtRepayment.total} totalLabel="Net debt repayment" />
+            <Section
+              title={
+                <>
+                  {cashFlow.operating.label}
+                  <InfoTip text="Only money that's actually left a real account — a credit-card purchase isn't a cash outflow here until the card's paid down. Different from Income & Expenditure, which counts spend the moment it's logged regardless of how it was paid for." />
+                </>
+              }
+              items={cashFlow.operating.items}
+              total={cashFlow.operating.total}
+              totalLabel="Net operating cash flow"
+            />
+            <Section
+              title={
+                <>
+                  {cashFlow.investing.label}
+                  <InfoTip text="Money moved into or out of shares and super — buying shares or making a voluntary super contribution shows as cash out, even though it's still yours." />
+                </>
+              }
+              items={cashFlow.investing.items}
+              total={cashFlow.investing.total}
+              totalLabel="Net investing cash flow"
+            />
+            <Section
+              title={
+                <>
+                  {cashFlow.debtRepayment.label}
+                  <InfoTip text="Transfers that paid down the credit card or HECS this period — the actual cash that left to reduce what's owed." />
+                </>
+              }
+              items={cashFlow.debtRepayment.items}
+              total={cashFlow.debtRepayment.total}
+              totalLabel="Net debt repayment"
+            />
             <div
               style={{
                 display: "flex",

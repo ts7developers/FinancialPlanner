@@ -17,6 +17,7 @@ import {
   BORROW_MULT_LOW,
   BORROW_MULT_HIGH,
   buildVarianceReport,
+  buildVarianceInsights,
   actualIncomeForPeriod,
   nextPaydayInfo,
   nextBillDue,
@@ -48,6 +49,9 @@ export default function OverviewTab() {
   // "At a glance" — a one-line tracking signal plus whatever needs your attention right now,
   // so you don't have to visit Reconcile/Expenses/Budget just to find out nothing's due.
   const varianceReport = buildVarianceReport(profile, categories, D, periods, loggedByCat, reconciliations);
+  // Same streak-detection Reconcile's "Variance report" surfaces, repeated here (top 2 only) so a
+  // real pattern is visible without a trip to Reconcile — plain-language, not just raw variance $.
+  const insights = buildVarianceInsights(categories, D, periods, loggedByCat, reconciliations).slice(0, 2);
   const trackingTone: "ahead" | "onTrack" | "behind" | "none" =
     varianceReport.periodsIncluded === 0
       ? "none"
@@ -142,6 +146,19 @@ export default function OverviewTab() {
             )}
           </div>
         )}
+        {insights.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 8, borderTop: `1px solid ${LINE}` }}>
+            {insights.map((ins) => (
+              <Link
+                key={ins.id}
+                href="/reconcile"
+                style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: ins.favorable ? FAV : UNFAV, textDecoration: "none" }}
+              >
+                {ins.favorable ? <TrendingDown size={14} /> : <TrendingUp size={14} />} {ins.message}
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
       <div
         style={{
@@ -200,7 +217,12 @@ export default function OverviewTab() {
         />
         <Metric
           icon={Receipt}
-          label="Deductions (FY YTD)"
+          label={
+            <>
+              Deductions (FY YTD)
+              <InfoTip text="Whatever's logged on the Receipts tab this financial year — tagged Expenses plus standalone items. A personal tracker, not tax advice; check with your accountant on what actually qualifies." />
+            </>
+          }
           value={AUD(deductionsYTD)}
           sub={fyReceipts.length > 0 ? `${fyReceipts.length} item${fyReceipts.length === 1 ? "" : "s"} on Receipts` : "none logged yet"}
         />

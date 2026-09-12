@@ -11,12 +11,13 @@ import { periodKeyOf, periodLabel, isoFromDate } from "@/lib/period";
 import { OTHER_CATEGORY_KEY } from "@/lib/categories";
 import { toCSV } from "@/lib/csv";
 import { periodTotals, averageSpend, buildActualSpendTrend, daysUntil, type PieSlice } from "@/lib/derive";
+import { suggestDeductionCategory, DEDUCTION_CATEGORY_LABELS } from "@/lib/receipts";
 import { AUD } from "@/lib/money";
-import { GOLD_MUTE, MUTE_ICON, UNFAV, ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, ON_ACCENT_DARK, SURFACE_DARK, SURFACE_DARK_2, SURFACE_SUBTLE, NAVY, FAV, PIE_COLORS, selStyle } from "@/lib/theme";
+import { GOLD_MUTE, MUTE_ICON, UNFAV, ACCOUNTS, ACC_COLOR, CARD, LINE, MUTE, GOLD, ON_ACCENT_DARK, SURFACE_DARK, SURFACE_DARK_2, SURFACE_SUBTLE, FAV_BG, FAV_TEXT, NAVY, FAV, PIE_COLORS, selStyle } from "@/lib/theme";
 import { Field, Toast, Metric } from "@/components/ui/atoms";
 import ImportCsvPanel from "@/components/ImportCsvPanel";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
-import type { Transaction, RecurringExpense, RecurringFrequency } from "@/lib/types";
+import type { Transaction, RecurringExpense, RecurringFrequency, DeductionCategory } from "@/lib/types";
 
 const FREQ_LABEL: Record<RecurringFrequency, string> = {
   weekly: "Weekly",
@@ -66,6 +67,7 @@ export default function ExpensesTab() {
     undoDeleteRecurringExpense,
     toggleRecurringExpense,
     logRecurringExpense,
+    addReceipt,
   } = useAppData();
   const toast = useToast();
   // Budgeted categories from Budget, plus the synthetic "Other" catch-all (not a real budget
@@ -118,6 +120,8 @@ export default function ExpensesTab() {
     setTimeout(() => setFlashMsg(""), 1300);
   };
 
+  const [deductionSuggestion, setDeductionSuggestion] = useState<{ date: string; description: string; amount: number; category: DeductionCategory } | null>(null);
+
   const addTxn = async () => {
     if (!form.amount || !form.date) {
       flash("Add a date and amount");
@@ -131,10 +135,23 @@ export default function ExpensesTab() {
         category_key: form.catId,
         account: form.account,
       });
+      const suggested = suggestDeductionCategory(form.desc);
+      if (suggested) setDeductionSuggestion({ date: form.date, description: form.desc, amount: Number(form.amount), category: suggested });
       setForm((f) => ({ ...f, desc: "", amount: "" }));
       flash("Expense logged");
     } catch {
       flash("Could not log that expense");
+    }
+  };
+
+  const onAddSuggestedReceipt = async () => {
+    if (!deductionSuggestion) return;
+    try {
+      await addReceipt(deductionSuggestion.date, deductionSuggestion.description, deductionSuggestion.amount, deductionSuggestion.category, null, null);
+      setDeductionSuggestion(null);
+      flash("Added to Receipts");
+    } catch {
+      flash("Could not add that to Receipts");
     }
   };
 
@@ -380,6 +397,21 @@ export default function ExpensesTab() {
           </div>
         )}
         {flashMsg && <div style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginTop: 10 }}>{flashMsg}</div>}
+        {deductionSuggestion && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: FAV_BG, color: FAV_TEXT, borderRadius: 8, padding: "9px 12px", marginTop: 10, fontSize: 12.5, flexWrap: "wrap" }}>
+            <span>
+              This might be deductible ({DEDUCTION_CATEGORY_LABELS[deductionSuggestion.category]}) — not tax advice, just a nudge.
+            </span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={onAddSuggestedReceipt} style={{ background: "none", border: "none", color: FAV_TEXT, fontWeight: 700, cursor: "pointer", padding: 0, fontSize: 12.5 }}>
+                Add to Receipts
+              </button>
+              <button onClick={() => setDeductionSuggestion(null)} style={{ background: "none", border: "none", color: FAV_TEXT, cursor: "pointer", padding: 0, fontSize: 12.5, opacity: 0.7 }}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <ImportCsvPanel catOptions={catOptions} />

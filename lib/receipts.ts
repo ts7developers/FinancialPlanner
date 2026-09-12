@@ -48,3 +48,24 @@ export function receiptTotalsByCategory(receipts: Receipt[]): { category: Deduct
   });
   return DEDUCTION_CATEGORIES.filter((c) => totals.has(c)).map((c) => ({ category: c, ...totals.get(c)! }));
 }
+
+// Deliberately narrow, high-signal keywords only — a false "might be deductible" nudge costs
+// nothing (you just ignore it), but the point is a useful hint, not a guess dressed up as
+// certainty. Checked in order; first match wins.
+const DEDUCTION_KEYWORDS: { pattern: RegExp; category: DeductionCategory }[] = [
+  { pattern: /uniform|steel.?cap|hi-?vis|workwear|safety (boots|glasses|gear)/i, category: "work_related_clothing" },
+  { pattern: /udemy|coursera|linkedin learning|tafe|cpd|textbook/i, category: "self_education" },
+  { pattern: /toll ?ways?|linkt|eastlink|citylink|e-?toll/i, category: "work_related_travel" },
+  { pattern: /salvation army|red cross|smith family|unicef|beyond ?blue|cancer council|\bdonation\b|\bcharity\b/i, category: "donations" },
+  { pattern: /income protection/i, category: "income_protection" },
+  { pattern: /bunnings|officeworks|jb hi-?fi|harvey norman/i, category: "tools_equipment" },
+];
+
+/** A soft suggestion only — surfaced as "this might be deductible", never auto-applied. Matches
+ * on the transaction description against a short list of high-signal keywords/merchants; returns
+ * null (no suggestion) for anything that doesn't clearly match. */
+export function suggestDeductionCategory(description: string | null | undefined): DeductionCategory | null {
+  const desc = (description ?? "").trim();
+  if (!desc) return null;
+  return DEDUCTION_KEYWORDS.find((k) => k.pattern.test(desc))?.category ?? null;
+}

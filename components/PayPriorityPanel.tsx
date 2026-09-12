@@ -5,7 +5,7 @@ import { RotateCcw, ListOrdered, Plus, X } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { resolveAllocationOrder, EMERGENCY_ALLOCATION_ID, DEPOSIT_ALLOCATION_ID, EXTRA_BALANCE_DESTINATIONS } from "@/lib/derive";
 import { GOLD_MUTE, ON_ACCENT_DARK, SURFACE_SUBTLE, LINE, MUTE, GOLD, NAVY, UNFAV, PIE_COLORS, selStyle } from "@/lib/theme";
-import { Panel, Field } from "@/components/ui/atoms";
+import { Panel, Field, InfoTip } from "@/components/ui/atoms";
 import type { AllocationOrder, Goal } from "@/lib/types";
 
 function destinationLabel(id: string, goals: Goal[]): string {
@@ -152,8 +152,12 @@ export default function PayPriorityPanel() {
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 11.5, color: Math.round(totalPct) === 100 ? MUTE : UNFAV, marginTop: 10 }}>
+      <div style={{ fontSize: 11.5, color: Math.round(totalPct) === 100 ? MUTE : UNFAV, marginTop: 10, display: "flex", alignItems: "center" }}>
         Total: {totalPct.toFixed(0)}%{Math.round(totalPct) !== 100 && " — shares still split proportionally, but percentages that add to 100 are easier to read at a glance"}
+        <InfoTip
+          iconColor={Math.round(totalPct) === 100 ? MUTE : UNFAV}
+          text="Once a destination hits its target (a goal's amount, the emergency fund's target), its share stops going there and flows to whatever's left automatically — you don't need to come back and change the percentages when that happens."
+        />
       </div>
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 14, paddingTop: 12, borderTop: `1px solid ${LINE}` }}>

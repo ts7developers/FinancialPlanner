@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { receiptsForFinancialYear, receiptTotalsByCategory } from "@/lib/receipts";
+import { receiptsForFinancialYear, receiptTotalsByCategory, suggestDeductionCategory } from "@/lib/receipts";
 import type { Receipt } from "@/lib/types";
 
 function makeReceipt(over: Partial<Receipt>): Receipt {
@@ -45,5 +45,37 @@ describe("receiptTotalsByCategory", () => {
 
   it("is empty for no receipts", () => {
     expect(receiptTotalsByCategory([])).toEqual([]);
+  });
+});
+
+describe("suggestDeductionCategory", () => {
+  it("matches a uniform/workwear purchase to clothing", () => {
+    expect(suggestDeductionCategory("Steel Cap Boots - Total Tools")).toBe("work_related_clothing");
+  });
+
+  it("matches an online course to self-education", () => {
+    expect(suggestDeductionCategory("Udemy Course Purchase")).toBe("self_education");
+  });
+
+  it("matches a toll road charge to travel", () => {
+    expect(suggestDeductionCategory("Linkt Toll Payment")).toBe("work_related_travel");
+  });
+
+  it("matches a charity name to donations", () => {
+    expect(suggestDeductionCategory("Salvation Army Donation")).toBe("donations");
+  });
+
+  it("is case-insensitive", () => {
+    expect(suggestDeductionCategory("BUNNINGS WAREHOUSE")).toBe("tools_equipment");
+  });
+
+  it("returns null for an ordinary grocery purchase", () => {
+    expect(suggestDeductionCategory("Woolworths")).toBeNull();
+  });
+
+  it("returns null for empty or missing descriptions", () => {
+    expect(suggestDeductionCategory("")).toBeNull();
+    expect(suggestDeductionCategory(null)).toBeNull();
+    expect(suggestDeductionCategory(undefined)).toBeNull();
   });
 });

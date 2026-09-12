@@ -1,14 +1,16 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Upload, FileSpreadsheet, Check, X, Repeat } from "lucide-react";
+import { Upload, FileSpreadsheet, Check, X, Repeat, Receipt } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { useToast } from "@/components/ToastProvider";
 import { parseBankCSV, isLikelyDuplicateTransaction, detectRecurringCandidates, type RecurringCandidate } from "@/lib/csv";
+import { suggestDeductionCategory, DEDUCTION_CATEGORIES, DEDUCTION_CATEGORY_LABELS } from "@/lib/receipts";
 import { AUD } from "@/lib/money";
 import { SURFACE_SUBTLE, SURFACE_DARK, ON_ACCENT_DARK, WARN_BG, ACCOUNTS, CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
 import { Collapsible } from "@/components/ui/atoms";
 import type { Account } from "@/lib/theme";
+import type { DeductionCategory } from "@/lib/types";
 
 interface ImportRow {
   include: boolean;
@@ -27,7 +29,7 @@ interface CandidateRow extends RecurringCandidate {
 }
 
 export default function ImportCsvPanel({ catOptions }: { catOptions: { key: string; label: string }[] }) {
-  const { transactions, addTransactionsBulk, recurringExpenses, addRecurringExpense } = useAppData();
+  const { transactions, addTransactionsBulk, recurringExpenses, addRecurringExpense, addReceipt } = useAppData();
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<ImportRow[] | null>(null);
@@ -36,6 +38,8 @@ export default function ImportCsvPanel({ catOptions }: { catOptions: { key: stri
   const [fileError, setFileError] = useState("");
   const [busy, setBusy] = useState(false);
   const [bulkCategory, setBulkCategory] = useState(catOptions[0]?.key ?? "other");
+  const [deductionCategoryOverrides, setDeductionCategoryOverrides] = useState<Record<number, DeductionCategory>>({});
+  const [deductionStatus, setDeductionStatus] = useState<Record<number, "pending" | "busy" | "added">>({});
 
   const handleFile = async (file: File) => {
     setFileError("");
@@ -90,8 +94,30 @@ export default function ImportCsvPanel({ catOptions }: { catOptions: { key: stri
   const reset = () => {
     setRows(null);
     setCandidates([]);
+    setDeductionCategoryOverrides({});
+    setDeductionStatus({});
     setFileError("");
     if (fileInput.current) fileInput.current.value = "";
+  };
+
+  // Recomputed live from `rows` (not detected once at import time, like recurring candidates)
+  // since it's per-row rather than a cross-row pattern, and should react to inline edits/unticking.
+  const deductionCandidates = (rows ?? [])
+    .map((row, i) => ({ i, row, suggested: suggestDeductionCategory(row.description) }))
+    .filter(
+      (c): c is { i: number; row: ImportRow; suggested: DeductionCategory } => c.row.include && c.row.date !== "" && Number(c.row.amount) > 0 && c.suggested !== null
+    );
+
+  const onAddDeduction = async (i: number, row: ImportRow, category: DeductionCategory) => {
+    setDeductionStatus((s) => ({ ...s, [i]: "busy" }));
+    try {
+      await addReceipt(row.date, row.description || "Expense", Number(row.amount) || 0, category, null, null);
+      setDeductionStatus((s) => ({ ...s, [i]: "added" }));
+      toast(`Added "${row.description}" to Receipts`);
+    } catch {
+      setDeductionStatus((s) => ({ ...s, [i]: "pending" }));
+      toast("Could not add that to Receipts — try again");
+    }
   };
 
   const includedRows = rows?.filter((r) => r.include) ?? [];
@@ -329,6 +355,62 @@ export default function ImportCsvPanel({ catOptions }: { catOptions: { key: stri
                 ))}
                 <div style={{ fontSize: 11, color: MUTE, lineHeight: 1.4 }}>
                   Detected from this statement alone (same description + amount, evenly spaced) — review the category/account before adding, they default to a guess.
+                </div>
+              </div>
+            )}
+
+            {deductionCandidates.length > 0 && (
+              <div style={{ border: `1px solid ${LINE}`, borderRadius: 10, padding: 12, background: SURFACE_SUBTLE, display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: NAVY }}>
+                  <Receipt size={14} color={GOLD} /> Possible deductions spotted in this statement
+                </div>
+                {deductionCandidates.map(({ i, row, suggested }) => {
+                  const status = deductionStatus[i] ?? "pending";
+                  const category = deductionCategoryOverrides[i] ?? suggested;
+                  return (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12.5 }}>
+                      <span style={{ flex: "1 1 200px", color: NAVY }}>
+                        {row.description || "Expense"} — {AUD(Number(row.amount) || 0)}
+                      </span>
+                      <select
+                        value={category}
+                        onChange={(e) => setDeductionCategoryOverrides((o) => ({ ...o, [i]: e.target.value as DeductionCategory }))}
+                        disabled={status !== "pending"}
+                        style={{ ...selStyle, height: 30, fontSize: 12, width: 200, textAlign: "left" }}
+                      >
+                        {DEDUCTION_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>
+                            {DEDUCTION_CATEGORY_LABELS[c]}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => onAddDeduction(i, row, category)}
+                        disabled={status !== "pending"}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
+                          background: status === "added" ? "transparent" : GOLD,
+                          color: status === "added" ? FAV : ON_ACCENT_DARK,
+                          border: "none",
+                          borderRadius: 8,
+                          padding: "6px 11px",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: status === "pending" ? "pointer" : "default",
+                          opacity: status === "busy" ? 0.7 : 1,
+                          fontFamily: "var(--font-space-grotesk), sans-serif",
+                        }}
+                      >
+                        <Check size={13} /> {status === "added" ? "Added" : status === "busy" ? "Adding…" : "Add to Receipts"}
+                      </button>
+                    </div>
+                  );
+                })}
+                <div style={{ fontSize: 11, color: MUTE, lineHeight: 1.4 }}>
+                  Matched on the merchant/description alone — a nudge worth checking, not tax advice. Logged as a standalone item on <b style={{ color: NAVY }}>Receipts</b>, separate from
+                  importing it as a regular expense above.
                 </div>
               </div>
             )}
