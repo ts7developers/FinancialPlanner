@@ -23,6 +23,7 @@ const RESET_LOGGED_ITEMS: { key: keyof ResetDataSelections; label: string }[] = 
   { key: "transfers", label: "Transfer log" },
   { key: "holdings", label: "Investments (holdings & buy history)" },
   { key: "superContributions", label: "Super contributions log" },
+  { key: "receipts", label: "Receipts (deductible items) — doesn't delete the uploaded files, just the log entries" },
   { key: "balances", label: "Account balances — resets every balance to $0" },
 ];
 
@@ -41,6 +42,7 @@ const RESET_LABELS: Record<keyof ResetDataSelections, string> = {
   transfers: "transfer log",
   holdings: "investments",
   superContributions: "super contributions log",
+  receipts: "receipts log",
   balances: "account balances (reset to $0)",
   goalsProgress: "goal progress (reset to $0)",
   goalsDelete: "goals (deleted entirely)",
@@ -58,6 +60,7 @@ const EMPTY_RESET_SELECTIONS: ResetDataSelections = {
   transfers: false,
   holdings: false,
   superContributions: false,
+  receipts: false,
   balances: false,
   goalsProgress: false,
   goalsDelete: false,
@@ -120,6 +123,7 @@ export default function SettingsTab() {
     recurringExpenses,
     miscIncome,
     goals,
+    receipts,
   } = useAppData();
   const [inputs, setInputs] = useState<ProfileInputs>(() => toInputs(profile));
   const [flashMsg, setFlashMsg] = useState("");
@@ -272,6 +276,7 @@ export default function SettingsTab() {
       recurringExpenses,
       miscIncome,
       goals,
+      receipts,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);

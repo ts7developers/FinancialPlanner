@@ -13,7 +13,7 @@ export interface NavGroup {
 }
 
 /**
- * Groups the app's 11 routes under 6 top-level nav entries so the tab bar reads at a glance
+ * Groups the app's 12 routes under 6 top-level nav entries so the tab bar reads at a glance
  * instead of scrolling — each underlying route/page/component is untouched, this only changes
  * how they're reached. A group with more than one member gets a small sub-nav (see SubNav.tsx)
  * once you're inside it.
@@ -29,7 +29,14 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/pay-split", label: "Pay split" },
     ],
   },
-  { label: "Expenses", icon: Receipt, members: [{ href: "/expenses", label: "Expenses" }] },
+  {
+    label: "Expenses",
+    icon: Receipt,
+    members: [
+      { href: "/expenses", label: "Expenses" },
+      { href: "/receipts", label: "Receipts" },
+    ],
+  },
   {
     label: "Wealth",
     icon: LineChart,

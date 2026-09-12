@@ -120,6 +120,7 @@ function renderAppData() {
       initialRecurringExpenses={[]}
       initialMiscIncome={[]}
       initialGoals={[]}
+      initialReceipts={[]}
     >
       <Harness onReady={(c) => (ctx = c)} />
     </AppDataProvider>

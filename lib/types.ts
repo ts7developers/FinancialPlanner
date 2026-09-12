@@ -198,6 +198,31 @@ export interface MiscIncome {
   created_at: string;
 }
 
+export type DeductionCategory =
+  | "work_related_travel"
+  | "work_related_clothing"
+  | "self_education"
+  | "tools_equipment"
+  | "home_office"
+  | "donations"
+  | "income_protection"
+  | "other";
+
+/** A tax-deductible item and (usually) its receipt, for EOFY substantiation. Either standalone
+ * (`transaction_id` null — never logged as a regular household expense, e.g. a work uniform) or
+ * linked to an existing Expenses entry (tagging spend already logged there as also deductible). */
+export interface Receipt {
+  id: string;
+  user_id: string;
+  date: string;
+  description: string;
+  amount: number;
+  deduction_category: DeductionCategory;
+  file_path: string | null;
+  transaction_id: string | null;
+  created_at: string;
+}
+
 export type PayslipStatus = "uploaded" | "parsed" | "confirmed";
 
 export interface Payslip {

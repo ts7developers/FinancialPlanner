@@ -36,6 +36,7 @@ import type {
   RecurringFrequency,
   MiscIncome,
   Goal,
+  Receipt,
 } from "@/lib/types";
 import type { PayslipExtraction } from "@/lib/payslipSchema";
 
@@ -63,6 +64,7 @@ export interface ResetDataSelections {
   /** Deletes goals outright rather than just zeroing their progress. */
   goalsDelete: boolean;
   recurringExpenses: boolean;
+  receipts: boolean;
   /** Restores the built-in categories to their baseline label/amounts (adding back any that were deleted) — doesn't touch custom categories you added. */
   budgetCategories: boolean;
   profileSettings: boolean;
@@ -83,6 +85,7 @@ interface AppDataContextValue {
   recurringExpenses: RecurringExpense[];
   miscIncome: MiscIncome[];
   goals: Goal[];
+  receipts: Receipt[];
   periods: Period[];
   D: DerivedFinancials;
   planPath: PlanPathPoint[];
@@ -155,6 +158,20 @@ interface AppDataContextValue {
   /** Removes it from view immediately with a Supabase delete deferred behind an Undo window — see `undoDeleteGoal`. */
   deleteGoal: (id: string, onFailure?: () => void) => void;
   undoDeleteGoal: (id: string) => void;
+  /** A tax-deductible item, optionally with a receipt file already uploaded to Storage (pass
+   * `filePath`) and/or linked to an existing Expenses transaction (pass `transactionId`). */
+  addReceipt: (
+    date: string,
+    description: string,
+    amount: number,
+    category: Receipt["deduction_category"],
+    filePath?: string | null,
+    transactionId?: string | null
+  ) => Promise<void>;
+  updateReceipt: (id: string, patch: Partial<Pick<Receipt, "date" | "description" | "amount" | "deduction_category" | "file_path">>) => Promise<void>;
+  /** Removes it from view immediately with a Supabase delete deferred behind an Undo window — see `undoDeleteReceipt`. Does not remove the underlying Storage file (harmless orphan, not worth the extra round-trip for a personal-use bucket). */
+  deleteReceipt: (id: string, onFailure?: () => void) => void;
+  undoDeleteReceipt: (id: string) => void;
   /** Wipes exactly the ticked categories of data for a fresh start, then reloads the page so every
    * piece of local state (there's a lot of it) reflects the DB rather than being patched by hand. */
   resetData: (selections: ResetDataSelections) => Promise<void>;
@@ -183,6 +200,7 @@ export function AppDataProvider({
   initialRecurringExpenses,
   initialMiscIncome,
   initialGoals,
+  initialReceipts,
   children,
 }: {
   initialProfile: Profile;
@@ -199,6 +217,7 @@ export function AppDataProvider({
   initialRecurringExpenses: RecurringExpense[];
   initialMiscIncome: MiscIncome[];
   initialGoals: Goal[];
+  initialReceipts: Receipt[];
   children: React.ReactNode;
 }) {
   const supabase = useMemo(() => createClient(), []);
@@ -228,6 +247,7 @@ export function AppDataProvider({
   const [recurringExpenses, setRecurringExpenses] = useState(initialRecurringExpenses ?? []);
   const [miscIncome, setMiscIncome] = useState(initialMiscIncome);
   const [goals, setGoals] = useState(initialGoals);
+  const [receipts, setReceipts] = useState(initialReceipts ?? []);
 
   const periods = useMemo(() => buildPeriods(profile.pay_anchor), [profile.pay_anchor]);
   const D = useMemo(() => deriveFinancials(profile, categories), [profile, categories]);
@@ -576,6 +596,73 @@ export function AppDataProvider({
     setGoals((gs) => [...gs, pending.goal].sort((a, b) => a.priority - b.priority));
   }, []);
 
+  const receiptSort = (rs: Receipt[]) => rs.slice().sort((a, b) => b.date.localeCompare(a.date));
+
+  const addReceipt = useCallback(
+    async (
+      date: string,
+      description: string,
+      amount: number,
+      category: Receipt["deduction_category"],
+      filePath?: string | null,
+      transactionId?: string | null
+    ) => {
+      const { data, error } = await supabase
+        .from("receipts")
+        .insert({
+          user_id: profile.user_id,
+          date,
+          description,
+          amount,
+          deduction_category: category,
+          file_path: filePath ?? null,
+          transaction_id: transactionId ?? null,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      setReceipts((rs) => receiptSort([...rs, data as Receipt]));
+    },
+    [supabase, profile.user_id]
+  );
+
+  const updateReceipt = useCallback(
+    async (id: string, patch: Partial<Pick<Receipt, "date" | "description" | "amount" | "deduction_category" | "file_path">>) => {
+      setReceipts((rs) => receiptSort(rs.map((r) => (r.id === id ? { ...r, ...patch } : r))));
+      const { error } = await supabase.from("receipts").update(patch).eq("id", id);
+      if (error) throw error;
+    },
+    [supabase]
+  );
+
+  const pendingReceiptDeletes = useRef<Record<string, { receipt: Receipt; timer: ReturnType<typeof setTimeout> }>>({});
+
+  const deleteReceipt = useCallback(
+    (id: string, onFailure?: () => void) => {
+      const receipt = receipts.find((r) => r.id === id);
+      if (!receipt) return;
+      setReceipts((rs) => rs.filter((r) => r.id !== id));
+      const timer = setTimeout(async () => {
+        delete pendingReceiptDeletes.current[id];
+        const { error } = await supabase.from("receipts").delete().eq("id", id);
+        if (error) {
+          setReceipts((rs) => receiptSort([...rs, receipt]));
+          onFailure?.();
+        }
+      }, UNDO_WINDOW_MS);
+      pendingReceiptDeletes.current[id] = { receipt, timer };
+    },
+    [supabase, receipts]
+  );
+
+  const undoDeleteReceipt = useCallback((id: string) => {
+    const pending = pendingReceiptDeletes.current[id];
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    delete pendingReceiptDeletes.current[id];
+    setReceipts((rs) => receiptSort([...rs, pending.receipt]));
+  }, []);
+
   const addTransfer = useCallback(
     async (from: keyof Omit<Balances, "user_id">, to: keyof Omit<Balances, "user_id">, amount: number, note?: string) => {
       if (from === to || !(amount > 0)) return;
@@ -890,6 +977,7 @@ export function AppDataProvider({
       }
       if (sel.superContributions) ops.push(supabase.from("super_contributions").delete().eq("user_id", uid));
       if (sel.recurringExpenses) ops.push(supabase.from("recurring_expenses").delete().eq("user_id", uid));
+      if (sel.receipts) ops.push(supabase.from("receipts").delete().eq("user_id", uid));
       if (sel.goalsDelete) {
         ops.push(supabase.from("goals").delete().eq("user_id", uid));
       } else if (sel.goalsProgress) {
@@ -946,6 +1034,7 @@ export function AppDataProvider({
     recurringExpenses,
     miscIncome,
     goals,
+    receipts,
     periods,
     D,
     planPath,
@@ -983,6 +1072,10 @@ export function AppDataProvider({
     updateGoal,
     deleteGoal,
     undoDeleteGoal,
+    addReceipt,
+    updateReceipt,
+    deleteReceipt,
+    undoDeleteReceipt,
     resetData,
   };
 
