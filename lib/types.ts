@@ -3,7 +3,8 @@ export interface Profile {
   display_name: string | null;
   package: number;
   super_rate: number;
-  pt_fraction: number;
+  /** Real gross pay for a full part-time fortnight (before `ft_start`), entered directly from a payslip rather than estimated as a fraction of `package`. */
+  pt_fortnightly_gross: number;
   /** Legacy field — HECS repayment now uses the real ATO marginal schedule (lib/tax.ts) instead of a single editable threshold. Kept to avoid a migration; no longer read by any calculation. */
   hecs_threshold: number;
   pay_anchor: string; // ISO date — the start of the very first fortnight, not a payday

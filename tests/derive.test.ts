@@ -439,14 +439,14 @@ describe("buildNetWorthProjection", () => {
     const flatBalances: Balances = { ...startBalances, shares: 1000, superb: 0 };
     const [first] = buildNetWorthProjection(profile, D0, flatBalances, noGoals, periods, profile.pay_anchor, 10, 0, flatScenario, 0, 1);
     const periodGrowth = Math.pow(1.1, 14 / 365) - 1;
-    const pkg = isFT(periods[0].key, profile.ft_start) ? profile.package : profile.package * profile.pt_fraction;
+    const pkg = isFT(periods[0].key, profile.ft_start) ? profile.package : profile.pt_fortnightly_gross * FN_PER_YEAR;
     const { cash } = netFromPackage(pkg, profile.super_rate);
     const expectedSuperFn = (pkg - cash) / FN_PER_YEAR;
     expect(first.invested).toBeCloseTo(Math.round(1000 * (1 + periodGrowth) + expectedSuperFn), -1);
   });
 
   it("extra fortnightly savings flows straight into liquid balance", () => {
-    const zeroIncomeProfile: Profile = { ...profile, package: 0 };
+    const zeroIncomeProfile: Profile = { ...profile, package: 0, pt_fortnightly_gross: 0 };
     const D0 = deriveFinancials(zeroIncomeProfile, categories);
     const [first] = buildNetWorthProjection(zeroIncomeProfile, D0, startBalances, noGoals, periods, profile.pay_anchor, 0, 100, flatScenario, 0, 1);
     expect(first.liquid).toBe(100);
@@ -1130,7 +1130,7 @@ describe("buildIncomeProjection", () => {
 
   it("matches netFromPackage for the flat scenario's first (part-time) period", () => {
     const projection = buildIncomeProjection(profile, periods, profile.pay_anchor, flat, 3);
-    const { cash, net } = netFromPackage(profile.package * profile.pt_fraction, profile.super_rate);
+    const { cash, net } = netFromPackage(profile.pt_fortnightly_gross * FN_PER_YEAR, profile.super_rate);
     expect(projection[0].gross).toBeCloseTo(cash / FN_PER_YEAR, 5);
     expect(projection[0].net).toBeCloseTo(net / FN_PER_YEAR, 5);
     expect(projection[0].tax).toBeCloseTo(projection[0].gross - projection[0].net, 5);

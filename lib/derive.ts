@@ -42,10 +42,10 @@ export interface DerivedFinancials {
 export function deriveFinancials(profile: Profile, categories: BudgetCategoryRow[]): DerivedFinancials {
   const pkg = Number(profile.package) || 0;
   const sg = Number(profile.super_rate) || 0;
-  const pf = Number(profile.pt_fraction) || 0;
+  const ptAnnualEquivalent = (Number(profile.pt_fortnightly_gross) || 0) * FN_PER_YEAR;
 
   const ft = netFromPackage(pkg, sg);
-  const pt = netFromPackage(pkg * pf, sg);
+  const pt = netFromPackage(ptAnnualEquivalent, sg);
 
   // Fortnightly is the canonical unit here — a weekly figure converts to it exactly (× 2, since
   // a fortnight is always 2 weeks), while a monthly one only converts approximately (annualize
@@ -167,7 +167,7 @@ export function buildNetWorthProjection(
   const emergencyTarget = Number(profile.emergency_target) || 0;
   const superRate = Number(profile.super_rate) || 0;
   const basePackage = Number(profile.package) || 0;
-  const ptFraction = Number(profile.pt_fraction) || 0;
+  const ptAnnualEquivalent = (Number(profile.pt_fortnightly_gross) || 0) * FN_PER_YEAR;
 
   let emergency = Number(balances.emergency) || 0;
   let deposit = Number(balances.anzplus) || 0;
@@ -180,7 +180,7 @@ export function buildNetWorthProjection(
   const allocationOrder = resolveAllocationOrder(profile.allocation_order, goals);
 
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per, i) => {
-    const grownPackage = (isFT(per.key, profile.ft_start) ? basePackage : basePackage * ptFraction) * scenario.multiplierAt(i);
+    const grownPackage = (isFT(per.key, profile.ft_start) ? basePackage : ptAnnualEquivalent) * scenario.multiplierAt(i);
     const { cash, net } = netFromPackage(grownPackage, superRate);
     const incomeFn = net / FN_PER_YEAR;
     const superFn = (grownPackage - cash) / FN_PER_YEAR;
@@ -1187,11 +1187,11 @@ export function buildIncomeProjection(profile: Profile, periods: Period[], today
   const startIdx = currentPeriod(periods, todayISO).idx;
   const superRate = Number(profile.super_rate) || 0;
   const basePackage = Number(profile.package) || 0;
-  const ptFraction = Number(profile.pt_fraction) || 0;
+  const ptAnnualEquivalent = (Number(profile.pt_fortnightly_gross) || 0) * FN_PER_YEAR;
 
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per, i) => {
     const periodIsFT = isFT(per.key, profile.ft_start);
-    const grownPackage = (periodIsFT ? basePackage : basePackage * ptFraction) * scenario.multiplierAt(i);
+    const grownPackage = (periodIsFT ? basePackage : ptAnnualEquivalent) * scenario.multiplierAt(i);
     const { cash, net } = netFromPackage(grownPackage, superRate);
     const grossFn = cash / FN_PER_YEAR;
     const netFn = net / FN_PER_YEAR;

@@ -69,7 +69,7 @@ const EMPTY_RESET_SELECTIONS: ResetDataSelections = {
 type ProfileInputs = {
   package: string;
   sg: string;
-  ptFrac: string;
+  ptFortnightlyGross: string;
   house: string;
   depPct: string;
   fhog: string;
@@ -85,7 +85,7 @@ function toInputs(profile: Profile): ProfileInputs {
   return {
     package: String(profile.package),
     sg: String(profile.super_rate * 100),
-    ptFrac: String(profile.pt_fraction * 100),
+    ptFortnightlyGross: String(profile.pt_fortnightly_gross),
     house: String(profile.house_target),
     depPct: String(profile.deposit_pct * 100),
     fhog: String(profile.fhog),
@@ -228,7 +228,7 @@ export default function SettingsTab() {
       "Updated plan assumptions:",
       `Salary package (incl super): $${profile.package}`,
       `Super rate: ${(profile.super_rate * 100).toFixed(1)}%`,
-      `Part-time fraction: ${(profile.pt_fraction * 100).toFixed(0)}%`,
+      `Part-time fortnightly gross pay: $${profile.pt_fortnightly_gross}`,
       `A fortnight starts on: ${profile.pay_anchor}`,
       `Paid on: ${WEEKDAY_NAMES[currentPaydayWeekday]} (${paydayOffsetDays} day${paydayOffsetDays === 1 ? "" : "s"} after each fortnight ends)`,
       `Full-time from: ${profile.ft_start}`,
@@ -341,7 +341,13 @@ export default function SettingsTab() {
           <Panel title="Employment & tax" collapsible defaultOpen={false}>
             <PInput label="Salary package (incl. super)" prefix="$" value={inputs.package} onChange={(v) => set("package", v)} onBlur={() => commitNumber("package", inputs.package)} />
             <PInput label="Super rate" suffix="%" value={inputs.sg} onChange={(v) => set("sg", v)} onBlur={() => commitNumber("super_rate", inputs.sg, 100)} />
-            <PInput label="Part-time fraction" suffix="%" value={inputs.ptFrac} onChange={(v) => set("ptFrac", v)} onBlur={() => commitNumber("pt_fraction", inputs.ptFrac, 100)} />
+            <PInput
+              label="Part-time fortnightly gross pay"
+              prefix="$"
+              value={inputs.ptFortnightlyGross}
+              onChange={(v) => set("ptFortnightlyGross", v)}
+              onBlur={() => commitNumber("pt_fortnightly_gross", inputs.ptFortnightlyGross)}
+            />
             <PInput
               label="Tax paid so far this FY (opening balance)"
               prefix="$"

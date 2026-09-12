@@ -5,7 +5,7 @@
 export const DEFAULT_PROFILE_SETTINGS = {
   package: 68000,
   super_rate: 0.12,
-  pt_fraction: 0.8,
+  pt_fortnightly_gross: 2092.31,
   hecs_threshold: 69528,
   pay_anchor: "2026-08-24",
   payday_offset_days: 2,
