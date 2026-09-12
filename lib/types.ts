@@ -29,17 +29,18 @@ export interface Profile {
   allocation_order: AllocationOrder | null;
 }
 
-/** One destination in a pay-priority order: "emergency", "deposit", or a goal's id. */
-export interface AllocationTierItem {
+/** One destination for surplus: "emergency", "deposit", a goal's id, or an extra tracked balance. */
+export interface AllocationItem {
   id: string;
-  /** Relative share within this tier — only meaningful when the tier has more than one item (a "tie"); a solo item's value is ignored. */
+  /** Share of surplus this destination gets, relative to the others — they don't need to add up
+   * to exactly 100, since shares split proportionally either way. */
   weightPct: number;
 }
 
-/** An ordered list of tiers. A solo tier is fully funded before the next tier starts; a tier
- * with 2+ items splits whatever surplus reaches it across them by weightPct, redistributing any
- * item's capped-out leftover to the others in the same tier before moving on. */
-export type AllocationOrder = AllocationTierItem[][];
+/** A flat, percentage-weighted split of fortnightly surplus across every destination at once.
+ * Once a capped destination (a goal's target, the emergency fund's target) is full, its leftover
+ * share redistributes to the rest automatically — see `allocateTier` in lib/derive.ts. */
+export type AllocationOrder = AllocationItem[];
 
 export type BudgetFrequency = "weekly" | "monthly";
 

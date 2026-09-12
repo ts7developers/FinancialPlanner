@@ -629,32 +629,34 @@ export const EMERGENCY_ALLOCATION_ID = "emergency";
 export const DEPOSIT_ALLOCATION_ID = "deposit";
 
 /**
- * The order to use when the profile has no custom `allocation_order`: emergency fund, then every
- * goal in its own existing priority order, then the house deposit — exactly what `fortnightBreakdown`
- * / `buildFortnightSplit` / `buildNetWorthProjection` did before this was configurable, so nobody's
- * numbers change until they actually customize it.
+ * The order to use when the profile has no custom `allocation_order`: an even split across the
+ * emergency fund, every goal, and the house deposit (equal `weightPct` values split evenly
+ * regardless of the actual number, since shares are relative) — a neutral starting point until
+ * you set real percentages for your own destinations.
  */
 function defaultAllocationOrder(goals: Goal[]): AllocationOrder {
-  return [[{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }], ...sortGoalsByPriority(goals).map((g) => [{ id: g.id, weightPct: 100 }]), [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]];
+  return [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }, ...sortGoalsByPriority(goals).map((g) => ({ id: g.id, weightPct: 100 })), { id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }];
 }
 
 /**
  * Normalizes a stored (possibly customized) order against the *current* set of goals: any goal
- * not already somewhere in the order (new since it was last saved) is inserted as its own tier
- * right before wherever "deposit" sits (or at the end, if deposit isn't in there for some
- * reason) — so a newly-added goal starts getting funded instead of silently sitting at 0
- * priority forever. Stale ids for since-deleted goals are left in place but harmless: they
- * resolve to 0 capacity in `applyAllocationOrder` and are simply skipped.
+ * not already in the list (new since it was last saved) is inserted right before "deposit" (or at
+ * the end, if deposit isn't in there for some reason) with an even share — so a newly-added goal
+ * starts getting funded instead of silently sitting at 0%. Stale ids for since-deleted goals are
+ * left in place but harmless: they resolve to 0 capacity in `applyAllocationOrder` and are simply
+ * skipped. Also flattens the older nested "tiers of ties" shape some accounts may still have
+ * stored, so it loads fine under the current flat percentage-split model.
  */
 export function resolveAllocationOrder(stored: AllocationOrder | null | undefined, goals: Goal[]): AllocationOrder {
   if (!stored || stored.length === 0) return defaultAllocationOrder(goals);
-  const seen = new Set(stored.flat().map((t) => t.id));
+  const flat: AllocationOrder = Array.isArray(stored[0]) ? (stored as unknown as AllocationOrder[]).flat() : stored;
+  const seen = new Set(flat.map((t) => t.id));
   const missing = goals.filter((g) => !seen.has(g.id));
-  if (missing.length === 0) return stored;
-  const depositIdx = stored.findIndex((tier) => tier.some((t) => t.id === DEPOSIT_ALLOCATION_ID));
-  const insertAt = depositIdx === -1 ? stored.length : depositIdx;
-  const newTiers = missing.map((g) => [{ id: g.id, weightPct: 100 }]);
-  return [...stored.slice(0, insertAt), ...newTiers, ...stored.slice(insertAt)];
+  if (missing.length === 0) return flat;
+  const depositIdx = flat.findIndex((t) => t.id === DEPOSIT_ALLOCATION_ID);
+  const insertAt = depositIdx === -1 ? flat.length : depositIdx;
+  const newItems = missing.map((g) => ({ id: g.id, weightPct: 100 }));
+  return [...flat.slice(0, insertAt), ...newItems, ...flat.slice(insertAt)];
 }
 
 /**
@@ -717,39 +719,34 @@ export interface AllocationRunResult {
 }
 
 /**
- * Walks `order` tier by tier, splitting `surplus` across each tier's destinations (see
- * `allocateTier`) and carrying whatever's left to the next tier. Shared by `fortnightBreakdown`,
- * `buildFortnightSplit`, and `buildNetWorthProjection` so all three price a custom pay-priority
- * order identically — credit card paydown isn't part of this; it's a fixed first step each of
- * those three applies before calling this.
+ * Splits `surplus` across every destination in `order` at once by its percentage share (see
+ * `allocateTier`), redistributing any capped-out destination's leftover to the rest. Shared by
+ * `fortnightBreakdown`, `buildFortnightSplit`, and `buildNetWorthProjection` so all three price a
+ * custom split identically — credit card paydown isn't part of this; it's a fixed first step each
+ * of those three applies before calling this.
  */
 export function applyAllocationOrder(surplus: number, order: AllocationOrder, emergencyRemaining: number, goalRemaining: Map<string, number>): AllocationRunResult {
   let toEmergency = 0;
   let toDeposit = 0;
   const goalAmounts = new Map<string, number>();
   const otherAmounts = new Map<string, number>();
-  let remaining = Math.max(0, surplus);
 
-  for (const tier of order) {
-    if (remaining <= 1e-9) break;
-    const items: AllocationDestination[] = tier.map((t) => ({
-      id: t.id,
-      weight: t.weightPct,
-      capacity: t.id === DEPOSIT_ALLOCATION_ID || EXTRA_BALANCE_IDS.has(t.id) ? Infinity : t.id === EMERGENCY_ALLOCATION_ID ? Math.max(0, emergencyRemaining) : Math.max(0, goalRemaining.get(t.id) ?? 0),
-    }));
-    const { allocations, leftover } = allocateTier(remaining, items);
-    for (const [id, amt] of Object.entries(allocations)) {
-      if (amt <= 0) continue;
-      if (id === EMERGENCY_ALLOCATION_ID) toEmergency += amt;
-      else if (id === DEPOSIT_ALLOCATION_ID) toDeposit += amt;
-      else if (EXTRA_BALANCE_IDS.has(id)) otherAmounts.set(id, (otherAmounts.get(id) ?? 0) + amt);
-      else goalAmounts.set(id, (goalAmounts.get(id) ?? 0) + amt);
-    }
-    remaining = leftover;
+  const items: AllocationDestination[] = order.map((t) => ({
+    id: t.id,
+    weight: t.weightPct,
+    capacity: t.id === DEPOSIT_ALLOCATION_ID || EXTRA_BALANCE_IDS.has(t.id) ? Infinity : t.id === EMERGENCY_ALLOCATION_ID ? Math.max(0, emergencyRemaining) : Math.max(0, goalRemaining.get(t.id) ?? 0),
+  }));
+  const { allocations, leftover } = allocateTier(Math.max(0, surplus), items);
+  for (const [id, amt] of Object.entries(allocations)) {
+    if (amt <= 0) continue;
+    if (id === EMERGENCY_ALLOCATION_ID) toEmergency += amt;
+    else if (id === DEPOSIT_ALLOCATION_ID) toDeposit += amt;
+    else if (EXTRA_BALANCE_IDS.has(id)) otherAmounts.set(id, (otherAmounts.get(id) ?? 0) + amt);
+    else goalAmounts.set(id, (goalAmounts.get(id) ?? 0) + amt);
   }
   // Safety net: if "deposit" was somehow missing from the order (shouldn't happen —
   // resolveAllocationOrder always includes it), don't let leftover surplus vanish.
-  toDeposit += remaining;
+  toDeposit += leftover;
   return { toEmergency, toDeposit, goalAmounts, otherAmounts };
 }
 
@@ -1357,7 +1354,7 @@ export function fortnightBreakdown(
 
   const goalLabelById = new Map(goals.map((g) => [g.id, g.label]));
   const extraLabelById = new Map(EXTRA_BALANCE_DESTINATIONS.map((d) => [d.id as string, d.label]));
-  const orderedAllocations: AllocationLineItem[] = order.flat().map((t) => ({
+  const orderedAllocations: AllocationLineItem[] = order.map((t) => ({
     id: t.id,
     label: t.id === EMERGENCY_ALLOCATION_ID ? "Emergency fund" : t.id === DEPOSIT_ALLOCATION_ID ? "Deposit" : (extraLabelById.get(t.id) ?? goalLabelById.get(t.id) ?? "Goal"),
     amount: t.id === EMERGENCY_ALLOCATION_ID ? toEmergency : t.id === DEPOSIT_ALLOCATION_ID ? toDeposit : (otherAmounts.get(t.id) ?? goalAmounts.get(t.id) ?? 0),

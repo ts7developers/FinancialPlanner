@@ -26,7 +26,6 @@ import {
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
 import { Metric, Field, Progress } from "@/components/ui/atoms";
-import PayPriorityPanel from "@/components/PayPriorityPanel";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { NetWorthChartRow } from "@/components/charts/NetWorthChart";
 
@@ -147,8 +146,8 @@ export default function SavingsTab() {
     }
   };
 
-  // Goals display in the same order as the "Pay priority" panel above (which is what actually
-  // governs funding order now), rather than each goal's own now-secondary `priority` field.
+  // Goals display in the same order as the Pay split tab's percentage list (which is what
+  // actually governs funding now), rather than each goal's own now-secondary `priority` field.
   const goalRankOrder = resolveAllocationOrder(profile.allocation_order, goals)
     .flat()
     .map((t) => t.id);
@@ -227,14 +226,14 @@ export default function SavingsTab() {
         </div>
       )}
 
-      <PayPriorityPanel />
-
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15 }}>
             <Target size={16} color={GOLD} /> Goals
           </div>
-          <div style={{ fontSize: 12, color: MUTE }}>funded in the order set on Pay priority above</div>
+          <div style={{ fontSize: 12, color: MUTE }}>
+            funded by the percentages set on <Link href="/pay-split" style={{ color: NAVY, fontWeight: 600 }}>Pay split</Link>
+          </div>
         </div>
         {goalFlash && (
           <div style={{ background: "#FBEDE9", color: "#8A3320", borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>{goalFlash}</div>
@@ -276,7 +275,7 @@ export default function SavingsTab() {
         )}
         <div style={{ fontSize: 11, color: MUTE, marginTop: 4, lineHeight: 1.5 }}>
           Each goal is its own virtual balance — update &ldquo;saved so far&rdquo; directly as you set money aside for it (e.g. in a
-          separate ANZ Plus sub-account). Add a new goal and change funding order/splits on <b style={{ color: NAVY }}>Pay priority</b> above.
+          separate ANZ Plus sub-account). Add a new goal and change funding percentages on the <Link href="/pay-split" style={{ color: NAVY, fontWeight: 600 }}>Pay split</Link> tab.
         </div>
       </div>
 

@@ -811,61 +811,70 @@ describe("resolveAllocationOrder", () => {
     { id: "g2", user_id: "u1", label: "Low priority", target_amount: 100, current_amount: 0, priority: 1, created_at: "2026-01-01" },
   ];
 
-  it("defaults to emergency, then goals by priority, then deposit", () => {
-    expect(resolveAllocationOrder(null, goals)).toEqual([[{ id: "emergency", weightPct: 100 }], [{ id: "g1", weightPct: 100 }], [{ id: "g2", weightPct: 100 }], [{ id: "deposit", weightPct: 100 }]]);
+  it("defaults to an even split across emergency, every goal, and deposit", () => {
+    expect(resolveAllocationOrder(null, goals)).toEqual([{ id: "emergency", weightPct: 100 }, { id: "g1", weightPct: 100 }, { id: "g2", weightPct: 100 }, { id: "deposit", weightPct: 100 }]);
   });
 
   it("leaves an order untouched once every current goal is already in it", () => {
-    const stored: AllocationOrder = [[{ id: "g2", weightPct: 100 }], [{ id: "emergency", weightPct: 50 }, { id: "deposit", weightPct: 50 }], [{ id: "g1", weightPct: 100 }]];
+    const stored: AllocationOrder = [{ id: "g2", weightPct: 100 }, { id: "emergency", weightPct: 50 }, { id: "deposit", weightPct: 50 }, { id: "g1", weightPct: 100 }];
     expect(resolveAllocationOrder(stored, goals)).toEqual(stored);
   });
 
-  it("inserts a goal that's new since the order was saved, right before the deposit tier", () => {
-    const stored: AllocationOrder = [[{ id: "g1", weightPct: 100 }], [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }], [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]];
+  it("inserts a goal that's new since the order was saved, right before deposit", () => {
+    const stored: AllocationOrder = [{ id: "g1", weightPct: 100 }, { id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }];
     const result = resolveAllocationOrder(stored, goals); // g2 is missing from `stored`
-    expect(result).toEqual([[{ id: "g1", weightPct: 100 }], [{ id: "emergency", weightPct: 100 }], [{ id: "g2", weightPct: 100 }], [{ id: "deposit", weightPct: 100 }]]);
+    expect(result).toEqual([{ id: "g1", weightPct: 100 }, { id: "emergency", weightPct: 100 }, { id: "g2", weightPct: 100 }, { id: "deposit", weightPct: 100 }]);
   });
 
   it("appends a missing goal at the end if deposit isn't in the stored order at all", () => {
-    const stored: AllocationOrder = [[{ id: "g1", weightPct: 100 }]];
-    expect(resolveAllocationOrder(stored, goals)).toEqual([[{ id: "g1", weightPct: 100 }], [{ id: "g2", weightPct: 100 }]]);
+    const stored: AllocationOrder = [{ id: "g1", weightPct: 100 }];
+    expect(resolveAllocationOrder(stored, goals)).toEqual([{ id: "g1", weightPct: 100 }, { id: "g2", weightPct: 100 }]);
+  });
+
+  it("flattens an older nested tiers-of-ties shape into the current flat list", () => {
+    const legacy = [[{ id: "g1", weightPct: 100 }], [{ id: "emergency", weightPct: 100 }], [{ id: "g2", weightPct: 100 }], [{ id: "deposit", weightPct: 100 }]] as unknown as AllocationOrder;
+    expect(resolveAllocationOrder(legacy, goals)).toEqual([{ id: "g1", weightPct: 100 }, { id: "emergency", weightPct: 100 }, { id: "g2", weightPct: 100 }, { id: "deposit", weightPct: 100 }]);
   });
 });
 
 describe("applyAllocationOrder", () => {
-  it("matches the plain waterfall: emergency fully, then deposit gets the rest", () => {
-    const order: AllocationOrder = [[{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }], [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]];
+  it("splits evenly between emergency and deposit until emergency's cap is reached", () => {
+    // Both start with equal weight, so each gets half — but emergency only needs 300, so once its
+    // share overshoots that, the excess flows entirely to deposit (the only uncapped one left).
+    const order: AllocationOrder = [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }];
     const result = applyAllocationOrder(1000, order, 300, new Map());
     expect(result.toEmergency).toBe(300);
     expect(result.toDeposit).toBe(700);
   });
 
-  it("a goal ranked ahead of emergency gets funded first", () => {
-    const order: AllocationOrder = [[{ id: "g1", weightPct: 100 }], [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }], [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]];
+  it("splits evenly across a goal, emergency, and deposit, capping each at its own remaining room", () => {
+    const order: AllocationOrder = [{ id: "g1", weightPct: 100 }, { id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }];
     const result = applyAllocationOrder(1000, order, 300, new Map([["g1", 200]]));
     expect(result.goalAmounts.get("g1")).toBe(200);
     expect(result.toEmergency).toBe(300);
     expect(result.toDeposit).toBe(500);
   });
 
-  it("splits 50/50 between emergency and deposit when they're tied, until emergency caps out", () => {
-    const order: AllocationOrder = [[{ id: EMERGENCY_ALLOCATION_ID, weightPct: 50 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 50 }]];
+  it("splits 50/50 between emergency and deposit when weighted equally, until emergency caps out", () => {
+    const order: AllocationOrder = [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 50 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 50 }];
     // Emergency only needs 100 more — its 50% share (500) blows past that, so the excess (400) should flow to deposit.
     const result = applyAllocationOrder(1000, order, 100, new Map());
     expect(result.toEmergency).toBe(100);
     expect(result.toDeposit).toBe(900);
   });
 
-  it("carries leftover from an exhausted tier to the next one", () => {
-    const order: AllocationOrder = [[{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }], [{ id: "g1", weightPct: 100 }], [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]];
-    const result = applyAllocationOrder(1000, order, 5000, new Map([["g1", 50]])); // emergency absorbs everything it can, nothing reaches g1
-    expect(result.toEmergency).toBe(1000);
-    expect(result.goalAmounts.get("g1") ?? 0).toBe(0);
-    expect(result.toDeposit).toBe(0);
+  it("redistributes a capped-out goal's leftover share across everything else in the list", () => {
+    const order: AllocationOrder = [{ id: "g1", weightPct: 100 }, { id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }];
+    // g1's even third (300) blows past its 90 cap; the 210 leftover splits evenly between the two
+    // effectively-uncapped destinations (emergency's own cap is nowhere close to being reached).
+    const result = applyAllocationOrder(900, order, 1_000_000, new Map([["g1", 90]]));
+    expect(result.goalAmounts.get("g1")).toBe(90);
+    expect(result.toEmergency).toBe(405);
+    expect(result.toDeposit).toBe(405);
   });
 
-  it("routes a tied share to an extra balance destination (e.g. Holiday), uncapped like deposit", () => {
-    const order: AllocationOrder = [[{ id: "holiday", weightPct: 20 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 80 }]];
+  it("routes a share to an extra balance destination (e.g. Holiday), uncapped like deposit", () => {
+    const order: AllocationOrder = [{ id: "holiday", weightPct: 20 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 80 }];
     const result = applyAllocationOrder(1000, order, 0, new Map());
     expect(result.otherAmounts.get("holiday")).toBe(200);
     expect(result.toDeposit).toBe(800);
@@ -875,16 +884,16 @@ describe("applyAllocationOrder", () => {
 describe("fortnightBreakdown", () => {
   const today = "2026-08-19";
 
-  it("routes a one-off net pay through categories, credit card, emergency fund, then deposit", () => {
+  it("routes a one-off net pay through categories and credit card, then splits the rest evenly between emergency and deposit", () => {
     const b = fortnightBreakdown(400, balances, [], [], 1000, profile.emergency_target, today);
     expect(b.categoriesTotal).toBe(400);
     const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
     const toCC = Math.min(surplus, balances.cc);
     expect(b.toCreditCard).toBeCloseTo(toCC, 5);
     const afterCC = surplus - toCC;
-    const toEmergency = Math.min(afterCC, (profile.emergency_target || 0) - balances.emergency);
-    expect(b.toEmergency).toBeCloseTo(toEmergency, 5);
-    expect(b.toDeposit).toBeCloseTo(afterCC - toEmergency, 5);
+    // Default order gives emergency and deposit an even share — neither is anywhere near its cap here.
+    expect(b.toEmergency).toBeCloseTo(afterCC / 2, 5);
+    expect(b.toDeposit).toBeCloseTo(afterCC / 2, 5);
   });
 
   it("takes categoriesTotal as given — the caller decides full plan vs remaining unspent budget", () => {
@@ -921,25 +930,27 @@ describe("fortnightBreakdown", () => {
     expect(b.toDeposit).toBeCloseTo(1000 - b.categoriesTotal - b.toGoalsTotal, 5);
   });
 
-  it("honours a custom allocation order instead of the default emergency-then-deposit waterfall", () => {
+  it("honours a custom allocation order, capping a goal at its target and splitting the rest evenly", () => {
     const noCC = { ...balances, cc: 0, emergency: 0 };
     const goals: Goal[] = [{ id: "g1", user_id: "u1", label: "Holiday", target_amount: 200, current_amount: 0, priority: 5, created_at: "2026-01-01" }];
-    // Holiday fund ranked ahead of emergency — the opposite of the default order.
-    const order: AllocationOrder = [[{ id: "g1", weightPct: 100 }], [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }], [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]];
+    const order: AllocationOrder = [{ id: "g1", weightPct: 100 }, { id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }];
     const b = fortnightBreakdown(400, noCC, [], goals, 1000, profile.emergency_target, today, order);
     const g1 = b.goalAllocations.find((g) => g.id === "g1")!;
-    const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
-    expect(g1.amount).toBe(200); // fully funded first, ahead of emergency
-    expect(b.toEmergency).toBeCloseTo(surplus - 200, 5); // gets whatever's left, still under its target
-    // orderedAllocations reflects the actual configured sequence, not a hardcoded one — a UI
-    // rendering this list top to bottom should show Holiday before Emergency fund before Deposit.
+    const surplus = 1000 - b.categoriesTotal - b.sinkingTotal; // 600
+    // Each gets an even third (200) — g1's target caps it there exactly; the leftover from the
+    // other two (there isn't any here, since emergency is nowhere near its own target) just stays even.
+    expect(g1.amount).toBe(200);
+    expect(b.toEmergency).toBeCloseTo(200, 5);
+    expect(b.toDeposit).toBeCloseTo(surplus - g1.amount - b.toEmergency, 5);
+    // orderedAllocations reflects the actual configured list, not a hardcoded one — a UI rendering
+    // this top to bottom should show Holiday, then Emergency fund, then Deposit.
     expect(b.orderedAllocations.map((a) => a.label)).toEqual(["Holiday", "Emergency fund", "Deposit"]);
     expect(b.orderedAllocations[0].amount).toBe(200);
   });
 
-  it("splits a tied 50/50 emergency + deposit tier instead of filling emergency first", () => {
+  it("splits 50/50 between emergency and deposit when weighted equally", () => {
     const noCC = { ...balances, cc: 0, emergency: 0 };
-    const order: AllocationOrder = [[{ id: EMERGENCY_ALLOCATION_ID, weightPct: 50 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 50 }]];
+    const order: AllocationOrder = [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 50 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 50 }];
     const b = fortnightBreakdown(400, noCC, [], [], 1000, profile.emergency_target, today, order);
     const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
     expect(b.toEmergency).toBeCloseTo(surplus / 2, 5);
@@ -948,12 +959,13 @@ describe("fortnightBreakdown", () => {
 
   it("shows an extra balance destination (the Holiday account) by its real label in orderedAllocations", () => {
     const noCC = { ...balances, cc: 0, emergency: 0 };
-    const order: AllocationOrder = [[{ id: "holiday", weightPct: 20 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 80 }], [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }]];
+    const order: AllocationOrder = [{ id: "holiday", weightPct: 20 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 80 }, { id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }];
     const b = fortnightBreakdown(400, noCC, [], [], 1000, profile.emergency_target, today, order);
     const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
+    const totalWeight = 20 + 80 + 100;
     const holiday = b.orderedAllocations.find((a) => a.id === "holiday")!;
     expect(holiday.label).toBe("Holiday (cruise)");
-    expect(holiday.amount).toBeCloseTo(surplus * 0.2, 5);
+    expect(holiday.amount).toBeCloseTo(surplus * (20 / totalWeight), 5);
   });
 });
 
@@ -991,7 +1003,10 @@ describe("buildFortnightSplit", () => {
     const toCC = Math.min(surplus, balances.cc);
     expect(first.toCreditCard).toBeCloseTo(toCC, 5);
     const afterCC = surplus - toCC;
-    expect(first.toEmergency).toBeCloseTo(Math.min(afterCC, (profile.emergency_target || 0) - balances.emergency), 5);
+    // Default order splits the rest evenly between emergency and deposit — a single fortnight's
+    // surplus here is nowhere near emergency's remaining target, so it isn't capped.
+    expect(first.toEmergency).toBeCloseTo(afterCC / 2, 5);
+    expect(first.toDeposit).toBeCloseTo(afterCC / 2, 5);
   });
 
   it("stops topping up the emergency fund once it's already at its target", () => {
@@ -1037,15 +1052,15 @@ describe("buildFortnightSplit", () => {
   });
 
   it("tracks a running balance for an extra destination (Holiday) added to a custom order", () => {
-    const holidayFirst: Profile = { ...profile, allocation_order: [[{ id: "holiday", weightPct: 100 }], [{ id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }]] };
+    const mostlyHoliday: Profile = { ...profile, allocation_order: [{ id: "holiday", weightPct: 80 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 20 }] };
     const noCCFullEmergency = { ...balances, emergency: profile.emergency_target, cc: 0, holiday: 100 };
-    const split = buildFortnightSplit(holidayFirst, D, categories, noCCFullEmergency, [], noGoals, periods, profile.pay_anchor, 2);
+    const split = buildFortnightSplit(mostlyHoliday, D, categories, noCCFullEmergency, [], noGoals, periods, profile.pay_anchor, 2);
     const holidayP0 = split[0].otherAllocations.find((o) => o.id === "holiday")!;
     const surplus0 = Math.max(0, split[0].netPay - split[0].categoriesTotal);
-    expect(holidayP0.amount).toBeCloseTo(surplus0, 5);
-    expect(holidayP0.balance).toBe(Math.round(100 + surplus0));
-    // Balance keeps accumulating into period 2, and nothing reaches deposit while holiday is solo-ranked first.
-    expect(split[0].toDeposit).toBe(0);
+    expect(holidayP0.amount).toBeCloseTo(surplus0 * 0.8, 5);
+    expect(holidayP0.balance).toBe(Math.round(100 + surplus0 * 0.8));
+    expect(split[0].toDeposit).toBeCloseTo(surplus0 * 0.2, 5);
+    // Balance keeps accumulating into period 2.
     const holidayP1 = split[1].otherAllocations.find((o) => o.id === "holiday")!;
     expect(holidayP1.balance).toBeGreaterThan(holidayP0.balance);
   });

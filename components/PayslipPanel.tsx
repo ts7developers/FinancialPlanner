@@ -3,9 +3,9 @@
 import { useRef, useState } from "react";
 import { Upload, Check, FileEdit, ArrowRight } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
+import { useFortnightBreakdown } from "@/components/useFortnightBreakdown";
 import { createClient } from "@/lib/supabase/client";
-import { isoFromDate } from "@/lib/period";
-import { actualIncomeForPeriod, fortnightBreakdown, reconcileCategoryRows, EMERGENCY_ALLOCATION_ID, DEPOSIT_ALLOCATION_ID } from "@/lib/derive";
+import { EMERGENCY_ALLOCATION_ID, DEPOSIT_ALLOCATION_ID } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, INK, FAV, UNFAV, NAVY, inputStyle } from "@/lib/theme";
 import { InfoTip } from "@/components/ui/atoms";
@@ -13,7 +13,7 @@ import type { PayslipExtraction } from "@/lib/payslipSchema";
 import type { Payslip } from "@/lib/types";
 
 export default function PayslipPanel({ periodKey }: { periodKey: string }) {
-  const { profile, payslips, addPayslip, updatePayslip, confirmPayslip, categories, balances, recurringExpenses, goals, miscIncome, periods, D, loggedByCat, reconciliations } = useAppData();
+  const { profile, payslips, addPayslip, updatePayslip, confirmPayslip } = useAppData();
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -25,38 +25,7 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
 
   // "Where this pay goes" — the fortnightly waterfall applied to everything actually confirmed
   // for this period so far (every confirmed payslip's net + misc income), not just this one payslip.
-  const periodTotal = actualIncomeForPeriod(payslips, miscIncome, periodKey, profile.pay_anchor);
-  const per = periods.find((p) => p.key === periodKey);
-  // Only what's still unspent against the plan — money already spent (often via credit card,
-  // which is already reflected in the `cc` balance paid down below) shouldn't be reserved twice.
-  const rec = reconciliations[periodKey];
-  const remainingCategoriesTotal = per
-    ? reconcileCategoryRows(categories, D, per.year, loggedByCat[periodKey], rec?.actual_overrides ?? {}).reduce((s, r) => s + Math.max(0, r.plan - (r.actual ?? 0)), 0)
-    : 0;
-  // Use the cc/emergency/goal balances frozen when this fortnight's first income was confirmed
-  // (see AppDataProvider's confirmPayslip/addMiscIncome) rather than today's live balances, so the
-  // plan doesn't reshuffle itself once the user starts actually moving money per its recommendation.
-  const baseline = rec?.breakdown_baseline;
-  const breakdownBalances = baseline ? { ...balances, cc: baseline.cc, emergency: baseline.emergency } : balances;
-  const breakdownGoals = baseline
-    ? goals.map((g) => {
-        const snap = baseline.goals.find((x) => x.id === g.id);
-        return snap ? { ...g, current_amount: snap.current_amount } : g;
-      })
-    : goals;
-  const breakdown =
-    per && periodTotal > 0
-      ? fortnightBreakdown(
-          remainingCategoriesTotal,
-          breakdownBalances,
-          recurringExpenses,
-          breakdownGoals,
-          periodTotal,
-          Number(profile.emergency_target) || 0,
-          isoFromDate(new Date()),
-          profile.allocation_order
-        )
-      : null;
+  const { breakdown, confirmedTotal: periodTotal } = useFortnightBreakdown(periodKey);
 
   const handleFile = async (file: File) => {
     setBusy(true);
@@ -272,8 +241,8 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
                 <span style={{ fontVariantNumeric: "tabular-nums", color: UNFAV }}>{AUD(breakdown.toCreditCard)}</span>
               </div>
             )}
-            {/* In the order money actually flows per your Pay priority setup (Wealth → Savings) —
-                not a hardcoded emergency-then-goals-then-deposit list. */}
+            {/* In the order configured on the Pay split tab — not a hardcoded
+                emergency-then-goals-then-deposit list. */}
             {breakdown.orderedAllocations
               .filter((a) => a.amount > 0)
               .map((a) => {
@@ -290,8 +259,8 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
           <div style={{ fontSize: 11, color: MUTE, marginTop: 8, lineHeight: 1.5 }}>
             Based on {AUD(periodTotal)} confirmed so far this fortnight, against your card/emergency/goal balances as they stood when this fortnight&apos;s pay first landed — a guide
             for where to move the money, not automatic, and it won&apos;t reshuffle itself as you actually make those transfers. &ldquo;Still to spend&rdquo; only counts what&apos;s
-            left of the budget, not the full plan — anything already logged (e.g. on the credit card) is already reflected in what that card owed then. Change the order money goes to
-            (or split it between two things) under <b style={{ color: NAVY }}>Pay priority</b> on <b style={{ color: NAVY }}>Wealth</b>.
+            left of the budget, not the full plan — anything already logged (e.g. on the credit card) is already reflected in what that card owed then. Change what percentage goes
+            where on the <b style={{ color: NAVY }}>Pay split</b> tab.
           </div>
         </div>
       )}
