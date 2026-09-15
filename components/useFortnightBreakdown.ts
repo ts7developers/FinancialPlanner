@@ -28,8 +28,20 @@ export function useFortnightBreakdown(periodKey: string, opts: { fallbackToPlann
   const rec = reconciliations[periodKey];
   // Only what's still unspent against the plan — money already spent (often via credit card,
   // which is already reflected in the `cc` balance paid down below) shouldn't be reserved twice.
+  // A category with no logged Expenses transaction and no manual override this period reads as
+  // `actual: null` (unconfirmed) rather than 0 — right for a category that's usually tracked via
+  // Expenses and simply hasn't happened yet this fortnight (its full plan genuinely IS still to
+  // spend), but wrong for a fixed bill (car insurance, gym, a subscription) that's NEVER logged
+  // via Expenses at all: that money isn't sitting around waiting to be spent, it just isn't
+  // reconciled yet, so counting its full plan here overstates "still to spend" every fortnight
+  // until the user manually confirms it. Distinguish the two using whether the category has ever
+  // had a logged Expenses transaction in ANY period — not just this one.
   const remainingCategoriesTotal = per
-    ? reconcileCategoryRows(categories, D, per.year, loggedByCat[periodKey], rec?.actual_overrides ?? {}).reduce((s, r) => s + Math.max(0, r.plan - (r.actual ?? 0)), 0)
+    ? reconcileCategoryRows(categories, D, per.year, loggedByCat[periodKey], rec?.actual_overrides ?? {}).reduce((s, r) => {
+        if (r.actual !== null) return s + Math.max(0, r.plan - r.actual);
+        const everLogged = Object.values(loggedByCat).some((cats) => (cats[r.id] || 0) > 0);
+        return everLogged ? s + r.plan : s;
+      }, 0)
     : 0;
   // Use the emergency/goal balances frozen when this fortnight's first income was confirmed (see
   // AppDataProvider's confirmPayslip/addMiscIncome) rather than today's live balances, so the plan
