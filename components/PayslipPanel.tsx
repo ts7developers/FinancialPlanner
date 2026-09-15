@@ -247,10 +247,10 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
               })}
           </div>
           <div style={{ fontSize: 11, color: MUTE, marginTop: 8, lineHeight: 1.5 }}>
-            Based on {AUD(periodTotal)} confirmed so far this fortnight, against your card/emergency/goal balances as they stood when this fortnight&apos;s pay first landed — a guide
-            for where to move the money, not automatic, and it won&apos;t reshuffle itself as you actually make those transfers. &ldquo;Still to spend&rdquo; only counts what&apos;s
-            left of the budget, not the full plan — anything already logged (e.g. on the credit card) is already reflected in what that card owed then. Change what percentage goes
-            where on the <b style={{ color: NAVY }}>Pay split</b> tab.
+            Based on {AUD(periodTotal)} confirmed so far this fortnight, against your card&apos;s current balance and your emergency/goal balances as they stood when this
+            fortnight&apos;s pay first landed — a guide for where to move the money, not automatic, and it won&apos;t reshuffle itself as you actually make those transfers.
+            &ldquo;Still to spend&rdquo; only counts what&apos;s left of the budget, not the full plan. Change what percentage goes where on the{" "}
+            <b style={{ color: NAVY }}>Pay split</b> tab.
           </div>
         </div>
       )}
