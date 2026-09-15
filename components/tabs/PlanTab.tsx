@@ -3,8 +3,6 @@
 import { useState } from "react";
 import { Trash2, Plus } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
-import { isoFromDate } from "@/lib/period";
-import { sinkingFundTotal } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { MUTE_ICON, ON_ACCENT_DARK, SURFACE_SUBTLE, NAVY, MUTE, GOLD, LINE, inputStyle, selStyle } from "@/lib/theme";
 import { Panel, Field } from "@/components/ui/atoms";
@@ -12,7 +10,6 @@ import type { BudgetFrequency } from "@/lib/types";
 
 export default function PlanTab() {
   const { categories, recurringExpenses, D, updateCategory, addCategory, deleteCategory } = useAppData();
-  const recurringFortnightTotal = sinkingFundTotal(recurringExpenses, isoFromDate(new Date()));
   const activeRecurringCount = recurringExpenses.filter((r) => r.active).length;
   const [catInputs, setCatInputs] = useState<Record<string, { label: string; a26: string; a27: string }>>(() =>
     Object.fromEntries(categories.map((c) => [c.key, { label: c.label, a26: String(c.amount_2026), a27: String(c.amount_2027) }]))
@@ -136,8 +133,8 @@ export default function PlanTab() {
         </div>
         {activeRecurringCount > 0 && (
           <div style={{ marginTop: 12, padding: "10px 12px", background: SURFACE_SUBTLE, borderRadius: 8, fontSize: 12, color: NAVY, lineHeight: 1.5 }}>
-            Plus <b>{AUD(recurringFortnightTotal, 2)}/fn</b> set aside for {activeRecurringCount} recurring bill{activeRecurringCount === 1 ? "" : "s"} on{" "}
-            <b>Expenses</b> (rego, insurance, subscriptions) — not counted in the totals above, so check nothing&apos;s budgeted in both places at once.
+            You also have {activeRecurringCount} recurring bill{activeRecurringCount === 1 ? "" : "s"} tracked separately on <b>Expenses</b> (rego, insurance, subscriptions) — not
+            counted in the totals above, so check nothing&apos;s budgeted in both places at once.
           </div>
         )}
         <div style={{ display: "flex", gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${LINE}`, alignItems: "flex-end" }}>

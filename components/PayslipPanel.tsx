@@ -8,7 +8,6 @@ import { createClient } from "@/lib/supabase/client";
 import { EMERGENCY_ALLOCATION_ID, DEPOSIT_ALLOCATION_ID } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { CARD, LINE, MUTE, GOLD, INK, ON_ACCENT_DARK, FAV, UNFAV, NAVY, inputStyle } from "@/lib/theme";
-import { InfoTip } from "@/components/ui/atoms";
 import type { PayslipExtraction } from "@/lib/payslipSchema";
 import type { Payslip } from "@/lib/types";
 
@@ -230,15 +229,6 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ color: MUTE }}>Still to spend this fortnight (budget left)</span>
                 <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(breakdown.categoriesTotal)}</span>
-              </div>
-            )}
-            {breakdown.sinkingTotal > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: MUTE, display: "flex", alignItems: "center" }}>
-                  Set aside for bills
-                  <InfoTip text="A slice of this pay held back for irregular bills (car rego, insurance, annual subscriptions) so the full amount is there when they're actually due, instead of landing as one big surprise expense." />
-                </span>
-                <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(breakdown.sinkingTotal)}</span>
               </div>
             )}
             {/* In the order configured on the Pay split tab — not a hardcoded

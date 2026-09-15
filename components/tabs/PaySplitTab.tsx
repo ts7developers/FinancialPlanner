@@ -62,12 +62,6 @@ export default function PaySplitTab() {
                 <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(breakdown.categoriesTotal)}</span>
               </div>
             )}
-            {breakdown.sinkingTotal > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: MUTE }}>Set aside for bills</span>
-                <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(breakdown.sinkingTotal)}</span>
-              </div>
-            )}
             {breakdown.orderedAllocations
               .filter((a) => a.amount > 0)
               .map((a) => {

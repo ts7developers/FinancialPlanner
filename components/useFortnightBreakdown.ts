@@ -1,6 +1,5 @@
 "use client";
 
-import { isoFromDate } from "@/lib/period";
 import { actualIncomeForPeriod, fortnightBreakdown, plannedIncomeFN, reconcileCategoryRows, type FortnightBreakdown } from "@/lib/derive";
 import { useAppData } from "@/components/AppDataProvider";
 
@@ -22,7 +21,7 @@ export interface FortnightBreakdownResult {
  */
 export function useFortnightBreakdown(periodKey: string, opts: { fallbackToPlanned?: boolean } = {}): FortnightBreakdownResult {
   const { fallbackToPlanned = false } = opts;
-  const { profile, payslips, categories, balances, recurringExpenses, goals, miscIncome, periods, D, loggedByCat, reconciliations } = useAppData();
+  const { profile, payslips, categories, balances, goals, miscIncome, periods, D, loggedByCat, reconciliations } = useAppData();
 
   const periodTotal = actualIncomeForPeriod(payslips, miscIncome, periodKey, profile.pay_anchor);
   const per = periods.find((p) => p.key === periodKey);
@@ -56,11 +55,9 @@ export function useFortnightBreakdown(periodKey: string, opts: { fallbackToPlann
       ? fortnightBreakdown(
           remainingCategoriesTotal,
           breakdownBalances,
-          recurringExpenses,
           breakdownGoals,
           netPay,
           Number(profile.emergency_target) || 0,
-          isoFromDate(new Date()),
           profile.allocation_order
         )
       : null;

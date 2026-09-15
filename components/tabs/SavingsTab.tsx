@@ -36,7 +36,7 @@ const HORIZON_PERIODS = 78; // roughly 3 years of fortnights
 
 export default function SavingsTab() {
   const isMobile = useIsMobile();
-  const { profile, balances, periods, categories, superContributions, recurringExpenses, goals, updateGoal, deleteGoal, undoDeleteGoal, loggedByCat, reconciliations, snapshots, D } = useAppData();
+  const { profile, balances, periods, categories, superContributions, goals, updateGoal, deleteGoal, undoDeleteGoal, loggedByCat, reconciliations, snapshots, D } = useAppData();
   const toast = useToast();
   const [goalAmountInputs, setGoalAmountInputs] = useState<Record<string, string>>({});
   const [goalFlash, setGoalFlash] = useState("");
@@ -95,7 +95,7 @@ export default function SavingsTab() {
   const depositTarget = D.dep5;
   const depositRemaining = Math.max(0, depositTarget - combinedDeposit);
 
-  const split = buildFortnightSplit(profile, adaptiveD, categories, balances, recurringExpenses, goals, periods, today, 10);
+  const split = buildFortnightSplit(profile, adaptiveD, categories, balances, goals, periods, today, 10);
   const avgToDeposit = split.length > 0 ? split.reduce((s, p) => s + p.toDeposit, 0) / split.length : 0;
   const etaPeriods = periodsToTarget(combinedDeposit, depositTarget, avgToDeposit);
   const currentIdx = split.length > 0 ? periods.findIndex((p) => p.key === split[0].key) : -1;
@@ -111,7 +111,7 @@ export default function SavingsTab() {
   const ccBalance = Number(balances.cc) || 0;
   // Long horizon just for this ETA (a slow payoff can take a while) — separate from `split`,
   // which stays short since it also drives the averages above.
-  const ccProjection = buildFortnightSplit(profile, adaptiveD, categories, balances, recurringExpenses, goals, periods, today, 52);
+  const ccProjection = buildFortnightSplit(profile, adaptiveD, categories, balances, goals, periods, today, 52);
   const ccPayoffPoint = creditCardPayoffPeriod(ccProjection);
   const ccStuck = ccBalance > 0 && !ccPayoffPoint && ccProjection.every((p) => p.toCreditCard === 0);
   const ccEtaLabel = ccBalance <= 0 ? "nothing owing" : ccPayoffPoint ? ccPayoffPoint.label : ccStuck ? "no surplus to put toward it" : `beyond ${ccProjection.length} fortnights`;

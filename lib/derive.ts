@@ -1223,7 +1223,6 @@ export interface FortnightSplitPoint {
   isFT: boolean;
   netPay: number;
   categoriesTotal: number;
-  sinkingTotal: number;
   toCreditCard: number;
   toEmergency: number;
   toGoalsTotal: number;
@@ -1236,58 +1235,6 @@ export interface FortnightSplitPoint {
   otherAllocations: GoalAllocation[];
 }
 
-/** How many times a year a recurring expense of this frequency falls due. */
-const RECURRING_OCCURRENCES_PER_YEAR: Record<RecurringFrequency, number> = {
-  weekly: 52,
-  fortnightly: 26,
-  monthly: 12,
-  quarterly: 4,
-  yearly: 1,
-};
-
-/**
- * Converts a recurring expense's amount+frequency to its per-fortnight equivalent set-aside
- * rate. Weekly/fortnightly/monthly bills recur predictably often enough that a flat
- * occurrences-per-year average is the right steady-state number. Quarterly/yearly ones are big,
- * infrequent lump sums instead — for those, dividing the amount by the fortnights actually left
- * until `nextDueISO` gives a real answer to "how much do I need to save each pay to have this
- * ready in time", which a flat annual average can badly understate right after adding a bill
- * that's due soon. It recalculates as the due date approaches, so it climbs if nothing's been
- * set aside yet — set the amount aside as it says and the rate stays flat instead.
- */
-export function recurringPerFortnight(amount: number, frequency: RecurringFrequency, nextDueISO: string, todayISO: string): number {
-  if (frequency === "yearly" || frequency === "quarterly") {
-    const fortnightsUntilDue = Math.max(1, Math.ceil(daysUntil(nextDueISO, todayISO) / 14));
-    return amount / fortnightsUntilDue;
-  }
-  return (amount * RECURRING_OCCURRENCES_PER_YEAR[frequency]) / FN_PER_YEAR;
-}
-
-export interface SinkingFundItem {
-  label: string;
-  amount: number;
-  frequency: RecurringFrequency;
-  nextDue: string;
-  perFortnight: number;
-}
-
-/**
- * Active recurring expenses (rego, insurance, subscriptions, etc) sit outside the monthly
- * budget categories entirely — nothing in `D.expFN` accounts for them. This is what should be
- * set aside each pay so the lump sum is there when they're actually due, biggest first.
- */
-export function sinkingFundBreakdown(recurringExpenses: RecurringExpense[], todayISO: string): SinkingFundItem[] {
-  return recurringExpenses
-    .filter((r) => r.active)
-    .map((r) => ({ label: r.description, amount: r.amount, frequency: r.frequency, nextDue: r.next_due, perFortnight: recurringPerFortnight(r.amount, r.frequency, r.next_due, todayISO) }))
-    .sort((a, b) => b.perFortnight - a.perFortnight);
-}
-
-/** Total per-fortnight set-aside across all active recurring expenses — see `sinkingFundBreakdown`. */
-export function sinkingFundTotal(recurringExpenses: RecurringExpense[], todayISO: string): number {
-  return sinkingFundBreakdown(recurringExpenses, todayISO).reduce((s, i) => s + i.perFortnight, 0);
-}
-
 export interface AllocationLineItem {
   id: string;
   label: string;
@@ -1297,7 +1244,6 @@ export interface AllocationLineItem {
 export interface FortnightBreakdown {
   netPay: number;
   categoriesTotal: number;
-  sinkingTotal: number;
   toCreditCard: number;
   toEmergency: number;
   toGoalsTotal: number;
@@ -1314,11 +1260,11 @@ export interface FortnightBreakdown {
  * paydown against its *full* balance first (fixed, ahead of everything else — for an account
  * where nearly all spending runs through the card, that balance already represents this
  * fortnight's real spend, so clearing it takes priority over reserving for budgeted categories
- * that haven't hit the card yet), then remaining budgeted spend, then the sinking-fund set-aside,
- * then the emergency fund, then `goals` in priority order, then whatever's left to the deposit —
- * to a single one-off amount (e.g. a just-confirmed payslip's net, or a fortnight's combined
- * actual income) against today's real balances, rather than to the planned income for a series of
- * projected periods. Used to show "where this pay goes" right after importing a payslip.
+ * that haven't hit the card yet), then remaining budgeted spend, then the emergency fund, then
+ * `goals` in priority order, then whatever's left to the deposit — to a single one-off amount
+ * (e.g. a just-confirmed payslip's net, or a fortnight's combined actual income) against today's
+ * real balances, rather than to the planned income for a series of projected periods. Used to show
+ * "where this pay goes" right after importing a payslip.
  *
  * `categoriesTotal` is caller-supplied rather than derived from `D`/`categories`/`year` here, so
  * it can reflect what's actually still unspent this fortnight (plan minus whatever's already
@@ -1330,18 +1276,14 @@ export interface FortnightBreakdown {
 export function fortnightBreakdown(
   categoriesTotal: number,
   balances: Balances,
-  recurringExpenses: RecurringExpense[],
   goals: Goal[],
   netPay: number,
   emergencyTarget: number,
-  todayISO: string,
   allocationOrder?: AllocationOrder | null
 ): FortnightBreakdown {
-  const sinkingTotal = sinkingFundTotal(recurringExpenses, todayISO);
-
   const cc = Number(balances.cc) || 0;
   const toCreditCard = Math.max(0, Math.min(netPay, cc));
-  const surplus = Math.max(0, netPay - toCreditCard - categoriesTotal - sinkingTotal);
+  const surplus = Math.max(0, netPay - toCreditCard - categoriesTotal);
 
   const emergency = Number(balances.emergency) || 0;
   const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (Number(g.current_amount) || 0))]));
@@ -1363,26 +1305,24 @@ export function fortnightBreakdown(
     amount: t.id === EMERGENCY_ALLOCATION_ID ? toEmergency : t.id === DEPOSIT_ALLOCATION_ID ? toDeposit : (otherAmounts.get(t.id) ?? goalAmounts.get(t.id) ?? 0),
   }));
 
-  return { netPay, categoriesTotal, sinkingTotal, toCreditCard, toEmergency, toGoalsTotal, goalAllocations, toDeposit, orderedAllocations };
+  return { netPay, categoriesTotal, toCreditCard, toEmergency, toGoalsTotal, goalAllocations, toDeposit, orderedAllocations };
 }
 
 /**
  * Walks forward from today's real balances, one pay period at a time, showing exactly where
  * each fortnight's pay is planned to go: credit card paydown against its *full* balance first
  * (fixed, ahead of everything else — see `fortnightBreakdown`'s doc comment for why), then
- * budgeted categories, then a set-aside for recurring non-fortnightly bills (rego, insurance —
- * see `sinkingFundBreakdown`), then whatever surplus remains tops up the emergency fund (until
- * its target), funds `goals` in priority order (until each one's target), and finally whatever's
+ * budgeted categories, then whatever surplus remains tops up the emergency fund (until its
+ * target), funds `goals` in priority order (until each one's target), and finally whatever's
  * left goes to the house deposit. Same waterfall `buildPlanPath`/`buildNetWorthProjection` use,
- * extended with the credit-card/sinking-fund/goals steps and surfaced per-period instead of
- * collapsed into a single running total.
+ * extended with the credit-card/goals steps and surfaced per-period instead of collapsed into a
+ * single running total.
  */
 export function buildFortnightSplit(
   profile: Profile,
   D: DerivedFinancials,
   categories: BudgetCategoryRow[],
   balances: Balances,
-  recurringExpenses: RecurringExpense[],
   goals: Goal[],
   periods: Period[],
   todayISO: string,
@@ -1390,7 +1330,6 @@ export function buildFortnightSplit(
 ): FortnightSplitPoint[] {
   const startIdx = currentPeriod(periods, todayISO).idx;
   const emergencyTarget = Number(profile.emergency_target) || 0;
-  const sinkingTotal = sinkingFundTotal(recurringExpenses, todayISO);
   let emergency = Number(balances.emergency) || 0;
   let deposit = Number(balances.anzplus) || 0;
   let cc = Number(balances.cc) || 0;
@@ -1403,7 +1342,7 @@ export function buildFortnightSplit(
     const netPay = plannedIncomeFN(per, profile, D);
     const categoriesTotal = D.expFN(per.year);
     const toCreditCard = Math.max(0, Math.min(netPay, cc));
-    const surplus = Math.max(0, netPay - toCreditCard - categoriesTotal - sinkingTotal);
+    const surplus = Math.max(0, netPay - toCreditCard - categoriesTotal);
     cc = Math.max(0, cc - toCreditCard);
 
     const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (goalBalances.get(g.id) ?? 0))]));
@@ -1435,7 +1374,6 @@ export function buildFortnightSplit(
       isFT: isFT(per.key, profile.ft_start),
       netPay,
       categoriesTotal,
-      sinkingTotal,
       toCreditCard,
       toEmergency,
       toGoalsTotal,

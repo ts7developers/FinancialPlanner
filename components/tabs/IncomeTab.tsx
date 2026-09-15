@@ -13,7 +13,6 @@ import {
   buildIncomeProjection,
   buildFortnightSplit,
   fortnightCategoryBreakdown,
-  sinkingFundBreakdown,
   creditCardPayoffPeriod,
   adaptiveCategoryRates,
   adaptiveExpenseTotal,
@@ -39,7 +38,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function IncomeTab() {
   const isMobile = useIsMobile();
-  const { profile, payslips, periods, categories, balances, D, miscIncome, addMiscIncome, deleteMiscIncome, recurringExpenses, goals, loggedByCat, reconciliations } = useAppData();
+  const { profile, payslips, periods, categories, balances, D, miscIncome, addMiscIncome, deleteMiscIncome, goals, loggedByCat, reconciliations } = useAppData();
   const [scenarioId, setScenarioId] = useState("flat");
   const [miscDate, setMiscDate] = useState("");
   const [miscDesc, setMiscDesc] = useState("");
@@ -121,12 +120,11 @@ export default function IncomeTab() {
   const adaptiveCategories = adaptiveRates.filter((r) => r.adaptive);
   const adaptiveD = withAdaptiveExpenses(D, currentYear, adaptiveExpenseTotal(adaptiveRates));
 
-  const split = buildFortnightSplit(profile, adaptiveD, categories, balances, recurringExpenses, goals, periods, today, 10);
+  const split = buildFortnightSplit(profile, adaptiveD, categories, balances, goals, periods, today, 10);
   const splitCurrentIdx = split.length > 0 ? periods.findIndex((p) => p.key === split[0].key) : -1;
   const categoryBreakdown = fortnightCategoryBreakdown(categories, D, splitCurrentIdx >= 0 ? periods[splitCurrentIdx].year : new Date().getUTCFullYear());
-  const sinkingFunds = sinkingFundBreakdown(recurringExpenses, today);
   const ccBalance = Number(balances.cc) || 0;
-  const ccPayoffPoint = creditCardPayoffPeriod(buildFortnightSplit(profile, adaptiveD, categories, balances, recurringExpenses, goals, periods, today, 52));
+  const ccPayoffPoint = creditCardPayoffPeriod(buildFortnightSplit(profile, adaptiveD, categories, balances, goals, periods, today, 52));
   const ccEtaLabel = ccBalance <= 0 ? "nothing owing" : ccPayoffPoint ? ccPayoffPoint.label : "beyond this projection";
 
   return (
@@ -261,7 +259,7 @@ export default function IncomeTab() {
       <Collapsible
         title="Fortnight-by-fortnight split"
         icon={SplitSquareHorizontal}
-        subtitle={`Where each payslip is planned to go: the credit card's full balance first, then budgeted categories and set-asides, then the emergency fund until it's full${goals.length > 0 ? ", then your goals in priority order" : ""}, then the house deposit.`}
+        subtitle={`Where each payslip is planned to go: the credit card's full balance first, then budgeted categories, then the emergency fund until it's full${goals.length > 0 ? ", then your goals in priority order" : ""}, then the house deposit.`}
       >
         <div style={{ marginTop: 10 }}>
           {isMobile ? (
@@ -275,7 +273,6 @@ export default function IncomeTab() {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px", fontSize: 11.5, color: MUTE, marginTop: 4 }}>
                     {p.toCreditCard > 0 && <span style={{ color: UNFAV }}>→ Credit card {AUD(p.toCreditCard)}</span>}
                     <span>Expenses {AUD(p.categoriesTotal)}</span>
-                    {p.sinkingTotal > 0 && <span>Set-aside {AUD(p.sinkingTotal)}</span>}
                     {p.toEmergency > 0 && <span>→ Emergency {AUD(p.toEmergency)}</span>}
                     {p.toGoalsTotal > 0 && <span>→ Goals {AUD(p.toGoalsTotal)}</span>}
                     <span>→ Deposit {AUD(p.toDeposit)}</span>
@@ -285,26 +282,24 @@ export default function IncomeTab() {
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px 100px 90px 90px 90px 100px", padding: "7px 18px", fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600, minWidth: 860 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px 90px 90px 90px 100px", padding: "7px 18px", fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600, minWidth: 860 }}>
                 <span>Fortnight</span>
                 <span style={{ textAlign: "right" }}>Net pay</span>
                 <span style={{ textAlign: "right" }}>→ CC</span>
                 <span style={{ textAlign: "right" }}>Expenses</span>
-                <span style={{ textAlign: "right" }}>Set-aside</span>
                 <span style={{ textAlign: "right" }}>→ Emergency</span>
                 <span style={{ textAlign: "right" }}>→ Goals</span>
                 <span style={{ textAlign: "right" }}>→ Deposit</span>
                 <span style={{ textAlign: "right" }}>Deposit bal.</span>
               </div>
               {split.map((p) => (
-                <div key={p.key} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px 100px 90px 90px 90px 100px", alignItems: "center", padding: "8px 18px", borderTop: `1px solid ${LINE}`, fontSize: 13, minWidth: 860 }}>
+                <div key={p.key} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px 90px 90px 90px 100px", alignItems: "center", padding: "8px 18px", borderTop: `1px solid ${LINE}`, fontSize: 13, minWidth: 860 }}>
                   <span>
                     {p.label} <span style={{ color: MUTE_ICON, fontSize: 11 }}>{p.isFT ? "FT" : "PT"}</span>
                   </span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{AUD(p.netPay)}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toCreditCard > 0 ? UNFAV : MUTE_ICON, fontWeight: p.toCreditCard > 0 ? 500 : 400 }}>{p.toCreditCard > 0 ? AUD(p.toCreditCard) : "—"}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: MUTE }}>{AUD(p.categoriesTotal)}</span>
-                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.sinkingTotal > 0 ? MUTE : MUTE_ICON }}>{p.sinkingTotal > 0 ? AUD(p.sinkingTotal) : "—"}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toEmergency > 0 ? FAV : MUTE_ICON }}>{p.toEmergency > 0 ? AUD(p.toEmergency) : "—"}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toGoalsTotal > 0 ? GOLD : MUTE_ICON }}>{p.toGoalsTotal > 0 ? AUD(p.toGoalsTotal) : "—"}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: FAV, fontWeight: 500 }}>{AUD(p.toDeposit)}</span>
@@ -345,31 +340,8 @@ export default function IncomeTab() {
             </div>
           </div>
         )}
-        {sinkingFunds.length > 0 && (
-          <div style={{ padding: "14px 18px", borderTop: `1px solid ${LINE}` }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>
-              Set aside per pay for yearly/irregular bills ({AUD(sinkingFunds.reduce((s, c) => s + c.perFortnight, 0))} total)
-            </div>
-            <div style={{ fontSize: 11, color: MUTE, marginBottom: 8 }}>
-              Rego, insurance and other recurring expenses outside the monthly budget — set this aside each pay (e.g. in a separate ANZ Plus sub-account) so the lump sum is ready when it&apos;s due.
-              Quarterly/yearly ones recalculate against how long is actually left until due, so the rate climbs if nothing&apos;s been set aside yet — keep saving what it says and it stays flat.
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px" }}>
-              {sinkingFunds.map((s) => (
-                <span key={s.label} style={{ fontSize: 12, color: MUTE }}>
-                  {s.label}{" "}
-                  <span style={{ color: MUTE_ICON }}>
-                    ({s.frequency}
-                    {(s.frequency === "yearly" || s.frequency === "quarterly") && `, due ${s.nextDue.slice(5)}`})
-                  </span>{" "}
-                  <b style={{ color: NAVY }}>{AUD(s.perFortnight, 2)}/fn</b>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
         <div style={{ fontSize: 11, color: MUTE, padding: "10px 18px 14px" }}>
-          Credit card is paid down first, against its full balance, before expenses, set-asides, the emergency fund, or deposit get anything
+          Credit card is paid down first, against its full balance, before expenses, the emergency fund, or deposit get anything
           {ccBalance > 0 && (
             <>
               {" "}— at that rate, paid off by <b style={{ color: NAVY }}>{ccEtaLabel}</b>

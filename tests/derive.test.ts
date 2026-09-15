@@ -35,8 +35,6 @@ import {
   offsetForPaydayWeekday,
   buildFortnightSplit,
   fortnightCategoryBreakdown,
-  sinkingFundBreakdown,
-  recurringPerFortnight,
   creditCardPayoffPeriod,
   sortGoalsByPriority,
   adaptiveCategoryRates,
@@ -882,12 +880,10 @@ describe("applyAllocationOrder", () => {
 });
 
 describe("fortnightBreakdown", () => {
-  const today = "2026-08-19";
-
   it("routes a one-off net pay through categories and credit card, then splits the rest evenly between emergency and deposit", () => {
-    const b = fortnightBreakdown(400, balances, [], [], 1000, profile.emergency_target, today);
+    const b = fortnightBreakdown(400, balances, [], 1000, profile.emergency_target);
     expect(b.categoriesTotal).toBe(400);
-    const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
+    const surplus = 1000 - b.categoriesTotal;
     const toCC = Math.min(surplus, balances.cc);
     expect(b.toCreditCard).toBeCloseTo(toCC, 5);
     const afterCC = surplus - toCC;
@@ -901,8 +897,8 @@ describe("fortnightBreakdown", () => {
     // whether the full plan or just the remaining unspent budget is reserved for categories,
     // since categoriesTotal no longer competes with the card for the same pool of money.
     const bigCC = { ...balances, cc: 500 };
-    const fullPlan = fortnightBreakdown(654, bigCC, [], [], 1000, profile.emergency_target, today);
-    const remaining = fortnightBreakdown(43, bigCC, [], [], 1000, profile.emergency_target, today);
+    const fullPlan = fortnightBreakdown(654, bigCC, [], 1000, profile.emergency_target);
+    const remaining = fortnightBreakdown(43, bigCC, [], 1000, profile.emergency_target);
     expect(fullPlan.toCreditCard).toBe(500);
     expect(remaining.toCreditCard).toBe(500);
     // categoriesTotal still matters for what's left afterward, though.
@@ -914,21 +910,10 @@ describe("fortnightBreakdown", () => {
     // Net pay smaller than the card balance — the whole pay goes to the card, nothing left for
     // categories/surplus this fortnight, since paying down the card is the fixed first priority.
     const bigCC = { ...balances, cc: 5000 };
-    const b = fortnightBreakdown(400, bigCC, [], [], 1000, profile.emergency_target, today);
+    const b = fortnightBreakdown(400, bigCC, [], 1000, profile.emergency_target);
     expect(b.toCreditCard).toBe(1000);
     expect(b.toEmergency).toBe(0);
     expect(b.toDeposit).toBe(0);
-  });
-
-  it("deducts the sinking-fund set-aside before computing surplus", () => {
-    const recurring = [
-      { id: "1", user_id: "u", description: "Rego", amount: 780, category_key: "other", account: "ANZ Plus", frequency: "yearly" as const, next_due: "2027-08-10", active: true, created_at: "" },
-    ];
-    const noCC = { ...balances, cc: 0, emergency: profile.emergency_target };
-    const withSinking = fortnightBreakdown(400, noCC, recurring, [], 1000, profile.emergency_target, today);
-    const without = fortnightBreakdown(400, noCC, [], [], 1000, profile.emergency_target, today);
-    expect(withSinking.sinkingTotal).toBeGreaterThan(0);
-    expect(withSinking.toDeposit).toBeCloseTo(without.toDeposit - withSinking.sinkingTotal, 5);
   });
 
   it("funds goals in priority order after the emergency fund", () => {
@@ -937,7 +922,7 @@ describe("fortnightBreakdown", () => {
       { id: "g1", user_id: "u1", label: "High priority", target_amount: 50, current_amount: 0, priority: 0, created_at: "2026-01-01" },
       { id: "g2", user_id: "u1", label: "Low priority", target_amount: 10000, current_amount: 0, priority: 1, created_at: "2026-01-01" },
     ];
-    const b = fortnightBreakdown(400, fullEmergencyNoCC, [], goals, 1000, profile.emergency_target, today);
+    const b = fortnightBreakdown(400, fullEmergencyNoCC, goals, 1000, profile.emergency_target);
     const g1 = b.goalAllocations.find((g) => g.id === "g1")!;
     expect(g1.amount).toBe(50);
     expect(b.toDeposit).toBeCloseTo(1000 - b.categoriesTotal - b.toGoalsTotal, 5);
@@ -947,9 +932,9 @@ describe("fortnightBreakdown", () => {
     const noCC = { ...balances, cc: 0, emergency: 0 };
     const goals: Goal[] = [{ id: "g1", user_id: "u1", label: "Holiday", target_amount: 200, current_amount: 0, priority: 5, created_at: "2026-01-01" }];
     const order: AllocationOrder = [{ id: "g1", weightPct: 100 }, { id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }];
-    const b = fortnightBreakdown(400, noCC, [], goals, 1000, profile.emergency_target, today, order);
+    const b = fortnightBreakdown(400, noCC, goals, 1000, profile.emergency_target, order);
     const g1 = b.goalAllocations.find((g) => g.id === "g1")!;
-    const surplus = 1000 - b.categoriesTotal - b.sinkingTotal; // 600
+    const surplus = 1000 - b.categoriesTotal; // 600
     // Each gets an even third (200) — g1's target caps it there exactly; the leftover from the
     // other two (there isn't any here, since emergency is nowhere near its own target) just stays even.
     expect(g1.amount).toBe(200);
@@ -964,8 +949,8 @@ describe("fortnightBreakdown", () => {
   it("splits 50/50 between emergency and deposit when weighted equally", () => {
     const noCC = { ...balances, cc: 0, emergency: 0 };
     const order: AllocationOrder = [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 50 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 50 }];
-    const b = fortnightBreakdown(400, noCC, [], [], 1000, profile.emergency_target, today, order);
-    const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
+    const b = fortnightBreakdown(400, noCC, [], 1000, profile.emergency_target, order);
+    const surplus = 1000 - b.categoriesTotal;
     expect(b.toEmergency).toBeCloseTo(surplus / 2, 5);
     expect(b.toDeposit).toBeCloseTo(surplus / 2, 5);
   });
@@ -973,32 +958,12 @@ describe("fortnightBreakdown", () => {
   it("shows an extra balance destination (the Holiday account) by its real label in orderedAllocations", () => {
     const noCC = { ...balances, cc: 0, emergency: 0 };
     const order: AllocationOrder = [{ id: "holiday", weightPct: 20 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 80 }, { id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }];
-    const b = fortnightBreakdown(400, noCC, [], [], 1000, profile.emergency_target, today, order);
-    const surplus = 1000 - b.categoriesTotal - b.sinkingTotal;
+    const b = fortnightBreakdown(400, noCC, [], 1000, profile.emergency_target, order);
+    const surplus = 1000 - b.categoriesTotal;
     const totalWeight = 20 + 80 + 100;
     const holiday = b.orderedAllocations.find((a) => a.id === "holiday")!;
     expect(holiday.label).toBe("Holiday (cruise)");
     expect(holiday.amount).toBeCloseTo(surplus * (20 / totalWeight), 5);
-  });
-});
-
-describe("recurringPerFortnight", () => {
-  it("uses a flat frequency-based average for weekly/fortnightly/monthly bills", () => {
-    expect(recurringPerFortnight(100, "fortnightly", "2026-09-01", "2026-08-19")).toBeCloseTo(100, 5);
-    expect(recurringPerFortnight(52, "weekly", "2026-08-24", "2026-08-19")).toBeCloseTo(104, 5);
-    expect(recurringPerFortnight(120, "monthly", "2026-09-05", "2026-08-19")).toBeCloseTo((120 * 12) / 26, 5);
-  });
-
-  it("divides yearly/quarterly bills by the fortnights actually left until they're due", () => {
-    // Due in exactly 364 days (26 fortnights) — matches the old flat annual average.
-    expect(recurringPerFortnight(780, "yearly", "2027-08-18", "2026-08-19")).toBeCloseTo(780 / 26, 5);
-    // Due in 2 fortnights (28 days) — needs a much higher rate than the flat average would suggest.
-    expect(recurringPerFortnight(780, "yearly", "2026-09-16", "2026-08-19")).toBeCloseTo(780 / 2, 5);
-  });
-
-  it("floors at 1 fortnight for an overdue or same-day due date, rather than dividing by zero", () => {
-    expect(recurringPerFortnight(260, "yearly", "2026-08-19", "2026-08-19")).toBeCloseTo(260, 5);
-    expect(recurringPerFortnight(260, "yearly", "2026-08-01", "2026-08-19")).toBeCloseTo(260, 5);
   });
 });
 
@@ -1008,7 +973,7 @@ describe("buildFortnightSplit", () => {
   const noGoals: Goal[] = [];
 
   it("pays down the credit card before the emergency fund, starting from real balances", () => {
-    const split = buildFortnightSplit(profile, D, categories, balances, [], noGoals, periods, profile.pay_anchor, 3);
+    const split = buildFortnightSplit(profile, D, categories, balances, noGoals, periods, profile.pay_anchor, 3);
     expect(split).toHaveLength(3);
     const first = split[0];
     expect(first.categoriesTotal).toBeCloseTo(D.expFN(periods[0].year), 5);
@@ -1024,26 +989,14 @@ describe("buildFortnightSplit", () => {
 
   it("stops topping up the emergency fund once it's already at its target", () => {
     const fullEmergency = { ...balances, emergency: profile.emergency_target, cc: 0 };
-    const split = buildFortnightSplit(profile, D, categories, fullEmergency, [], noGoals, periods, profile.pay_anchor, 1);
+    const split = buildFortnightSplit(profile, D, categories, fullEmergency, noGoals, periods, profile.pay_anchor, 1);
     expect(split[0].toEmergency).toBe(0);
     expect(split[0].toDeposit).toBeCloseTo(split[0].netPay - split[0].categoriesTotal, 5);
   });
 
   it("accumulates the running deposit balance period over period", () => {
-    const split = buildFortnightSplit(profile, D, categories, balances, [], noGoals, periods, profile.pay_anchor, 2);
+    const split = buildFortnightSplit(profile, D, categories, balances, noGoals, periods, profile.pay_anchor, 2);
     expect(split[1].depositBalance).toBe(Math.round(balances.anzplus + split[0].toDeposit + split[1].toDeposit));
-  });
-
-  it("deducts the sinking-fund set-aside for active recurring expenses before computing surplus", () => {
-    const recurring = [
-      { id: "1", user_id: "u", description: "Car rego", amount: 780, category_key: "other", account: "ANZ Plus", frequency: "yearly" as const, next_due: "2027-01-01", active: true, created_at: "" },
-    ];
-    const noCCFullEmergency = { ...balances, cc: 0, emergency: profile.emergency_target };
-    const withSinking = buildFortnightSplit(profile, D, categories, noCCFullEmergency, recurring, noGoals, periods, profile.pay_anchor, 1);
-    const without = buildFortnightSplit(profile, D, categories, noCCFullEmergency, [], noGoals, periods, profile.pay_anchor, 1);
-    const expectedSinking = 780 / Math.ceil(daysUntil("2027-01-01", profile.pay_anchor) / 14);
-    expect(withSinking[0].sinkingTotal).toBeCloseTo(expectedSinking, 5);
-    expect(withSinking[0].toDeposit).toBeCloseTo(without[0].toDeposit - expectedSinking, 5);
   });
 
   it("funds goals in priority order after the emergency fund and before the deposit", () => {
@@ -1052,7 +1005,7 @@ describe("buildFortnightSplit", () => {
       { id: "g1", user_id: "u1", label: "Low priority", target_amount: 10000, current_amount: 0, priority: 1, created_at: "2026-01-01" },
       { id: "g2", user_id: "u1", label: "High priority", target_amount: 50, current_amount: 0, priority: 0, created_at: "2026-01-01" },
     ];
-    const split = buildFortnightSplit(profile, D, categories, fullEmergencyNoCC, [], goals, periods, profile.pay_anchor, 1);
+    const split = buildFortnightSplit(profile, D, categories, fullEmergencyNoCC, goals, periods, profile.pay_anchor, 1);
     const g2 = split[0].goalAllocations.find((g) => g.id === "g2")!;
     const g1 = split[0].goalAllocations.find((g) => g.id === "g1")!;
     // The $50 high-priority goal should be funded in full before the low-priority one gets anything.
@@ -1067,7 +1020,7 @@ describe("buildFortnightSplit", () => {
   it("tracks a running balance for an extra destination (Holiday) added to a custom order", () => {
     const mostlyHoliday: Profile = { ...profile, allocation_order: [{ id: "holiday", weightPct: 80 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 20 }] };
     const noCCFullEmergency = { ...balances, emergency: profile.emergency_target, cc: 0, holiday: 100 };
-    const split = buildFortnightSplit(mostlyHoliday, D, categories, noCCFullEmergency, [], noGoals, periods, profile.pay_anchor, 2);
+    const split = buildFortnightSplit(mostlyHoliday, D, categories, noCCFullEmergency, noGoals, periods, profile.pay_anchor, 2);
     const holidayP0 = split[0].otherAllocations.find((o) => o.id === "holiday")!;
     const surplus0 = Math.max(0, split[0].netPay - split[0].categoriesTotal);
     expect(holidayP0.amount).toBeCloseTo(surplus0 * 0.8, 5);
@@ -1096,7 +1049,7 @@ describe("creditCardPayoffPeriod", () => {
 
   it("finds the first period whose simulated credit-card balance reaches zero", () => {
     const smallDebt = { ...balances, cc: 50, emergency: profile.emergency_target };
-    const split = buildFortnightSplit(profile, D, categories, smallDebt, [], [], periods, profile.pay_anchor, 3);
+    const split = buildFortnightSplit(profile, D, categories, smallDebt, [], periods, profile.pay_anchor, 3);
     const payoff = creditCardPayoffPeriod(split);
     expect(payoff).not.toBeNull();
     expect(payoff!.key).toBe(split[0].key);
@@ -1104,26 +1057,8 @@ describe("creditCardPayoffPeriod", () => {
 
   it("returns null when the debt outlasts the whole projection", () => {
     const hugeDebt = { ...balances, cc: 1_000_000 };
-    const split = buildFortnightSplit(profile, D, categories, hugeDebt, [], [], periods, profile.pay_anchor, 3);
+    const split = buildFortnightSplit(profile, D, categories, hugeDebt, [], periods, profile.pay_anchor, 3);
     expect(creditCardPayoffPeriod(split)).toBeNull();
-  });
-});
-
-describe("sinkingFundBreakdown", () => {
-  const today = "2026-08-19";
-
-  it("converts each active recurring expense to a per-fortnight equivalent, biggest first", () => {
-    const recurring = [
-      { id: "1", user_id: "u", description: "Rego", amount: 780, category_key: "other", account: "ANZ Plus", frequency: "yearly" as const, next_due: "2027-08-19", active: true, created_at: "" },
-      { id: "2", user_id: "u", description: "Netflix", amount: 20, category_key: "other", account: "Everyday", frequency: "monthly" as const, next_due: "2026-09-01", active: true, created_at: "" },
-      { id: "3", user_id: "u", description: "Paused thing", amount: 500, category_key: "other", account: "Everyday", frequency: "yearly" as const, next_due: "2027-01-01", active: false, created_at: "" },
-    ];
-    const rows = sinkingFundBreakdown(recurring, today);
-    expect(rows).toHaveLength(2);
-    expect(rows[0].label).toBe("Rego");
-    expect(rows[0].perFortnight).toBeCloseTo(780 / Math.ceil(daysUntil("2027-08-19", today) / 14), 5);
-    expect(rows[1].label).toBe("Netflix");
-    expect(rows[1].perFortnight).toBeCloseTo((20 * 12) / 26, 5);
   });
 });
 
