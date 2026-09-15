@@ -345,7 +345,7 @@ export default function SavingsTab() {
           &ldquo;Standard accountant progression&rdquo; compounds your package ~9% p.a. for the first 5 years (typical AU
           graduate-to-intermediate accountant growth, per SEEK/Hays salary guides) then ~3.5% p.a. after — a rough
           guide, not a guarantee. HECS reduces via the real compulsory-repayment schedule (marginal rates above
-          $69,528 repayment income) and indexes at the rate above. Credit card is paid down from surplus first, same as
+          $69,528 repayment income) and indexes at the rate above. Credit card is paid down first, against its full balance, same as
           the fortnight-by-fortnight waterfall on Income. Shares and super compound at the investment-growth rate;
           super also keeps its usual employer contribution. Not financial advice.
         </div>

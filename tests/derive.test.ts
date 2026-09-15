@@ -896,15 +896,28 @@ describe("fortnightBreakdown", () => {
     expect(b.toDeposit).toBeCloseTo(afterCC / 2, 5);
   });
 
-  it("takes categoriesTotal as given — the caller decides full plan vs remaining unspent budget", () => {
-    // A credit card balance too big for the surplus to fully clear if the full plan is reserved,
-    // but small enough to clear once only the genuinely-unspent remainder is reserved.
+  it("pays the credit card in full from net pay first, regardless of categoriesTotal", () => {
+    // Card balance small enough that net pay covers it either way — it should clear completely
+    // whether the full plan or just the remaining unspent budget is reserved for categories,
+    // since categoriesTotal no longer competes with the card for the same pool of money.
     const bigCC = { ...balances, cc: 500 };
     const fullPlan = fortnightBreakdown(654, bigCC, [], [], 1000, profile.emergency_target, today);
     const remaining = fortnightBreakdown(43, bigCC, [], [], 1000, profile.emergency_target, today);
-    // Less reserved for spending that's already happened means more available to pay down the card.
-    expect(remaining.toCreditCard).toBeGreaterThan(fullPlan.toCreditCard);
-    expect(remaining.toCreditCard).toBe(500); // fully cleared
+    expect(fullPlan.toCreditCard).toBe(500);
+    expect(remaining.toCreditCard).toBe(500);
+    // categoriesTotal still matters for what's left afterward, though.
+    expect(fullPlan.toEmergency + fullPlan.toDeposit).toBe(0); // 1000 - 500 cc - 654 categories < 0, floored
+    expect(remaining.toEmergency + remaining.toDeposit).toBeCloseTo(1000 - 500 - 43, 5);
+  });
+
+  it("caps credit card paydown at whatever net pay actually covers, using the full amount for it", () => {
+    // Net pay smaller than the card balance — the whole pay goes to the card, nothing left for
+    // categories/surplus this fortnight, since paying down the card is the fixed first priority.
+    const bigCC = { ...balances, cc: 5000 };
+    const b = fortnightBreakdown(400, bigCC, [], [], 1000, profile.emergency_target, today);
+    expect(b.toCreditCard).toBe(1000);
+    expect(b.toEmergency).toBe(0);
+    expect(b.toDeposit).toBe(0);
   });
 
   it("deducts the sinking-fund set-aside before computing surplus", () => {

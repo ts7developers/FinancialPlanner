@@ -185,9 +185,10 @@ export function buildNetWorthProjection(
     const incomeFn = net / FN_PER_YEAR;
     const superFn = (grownPackage - cash) / FN_PER_YEAR;
 
-    let surplus = Math.max(0, incomeFn - D.expFN(per.year)) + extraPerFortnight;
-    const toCC = Math.max(0, Math.min(surplus, cc));
-    surplus -= toCC;
+    // Credit card paydown is the fixed first priority, against the full balance (not just
+    // whatever's left after budgeted spend) — see fortnightBreakdown's doc comment for why.
+    const toCC = Math.max(0, Math.min(incomeFn, cc));
+    const surplus = Math.max(0, incomeFn - toCC - D.expFN(per.year)) + extraPerFortnight;
     cc = Math.max(0, cc - toCC);
 
     const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (goalBalances.get(g.id) ?? 0))]));
@@ -1309,19 +1310,22 @@ export interface FortnightBreakdown {
 }
 
 /**
- * Applies the same waterfall `buildFortnightSplit` walks forward period by period — remaining
- * budgeted spend, then the sinking-fund set-aside, then credit card paydown, then the emergency
- * fund, then `goals` in priority order, then whatever's left to the deposit — to a single one-off
- * amount (e.g. a just-confirmed payslip's net, or a fortnight's combined actual income) against
- * today's real balances, rather than to the planned income for a series of projected periods.
- * Used to show "where this pay goes" right after importing a payslip.
+ * Applies the same waterfall `buildFortnightSplit` walks forward period by period — credit card
+ * paydown against its *full* balance first (fixed, ahead of everything else — for an account
+ * where nearly all spending runs through the card, that balance already represents this
+ * fortnight's real spend, so clearing it takes priority over reserving for budgeted categories
+ * that haven't hit the card yet), then remaining budgeted spend, then the sinking-fund set-aside,
+ * then the emergency fund, then `goals` in priority order, then whatever's left to the deposit —
+ * to a single one-off amount (e.g. a just-confirmed payslip's net, or a fortnight's combined
+ * actual income) against today's real balances, rather than to the planned income for a series of
+ * projected periods. Used to show "where this pay goes" right after importing a payslip.
  *
  * `categoriesTotal` is caller-supplied rather than derived from `D`/`categories`/`year` here, so
  * it can reflect what's actually still unspent this fortnight (plan minus whatever's already
  * logged) rather than the full plan — important for anyone who pays for most expenses on the
  * credit card: money already spent that way is already sitting in the `cc` balance being paid
- * down below, so reserving the *full* planned amount on top of that double-counts it and
- * understates how much can actually go toward clearing the card.
+ * down above, so reserving the *full* planned amount on top of that double-counts it and
+ * understates how much is left for the rest of the waterfall.
  */
 export function fortnightBreakdown(
   categoriesTotal: number,
@@ -1334,11 +1338,10 @@ export function fortnightBreakdown(
   allocationOrder?: AllocationOrder | null
 ): FortnightBreakdown {
   const sinkingTotal = sinkingFundTotal(recurringExpenses, todayISO);
-  let surplus = Math.max(0, netPay - categoriesTotal - sinkingTotal);
 
   const cc = Number(balances.cc) || 0;
-  const toCreditCard = Math.max(0, Math.min(surplus, cc));
-  surplus -= toCreditCard;
+  const toCreditCard = Math.max(0, Math.min(netPay, cc));
+  const surplus = Math.max(0, netPay - toCreditCard - categoriesTotal - sinkingTotal);
 
   const emergency = Number(balances.emergency) || 0;
   const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (Number(g.current_amount) || 0))]));
@@ -1365,10 +1368,11 @@ export function fortnightBreakdown(
 
 /**
  * Walks forward from today's real balances, one pay period at a time, showing exactly where
- * each fortnight's pay is planned to go: budgeted categories first, then a set-aside for
- * recurring non-fortnightly bills (rego, insurance — see `sinkingFundBreakdown`), then whatever
- * surplus remains pays down the credit card balance, tops up the emergency fund (until its
- * target), funds `goals` in priority order (until each one's target), and finally whatever's
+ * each fortnight's pay is planned to go: credit card paydown against its *full* balance first
+ * (fixed, ahead of everything else — see `fortnightBreakdown`'s doc comment for why), then
+ * budgeted categories, then a set-aside for recurring non-fortnightly bills (rego, insurance —
+ * see `sinkingFundBreakdown`), then whatever surplus remains tops up the emergency fund (until
+ * its target), funds `goals` in priority order (until each one's target), and finally whatever's
  * left goes to the house deposit. Same waterfall `buildPlanPath`/`buildNetWorthProjection` use,
  * extended with the credit-card/sinking-fund/goals steps and surfaced per-period instead of
  * collapsed into a single running total.
@@ -1398,9 +1402,8 @@ export function buildFortnightSplit(
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per) => {
     const netPay = plannedIncomeFN(per, profile, D);
     const categoriesTotal = D.expFN(per.year);
-    let surplus = Math.max(0, netPay - categoriesTotal - sinkingTotal);
-    const toCreditCard = Math.max(0, Math.min(surplus, cc));
-    surplus -= toCreditCard;
+    const toCreditCard = Math.max(0, Math.min(netPay, cc));
+    const surplus = Math.max(0, netPay - toCreditCard - categoriesTotal - sinkingTotal);
     cc = Math.max(0, cc - toCreditCard);
 
     const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (goalBalances.get(g.id) ?? 0))]));
@@ -1459,9 +1462,9 @@ export function fortnightCategoryBreakdown(categories: BudgetCategoryRow[], D: D
 
 /**
  * First point in a `buildFortnightSplit` projection at which the simulated credit-card balance
- * reaches zero, or null if the debt outlasts the whole projection (either it's simply too big
- * for the horizon, or nothing's actually left over each pay to put toward it once expenses and
- * set-asides come out — check `toCreditCard` across the projection to tell the two apart).
+ * reaches zero, or null if the debt outlasts the whole projection — since paying it down is the
+ * fixed first priority each period (see `buildFortnightSplit`'s doc comment), that only happens
+ * when the balance is simply too big to clear from net pay within the horizon.
  */
 export function creditCardPayoffPeriod(split: FortnightSplitPoint[]): FortnightSplitPoint | null {
   return split.find((p) => p.creditCardBalance <= 0) ?? null;

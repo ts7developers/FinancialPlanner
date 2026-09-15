@@ -261,7 +261,7 @@ export default function IncomeTab() {
       <Collapsible
         title="Fortnight-by-fortnight split"
         icon={SplitSquareHorizontal}
-        subtitle={`Where each payslip is planned to go: budgeted categories and set-asides first, then the credit card, then the emergency fund until it's full${goals.length > 0 ? ", then your goals in priority order" : ""}, then the house deposit.`}
+        subtitle={`Where each payslip is planned to go: the credit card's full balance first, then budgeted categories and set-asides, then the emergency fund until it's full${goals.length > 0 ? ", then your goals in priority order" : ""}, then the house deposit.`}
       >
         <div style={{ marginTop: 10 }}>
           {isMobile ? (
@@ -369,7 +369,7 @@ export default function IncomeTab() {
           </div>
         )}
         <div style={{ fontSize: 11, color: MUTE, padding: "10px 18px 14px" }}>
-          Credit card is paid down first from whatever&apos;s left after expenses and set-asides, before the emergency fund or deposit get anything
+          Credit card is paid down first, against its full balance, before expenses, set-asides, the emergency fund, or deposit get anything
           {ccBalance > 0 && (
             <>
               {" "}— at that rate, paid off by <b style={{ color: NAVY }}>{ccEtaLabel}</b>

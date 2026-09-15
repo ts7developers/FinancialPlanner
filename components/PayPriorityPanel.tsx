@@ -99,7 +99,7 @@ export default function PayPriorityPanel() {
   return (
     <Panel title="Pay split" icon={ListOrdered}>
       <div style={{ fontSize: 12.5, color: MUTE, marginBottom: 12, lineHeight: 1.5 }}>
-        What share of each fortnight&apos;s surplus goes to each destination, after budgeted spending, bills, and credit card paydown (always first, fixed). Percentages split
+        What share of each fortnight&apos;s surplus goes to each destination, after credit card paydown (always first, fixed, against the full balance), budgeted spending, and bills. Percentages split
         proportionally, so they don&apos;t need to add up to exactly 100 — but aiming for 100 keeps it easy to reason about. Once a destination reaches its target, its leftover
         share flows to the rest automatically.
       </div>
