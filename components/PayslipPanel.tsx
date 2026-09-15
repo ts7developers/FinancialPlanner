@@ -220,6 +220,12 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
             <ArrowRight size={13} color={GOLD} /> Where this pay goes
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5 }}>
+            {breakdown.toCreditCard > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: UNFAV }}>→ Credit card (always first)</span>
+                <span style={{ fontVariantNumeric: "tabular-nums", color: UNFAV }}>{AUD(breakdown.toCreditCard)}</span>
+              </div>
+            )}
             {breakdown.categoriesTotal > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ color: MUTE }}>Still to spend this fortnight (budget left)</span>
@@ -233,12 +239,6 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
                   <InfoTip text="A slice of this pay held back for irregular bills (car rego, insurance, annual subscriptions) so the full amount is there when they're actually due, instead of landing as one big surprise expense." />
                 </span>
                 <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(breakdown.sinkingTotal)}</span>
-              </div>
-            )}
-            {breakdown.toCreditCard > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: UNFAV }}>→ Credit card</span>
-                <span style={{ fontVariantNumeric: "tabular-nums", color: UNFAV }}>{AUD(breakdown.toCreditCard)}</span>
               </div>
             )}
             {/* In the order configured on the Pay split tab — not a hardcoded

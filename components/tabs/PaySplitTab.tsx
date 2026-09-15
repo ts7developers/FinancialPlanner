@@ -48,6 +48,14 @@ export default function PaySplitTab() {
               <span style={{ color: MUTE }}>{isPlanned ? "Planned net pay" : "Confirmed net pay"}</span>
               <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{AUD(breakdown.netPay)}</span>
             </div>
+            {breakdown.toCreditCard > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: UNFAV, display: "flex", alignItems: "center", gap: 5 }}>
+                  <ArrowRight size={13} /> Credit card (always first)
+                </span>
+                <span style={{ fontVariantNumeric: "tabular-nums", color: UNFAV }}>{AUD(breakdown.toCreditCard)}</span>
+              </div>
+            )}
             {breakdown.categoriesTotal > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ color: MUTE }}>Still to spend this fortnight (budget left)</span>
@@ -58,14 +66,6 @@ export default function PaySplitTab() {
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ color: MUTE }}>Set aside for bills</span>
                 <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(breakdown.sinkingTotal)}</span>
-              </div>
-            )}
-            {breakdown.toCreditCard > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: UNFAV, display: "flex", alignItems: "center", gap: 5 }}>
-                  <ArrowRight size={13} /> Credit card (always first)
-                </span>
-                <span style={{ fontVariantNumeric: "tabular-nums", color: UNFAV }}>{AUD(breakdown.toCreditCard)}</span>
               </div>
             )}
             {breakdown.orderedAllocations

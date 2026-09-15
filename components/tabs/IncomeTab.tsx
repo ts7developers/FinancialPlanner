@@ -273,9 +273,9 @@ export default function IncomeTab() {
                     <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(p.netPay)}</span>
                   </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px", fontSize: 11.5, color: MUTE, marginTop: 4 }}>
+                    {p.toCreditCard > 0 && <span style={{ color: UNFAV }}>→ Credit card {AUD(p.toCreditCard)}</span>}
                     <span>Expenses {AUD(p.categoriesTotal)}</span>
                     {p.sinkingTotal > 0 && <span>Set-aside {AUD(p.sinkingTotal)}</span>}
-                    {p.toCreditCard > 0 && <span style={{ color: UNFAV }}>→ Credit card {AUD(p.toCreditCard)}</span>}
                     {p.toEmergency > 0 && <span>→ Emergency {AUD(p.toEmergency)}</span>}
                     {p.toGoalsTotal > 0 && <span>→ Goals {AUD(p.toGoalsTotal)}</span>}
                     <span>→ Deposit {AUD(p.toDeposit)}</span>
@@ -288,9 +288,9 @@ export default function IncomeTab() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px 100px 90px 90px 90px 100px", padding: "7px 18px", fontSize: 10.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600, minWidth: 860 }}>
                 <span>Fortnight</span>
                 <span style={{ textAlign: "right" }}>Net pay</span>
+                <span style={{ textAlign: "right" }}>→ CC</span>
                 <span style={{ textAlign: "right" }}>Expenses</span>
                 <span style={{ textAlign: "right" }}>Set-aside</span>
-                <span style={{ textAlign: "right" }}>→ CC</span>
                 <span style={{ textAlign: "right" }}>→ Emergency</span>
                 <span style={{ textAlign: "right" }}>→ Goals</span>
                 <span style={{ textAlign: "right" }}>→ Deposit</span>
@@ -302,9 +302,9 @@ export default function IncomeTab() {
                     {p.label} <span style={{ color: MUTE_ICON, fontSize: 11 }}>{p.isFT ? "FT" : "PT"}</span>
                   </span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{AUD(p.netPay)}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toCreditCard > 0 ? UNFAV : MUTE_ICON, fontWeight: p.toCreditCard > 0 ? 500 : 400 }}>{p.toCreditCard > 0 ? AUD(p.toCreditCard) : "—"}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: MUTE }}>{AUD(p.categoriesTotal)}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.sinkingTotal > 0 ? MUTE : MUTE_ICON }}>{p.sinkingTotal > 0 ? AUD(p.sinkingTotal) : "—"}</span>
-                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toCreditCard > 0 ? UNFAV : MUTE_ICON, fontWeight: p.toCreditCard > 0 ? 500 : 400 }}>{p.toCreditCard > 0 ? AUD(p.toCreditCard) : "—"}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toEmergency > 0 ? FAV : MUTE_ICON }}>{p.toEmergency > 0 ? AUD(p.toEmergency) : "—"}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: p.toGoalsTotal > 0 ? GOLD : MUTE_ICON }}>{p.toGoalsTotal > 0 ? AUD(p.toGoalsTotal) : "—"}</span>
                   <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: FAV, fontWeight: 500 }}>{AUD(p.toDeposit)}</span>
