@@ -22,6 +22,7 @@ import {
   buildBalanceHistory,
   DEFAULT_FHSS_DEEMED_RATE,
   resolveAllocationOrder,
+  dueDateGoalNeed,
 } from "@/lib/derive";
 import { AUD } from "@/lib/money";
 import { MUTE_ICON, ON_ACCENT_DARK, SURFACE_SUBTLE, WARN_BG, WARN_TEXT, CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
@@ -146,14 +147,30 @@ export default function SavingsTab() {
     }
   };
 
-  // Goals display in the same order as the Pay split tab's percentage list (which is what
-  // actually governs funding now), rather than each goal's own now-secondary `priority` field.
-  const goalRankOrder = resolveAllocationOrder(profile.allocation_order, goals)
+  const onUpdateGoalDueDate = async (id: string, value: string) => {
+    try {
+      await updateGoal(id, { due_date: value || null });
+    } catch (err) {
+      flashGoalError(err);
+    }
+  };
+
+  // Goals display in actual funding order: due-date goals first (soonest due date first — they're
+  // always funded ahead of the percentage split), then everything else in the Pay split tab's
+  // percentage order, rather than each goal's own now-secondary `priority` field.
+  const percentGoals = goals.filter((g) => !g.due_date);
+  const dueDateGoalsSorted = goals
+    .filter((g) => g.due_date)
+    .slice()
+    .sort((a, b) => a.due_date!.localeCompare(b.due_date!));
+  const percentGoalOrder = resolveAllocationOrder(profile.allocation_order, percentGoals)
     .flat()
     .map((t) => t.id);
   const goalRank = (id: string) => {
-    const idx = goalRankOrder.indexOf(id);
-    return idx === -1 ? goalRankOrder.length : idx;
+    const dueIdx = dueDateGoalsSorted.findIndex((g) => g.id === id);
+    if (dueIdx !== -1) return dueIdx;
+    const idx = percentGoalOrder.indexOf(id);
+    return dueDateGoalsSorted.length + (idx === -1 ? percentGoalOrder.length : idx);
   };
 
   const balanceHistory = buildBalanceHistory(snapshots, periods);
@@ -232,7 +249,7 @@ export default function SavingsTab() {
             <Target size={16} color={GOLD} /> Goals
           </div>
           <div style={{ fontSize: 12, color: MUTE }}>
-            funded by the percentages set on <Link href="/pay-split" style={{ color: NAVY, fontWeight: 600 }}>Pay split</Link>
+            funded by a due date, or a <Link href="/pay-split" style={{ color: NAVY, fontWeight: 600 }}>Pay split</Link> percentage
           </div>
         </div>
         {goalFlash && (
@@ -247,35 +264,59 @@ export default function SavingsTab() {
             {goals
               .slice()
               .sort((a, b) => goalRank(a.id) - goalRank(b.id))
-              .map((g) => (
-                <div key={g.id}>
-                  <Progress label={g.label} value={Number(g.current_amount) || 0} target={Number(g.target_amount) || 0} colorFrom={GOLD} />
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 10, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 11.5, color: MUTE }}>
-                      At current rate, funded by <b style={{ color: NAVY }}>{goalEtaLabel(g.id)}</b>
-                    </span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        value={goalAmountInputs[g.id] ?? String(g.current_amount)}
-                        onChange={(e) => setGoalAmountInputs((gi) => ({ ...gi, [g.id]: e.target.value }))}
-                        onBlur={(e) => onUpdateGoalAmount(g.id, e.target.value)}
-                        title="Update how much you've actually saved toward this goal"
-                        style={{ ...selStyle, width: 90, textAlign: "right", fontSize: 12 }}
-                      />
-                      <button onClick={() => onDeleteGoal(g.id, g.label)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
-                        <Trash2 size={14} />
-                      </button>
+              .map((g) => {
+                const need = g.due_date ? dueDateGoalNeed(g, today) : 0;
+                return (
+                  <div key={g.id}>
+                    <Progress label={g.label} value={Number(g.current_amount) || 0} target={Number(g.target_amount) || 0} colorFrom={GOLD} />
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 10, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11.5, color: MUTE }}>
+                        {g.due_date ? (
+                          need > 0 ? (
+                            <>
+                              Needs <b style={{ color: GOLD }}>{AUD(need)}/fortnight</b> to hit it by {g.due_date}
+                            </>
+                          ) : (
+                            <b style={{ color: FAV }}>Target met</b>
+                          )
+                        ) : (
+                          <>
+                            At current rate, funded by <b style={{ color: NAVY }}>{goalEtaLabel(g.id)}</b>
+                          </>
+                        )}
+                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <input
+                          type="date"
+                          value={g.due_date ?? ""}
+                          onChange={(e) => onUpdateGoalDueDate(g.id, e.target.value)}
+                          title="Fund this goal by a due date instead of a Pay split percentage — e.g. rego or car insurance"
+                          style={{ ...selStyle, width: 132, fontSize: 12 }}
+                        />
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          value={goalAmountInputs[g.id] ?? String(g.current_amount)}
+                          onChange={(e) => setGoalAmountInputs((gi) => ({ ...gi, [g.id]: e.target.value }))}
+                          onBlur={(e) => onUpdateGoalAmount(g.id, e.target.value)}
+                          title="Update how much you've actually saved toward this goal"
+                          style={{ ...selStyle, width: 90, textAlign: "right", fontSize: 12 }}
+                        />
+                        <button onClick={() => onDeleteGoal(g.id, g.label)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
           </div>
         )}
         <div style={{ fontSize: 11, color: MUTE, marginTop: 4, lineHeight: 1.5 }}>
           Each goal is its own virtual balance — update &ldquo;saved so far&rdquo; directly as you set money aside for it (e.g. in a
-          separate ANZ Plus sub-account). Add a new goal and change funding percentages on the <Link href="/pay-split" style={{ color: NAVY, fontWeight: 600 }}>Pay split</Link> tab.
+          separate ANZ Plus sub-account). Give a goal a due date (rego, car insurance) to fund it by a fixed $/fortnight need instead of a{" "}
+          <Link href="/pay-split" style={{ color: NAVY, fontWeight: 600 }}>Pay split</Link> percentage — due-date goals are funded first, ahead of every percentage
+          destination. Clear the date to switch it back to a percentage share.
         </div>
       </div>
 

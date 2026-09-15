@@ -232,15 +232,18 @@ export default function PayslipPanel({ periodKey }: { periodKey: string }) {
               </div>
             )}
             {/* In the order configured on the Pay split tab — not a hardcoded
-                emergency-then-goals-then-deposit list. */}
+                emergency-then-goals-then-deposit list. Due-date goals come first. */}
             {breakdown.orderedAllocations
               .filter((a) => a.amount > 0)
               .map((a) => {
-                const color = a.id === DEPOSIT_ALLOCATION_ID ? NAVY : a.id === EMERGENCY_ALLOCATION_ID ? FAV : GOLD;
+                const color = a.dueDate ? GOLD : a.id === DEPOSIT_ALLOCATION_ID ? NAVY : a.id === EMERGENCY_ALLOCATION_ID ? FAV : GOLD;
                 const amountColor = a.id === DEPOSIT_ALLOCATION_ID ? FAV : color;
                 return (
                   <div key={a.id} style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color }}>→ {a.label}</span>
+                    <span style={{ color }}>
+                      → {a.label}
+                      {a.dueDate && <span style={{ color: MUTE }}> (due {a.dueDate})</span>}
+                    </span>
                     <span style={{ fontVariantNumeric: "tabular-nums", color: amountColor }}>{AUD(a.amount)}</span>
                   </div>
                 );

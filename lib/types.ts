@@ -176,7 +176,14 @@ export interface RecurringExpense {
 /** A custom savings goal beyond the built-in emergency fund and house deposit — e.g. "New car"
  * or "Trip to Japan". Tracked as its own virtual balance (`current_amount`, edited directly like
  * an account balance) with a `priority` controlling funding order in the fortnightly waterfall
- * (lower number = funded first, after the emergency fund and before the house deposit). */
+ * (lower number = funded first, after the emergency fund and before the house deposit).
+ *
+ * Setting `due_date` switches funding from a percentage-of-surplus share (set on the Pay split
+ * tab) to a fixed $/fortnight need — the shortfall to `target_amount` divided by the fortnights
+ * left until then, recalculated fresh each time so it self-corrects regardless of how much has
+ * actually been paid in so far. Due-date goals are funded right after the credit card, ahead of
+ * every percentage-based destination (see `dueDateGoalNeed`/`fortnightBreakdown` in lib/derive.ts)
+ * — good for a known, dated bill like rego or car insurance rather than an open-ended target. */
 export interface Goal {
   id: string;
   user_id: string;
@@ -185,6 +192,7 @@ export interface Goal {
   current_amount: number;
   priority: number;
   created_at: string;
+  due_date?: string | null;
 }
 
 /** A one-off income entry that isn't a payslip (tax refund, gift, reimbursement, side gig, etc). */

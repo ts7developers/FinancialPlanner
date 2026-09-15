@@ -56,8 +56,10 @@ import {
   buildBalanceSheet,
   buildIncomeExpenditureStatement,
   buildCashFlowStatement,
+  dueDateGoalNeed,
+  allocateDueDateGoals,
 } from "@/lib/derive";
-import { buildPeriods, isFT } from "@/lib/period";
+import { buildPeriods, isFT, fortnightsUntil } from "@/lib/period";
 import { netFromPackage, FN_PER_YEAR } from "@/lib/tax";
 import { DEFAULT_PROFILE_SETTINGS } from "@/lib/defaults";
 import type { Balances, BudgetCategoryRow, HoldingLot, MiscIncome, Payslip, Profile, Reconciliation, Goal, AllocationOrder, Transaction, SuperContribution, Transfer } from "@/lib/types";
@@ -879,9 +881,24 @@ describe("applyAllocationOrder", () => {
   });
 });
 
+describe("fortnightsUntil", () => {
+  it("rounds up to the next whole fortnight", () => {
+    expect(fortnightsUntil("2026-09-15", "2026-09-16")).toBe(1); // 1 day away — still needs a fortnight's worth
+    expect(fortnightsUntil("2026-09-15", "2026-09-29")).toBe(1); // exactly 14 days
+    expect(fortnightsUntil("2026-09-15", "2026-09-30")).toBe(2); // 15 days — rounds up to 2
+  });
+
+  it("floors at 1 for a due date that's today or already passed", () => {
+    expect(fortnightsUntil("2026-09-15", "2026-09-15")).toBe(1);
+    expect(fortnightsUntil("2026-09-15", "2026-01-01")).toBe(1);
+  });
+});
+
 describe("fortnightBreakdown", () => {
+  const today = "2026-09-15";
+
   it("routes a one-off net pay through categories and credit card, then splits the rest evenly between emergency and deposit", () => {
-    const b = fortnightBreakdown(400, balances, [], 1000, profile.emergency_target);
+    const b = fortnightBreakdown(400, balances, [], 1000, profile.emergency_target, today);
     expect(b.categoriesTotal).toBe(400);
     const surplus = 1000 - b.categoriesTotal;
     const toCC = Math.min(surplus, balances.cc);
@@ -897,8 +914,8 @@ describe("fortnightBreakdown", () => {
     // whether the full plan or just the remaining unspent budget is reserved for categories,
     // since categoriesTotal no longer competes with the card for the same pool of money.
     const bigCC = { ...balances, cc: 500 };
-    const fullPlan = fortnightBreakdown(654, bigCC, [], 1000, profile.emergency_target);
-    const remaining = fortnightBreakdown(43, bigCC, [], 1000, profile.emergency_target);
+    const fullPlan = fortnightBreakdown(654, bigCC, [], 1000, profile.emergency_target, today);
+    const remaining = fortnightBreakdown(43, bigCC, [], 1000, profile.emergency_target, today);
     expect(fullPlan.toCreditCard).toBe(500);
     expect(remaining.toCreditCard).toBe(500);
     // categoriesTotal still matters for what's left afterward, though.
@@ -910,7 +927,7 @@ describe("fortnightBreakdown", () => {
     // Net pay smaller than the card balance — the whole pay goes to the card, nothing left for
     // categories/surplus this fortnight, since paying down the card is the fixed first priority.
     const bigCC = { ...balances, cc: 5000 };
-    const b = fortnightBreakdown(400, bigCC, [], 1000, profile.emergency_target);
+    const b = fortnightBreakdown(400, bigCC, [], 1000, profile.emergency_target, today);
     expect(b.toCreditCard).toBe(1000);
     expect(b.toEmergency).toBe(0);
     expect(b.toDeposit).toBe(0);
@@ -922,7 +939,7 @@ describe("fortnightBreakdown", () => {
       { id: "g1", user_id: "u1", label: "High priority", target_amount: 50, current_amount: 0, priority: 0, created_at: "2026-01-01" },
       { id: "g2", user_id: "u1", label: "Low priority", target_amount: 10000, current_amount: 0, priority: 1, created_at: "2026-01-01" },
     ];
-    const b = fortnightBreakdown(400, fullEmergencyNoCC, goals, 1000, profile.emergency_target);
+    const b = fortnightBreakdown(400, fullEmergencyNoCC, goals, 1000, profile.emergency_target, today);
     const g1 = b.goalAllocations.find((g) => g.id === "g1")!;
     expect(g1.amount).toBe(50);
     expect(b.toDeposit).toBeCloseTo(1000 - b.categoriesTotal - b.toGoalsTotal, 5);
@@ -932,7 +949,7 @@ describe("fortnightBreakdown", () => {
     const noCC = { ...balances, cc: 0, emergency: 0 };
     const goals: Goal[] = [{ id: "g1", user_id: "u1", label: "Holiday", target_amount: 200, current_amount: 0, priority: 5, created_at: "2026-01-01" }];
     const order: AllocationOrder = [{ id: "g1", weightPct: 100 }, { id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }];
-    const b = fortnightBreakdown(400, noCC, goals, 1000, profile.emergency_target, order);
+    const b = fortnightBreakdown(400, noCC, goals, 1000, profile.emergency_target, today, order);
     const g1 = b.goalAllocations.find((g) => g.id === "g1")!;
     const surplus = 1000 - b.categoriesTotal; // 600
     // Each gets an even third (200) — g1's target caps it there exactly; the leftover from the
@@ -949,7 +966,7 @@ describe("fortnightBreakdown", () => {
   it("splits 50/50 between emergency and deposit when weighted equally", () => {
     const noCC = { ...balances, cc: 0, emergency: 0 };
     const order: AllocationOrder = [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 50 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 50 }];
-    const b = fortnightBreakdown(400, noCC, [], 1000, profile.emergency_target, order);
+    const b = fortnightBreakdown(400, noCC, [], 1000, profile.emergency_target, today, order);
     const surplus = 1000 - b.categoriesTotal;
     expect(b.toEmergency).toBeCloseTo(surplus / 2, 5);
     expect(b.toDeposit).toBeCloseTo(surplus / 2, 5);
@@ -958,12 +975,66 @@ describe("fortnightBreakdown", () => {
   it("shows an extra balance destination (the Holiday account) by its real label in orderedAllocations", () => {
     const noCC = { ...balances, cc: 0, emergency: 0 };
     const order: AllocationOrder = [{ id: "holiday", weightPct: 20 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 80 }, { id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }];
-    const b = fortnightBreakdown(400, noCC, [], 1000, profile.emergency_target, order);
+    const b = fortnightBreakdown(400, noCC, [], 1000, profile.emergency_target, today, order);
     const surplus = 1000 - b.categoriesTotal;
     const totalWeight = 20 + 80 + 100;
     const holiday = b.orderedAllocations.find((a) => a.id === "holiday")!;
     expect(holiday.label).toBe("Holiday (cruise)");
     expect(holiday.amount).toBeCloseTo(surplus * (20 / totalWeight), 5);
+  });
+
+  it("funds a due-date goal from a fixed $/fortnight need, ahead of the percentage split, instead of a share of surplus", () => {
+    const noCC = { ...balances, cc: 0, emergency: 0 };
+    const dueGoal: Goal = { id: "rego", user_id: "u1", label: "Car rego", target_amount: 400, current_amount: 0, priority: 0, created_at: "2026-01-01", due_date: "2026-10-13" };
+    const order: AllocationOrder = [{ id: EMERGENCY_ALLOCATION_ID, weightPct: 100 }, { id: DEPOSIT_ALLOCATION_ID, weightPct: 100 }];
+    const b = fortnightBreakdown(400, noCC, [dueGoal], 1000, profile.emergency_target, today, order);
+    const surplus = 1000 - b.categoriesTotal; // 600
+    const need = dueDateGoalNeed(dueGoal, today);
+    expect(need).toBeGreaterThan(0);
+    const rego = b.goalAllocations.find((g) => g.id === "rego")!;
+    expect(rego.amount).toBeCloseTo(need, 5);
+    // The due-date goal isn't in the percentage order at all — what's left after it splits evenly.
+    const afterDueDate = surplus - need;
+    expect(b.toEmergency).toBeCloseTo(afterDueDate / 2, 5);
+    expect(b.toDeposit).toBeCloseTo(afterDueDate / 2, 5);
+    expect(b.orderedAllocations[0]).toMatchObject({ id: "rego", label: "Car rego" });
+  });
+
+  it("caps a due-date goal's contribution at whatever surplus is actually available", () => {
+    const noCC = { ...balances, cc: 0, emergency: 0 };
+    // A big enough target that its per-fortnight need comfortably exceeds the $100 surplus left
+    // once categoriesTotal (900) is taken out of the $1000 net pay.
+    const dueGoal: Goal = { id: "rego", user_id: "u1", label: "Car rego", target_amount: 4000, current_amount: 0, priority: 0, created_at: "2026-01-01", due_date: "2026-10-13" };
+    const b = fortnightBreakdown(900, noCC, [dueGoal], 1000, profile.emergency_target, today);
+    const rego = b.goalAllocations.find((g) => g.id === "rego")!;
+    expect(rego.amount).toBeCloseTo(100, 5);
+    expect(b.toEmergency).toBe(0);
+    expect(b.toDeposit).toBe(0);
+  });
+
+  it("needs nothing once a due-date goal's target is already met", () => {
+    const dueGoal: Goal = { id: "rego", user_id: "u1", label: "Car rego", target_amount: 400, current_amount: 400, priority: 0, created_at: "2026-01-01", due_date: "2026-10-13" };
+    expect(dueDateGoalNeed(dueGoal, today)).toBe(0);
+  });
+
+  it("treats an overdue due date as needing the full remaining amount this fortnight", () => {
+    const dueGoal: Goal = { id: "rego", user_id: "u1", label: "Car rego", target_amount: 400, current_amount: 100, priority: 0, created_at: "2026-01-01", due_date: "2026-01-01" };
+    expect(dueDateGoalNeed(dueGoal, today)).toBe(300);
+  });
+
+  it("splits limited surplus across multiple due-date goals proportionally to their need", () => {
+    const goals: Goal[] = [
+      { id: "rego", user_id: "u1", label: "Car rego", target_amount: 400, current_amount: 0, priority: 0, created_at: "2026-01-01", due_date: "2026-10-13" },
+      { id: "insurance", user_id: "u1", label: "Car insurance", target_amount: 300, current_amount: 0, priority: 1, created_at: "2026-01-01", due_date: "2026-10-13" },
+    ];
+    const regoNeed = dueDateGoalNeed(goals[0], today);
+    const insuranceNeed = dueDateGoalNeed(goals[1], today);
+    // Only enough surplus for a fifth of the combined need — split proportionally, not evenly.
+    const available = (regoNeed + insuranceNeed) / 5;
+    const { toDueDateGoalsTotal, dueDateAmounts } = allocateDueDateGoals(available, goals, today);
+    expect(toDueDateGoalsTotal).toBeCloseTo(available, 5);
+    expect(dueDateAmounts.get("rego")).toBeCloseTo(available * (regoNeed / (regoNeed + insuranceNeed)), 5);
+    expect(dueDateAmounts.get("insurance")).toBeCloseTo(available * (insuranceNeed / (regoNeed + insuranceNeed)), 5);
   });
 });
 
@@ -1029,6 +1100,22 @@ describe("buildFortnightSplit", () => {
     // Balance keeps accumulating into period 2.
     const holidayP1 = split[1].otherAllocations.find((o) => o.id === "holiday")!;
     expect(holidayP1.balance).toBeGreaterThan(holidayP0.balance);
+  });
+
+  it("funds a due-date goal ahead of the percentage split and recalculates its need each period as the balance grows", () => {
+    const fullEmergencyNoCC = { ...balances, emergency: profile.emergency_target, cc: 0 };
+    const dueGoal: Goal = { id: "rego", user_id: "u1", label: "Car rego", target_amount: 1000, current_amount: 0, priority: 0, created_at: "2026-01-01", due_date: periods[3].key };
+    const split = buildFortnightSplit(profile, D, categories, fullEmergencyNoCC, [dueGoal], periods, profile.pay_anchor, 2);
+    const rego0 = split[0].goalAllocations.find((g) => g.id === "rego")!;
+    const surplus0 = Math.max(0, split[0].netPay - split[0].categoriesTotal);
+    expect(rego0.amount).toBeCloseTo(Math.min(surplus0, 1000 / fortnightsUntil(periods[0].key, periods[3].key)), 5);
+    // Money flowed to the due-date goal first — deposit only gets whatever's left over.
+    expect(split[0].toDeposit).toBeCloseTo(surplus0 - rego0.amount, 5);
+    // Next period's need shrinks because rego0's contribution already reduced the shortfall
+    // (using rego0.amount, not the rounded `.balance`, to match the internal running total exactly).
+    const rego1 = split[1].goalAllocations.find((g) => g.id === "rego")!;
+    const needP1 = (1000 - rego0.amount) / fortnightsUntil(periods[1].key, periods[3].key);
+    expect(rego1.amount).toBeCloseTo(Math.max(0, needP1), 5);
   });
 });
 

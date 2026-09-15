@@ -154,7 +154,7 @@ interface AppDataContextValue {
   deleteMiscIncome: (id: string) => Promise<void>;
   /** A custom savings goal beyond the emergency fund and house deposit — see the `Goal` type. */
   addGoal: (label: string, targetAmount: number, priority?: number) => Promise<void>;
-  updateGoal: (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority">>) => Promise<void>;
+  updateGoal: (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority" | "due_date">>) => Promise<void>;
   /** Removes it from view immediately with a Supabase delete deferred behind an Undo window — see `undoDeleteGoal`. */
   deleteGoal: (id: string, onFailure?: () => void) => void;
   undoDeleteGoal: (id: string) => void;
@@ -558,7 +558,7 @@ export function AppDataProvider({
   );
 
   const updateGoal = useCallback(
-    async (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority">>) => {
+    async (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority" | "due_date">>) => {
       setGoals((gs) => gs.map((g) => (g.id === id ? { ...g, ...patch } : g)).sort((a, b) => a.priority - b.priority));
       const { error } = await supabase.from("goals").update(patch).eq("id", id);
       if (error) throw error;

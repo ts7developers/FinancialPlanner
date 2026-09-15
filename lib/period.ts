@@ -92,3 +92,12 @@ export function isFT(periodKey: string, ftStartStr: string): boolean {
 export function periodLabel(p: Period): string {
   return `${p.label} '${String(p.year).slice(2)}`;
 }
+
+/** Fortnights from `fromISO` to `dueISO`, rounded up so a due date that falls mid-fortnight is
+ * still fully funded by then — floored at 1, so a due date that's today or already passed still
+ * returns a concrete (if urgent) figure instead of dividing by zero or going negative. */
+export function fortnightsUntil(fromISO: string, dueISO: string): number {
+  const from = dateFromISO(fromISO);
+  const due = dateFromISO(dueISO);
+  return Math.max(1, Math.ceil((due.getTime() - from.getTime()) / (14 * DAY_MS)));
+}

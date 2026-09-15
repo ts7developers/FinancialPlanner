@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { RotateCcw, ListOrdered, Plus, X } from "lucide-react";
+import Link from "next/link";
+import { RotateCcw, ListOrdered, Plus, X, CalendarClock } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
-import { resolveAllocationOrder, EMERGENCY_ALLOCATION_ID, DEPOSIT_ALLOCATION_ID, EXTRA_BALANCE_DESTINATIONS } from "@/lib/derive";
+import { resolveAllocationOrder, dueDateGoalNeed, EMERGENCY_ALLOCATION_ID, DEPOSIT_ALLOCATION_ID, EXTRA_BALANCE_DESTINATIONS } from "@/lib/derive";
+import { isoFromDate, dateFromISO, dayLabel } from "@/lib/period";
+import { AUD } from "@/lib/money";
 import { GOLD_MUTE, ON_ACCENT_DARK, SURFACE_SUBTLE, LINE, MUTE, GOLD, NAVY, UNFAV, PIE_COLORS, selStyle } from "@/lib/theme";
 import { Panel, Field, InfoTip } from "@/components/ui/atoms";
 import type { AllocationOrder, Goal } from "@/lib/types";
@@ -31,7 +34,12 @@ export default function PayPriorityPanel() {
   const [newGoalTarget, setNewGoalTarget] = useState("");
   const [extraToAdd, setExtraToAdd] = useState<string>(EXTRA_BALANCE_DESTINATIONS[0]?.id ?? "");
 
-  const order = resolveAllocationOrder(profile.allocation_order, goals);
+  const dueDateGoals = goals.filter((g) => g.due_date);
+  const percentGoals = goals.filter((g) => !g.due_date);
+  const dueDateGoalIds = new Set(dueDateGoals.map((g) => g.id));
+  const today = isoFromDate(new Date());
+
+  const order = resolveAllocationOrder(profile.allocation_order, percentGoals).filter((t) => !dueDateGoalIds.has(t.id));
   const usedIds = new Set(order.map((t) => t.id));
   const availableExtras = EXTRA_BALANCE_DESTINATIONS.filter((d) => !usedIds.has(d.id));
   const totalPct = order.reduce((s, t) => s + (Number(t.weightPct) || 0), 0);
@@ -99,10 +107,35 @@ export default function PayPriorityPanel() {
   return (
     <Panel title="Pay split" icon={ListOrdered}>
       <div style={{ fontSize: 12.5, color: MUTE, marginBottom: 12, lineHeight: 1.5 }}>
-        What share of each fortnight&apos;s surplus goes to each destination, after credit card paydown (always first, fixed, against the full balance), budgeted spending, and bills. Percentages split
-        proportionally, so they don&apos;t need to add up to exactly 100 — but aiming for 100 keeps it easy to reason about. Once a destination reaches its target, its leftover
-        share flows to the rest automatically.
+        What share of each fortnight&apos;s surplus goes to each destination, after credit card paydown (always first, fixed, against the full balance), budgeted spending, bills, and any
+        due-date goals below. Percentages split proportionally, so they don&apos;t need to add up to exactly 100 — but aiming for 100 keeps it easy to reason about. Once a destination
+        reaches its target, its leftover share flows to the rest automatically.
       </div>
+
+      {dueDateGoals.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: MUTE, textTransform: "uppercase", letterSpacing: ".04em" }}>
+            <CalendarClock size={13} /> Due-date goals — funded before the percentages below
+          </div>
+          {dueDateGoals.map((g) => {
+            const need = dueDateGoalNeed(g, today);
+            return (
+              <div key={g.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 10px", background: SURFACE_SUBTLE, border: `1px solid ${LINE}`, borderRadius: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: NAVY }}>
+                  {g.label} <span style={{ fontWeight: 400, color: MUTE }}>· due {dayLabel(dateFromISO(g.due_date!))}</span>
+                </span>
+                <span style={{ fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: need > 0 ? GOLD : MUTE }}>
+                  {need > 0 ? `${AUD(need)}/fortnight` : "Target met"}
+                </span>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 11, color: MUTE, lineHeight: 1.5 }}>
+            Recalculated each fortnight from the remaining shortfall and time left, so it self-corrects as you contribute. Set or clear a due date on the{" "}
+            <Link href="/savings" style={{ color: NAVY, fontWeight: 600 }}>Wealth</Link> tab&apos;s Goals list.
+          </div>
+        </div>
+      )}
 
       {totalPct > 0 && (
         <div style={{ marginBottom: 14 }}>

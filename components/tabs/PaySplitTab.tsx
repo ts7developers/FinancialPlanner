@@ -65,12 +65,13 @@ export default function PaySplitTab() {
             {breakdown.orderedAllocations
               .filter((a) => a.amount > 0)
               .map((a) => {
-                const color = a.id === DEPOSIT_ALLOCATION_ID ? NAVY : a.id === EMERGENCY_ALLOCATION_ID ? FAV : GOLD;
+                const color = a.dueDate ? GOLD : a.id === DEPOSIT_ALLOCATION_ID ? NAVY : a.id === EMERGENCY_ALLOCATION_ID ? FAV : GOLD;
                 const amountColor = a.id === DEPOSIT_ALLOCATION_ID ? FAV : color;
                 return (
                   <div key={a.id} style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color, display: "flex", alignItems: "center", gap: 5 }}>
                       <ArrowRight size={13} /> {a.label}
+                      {a.dueDate && <span style={{ color: MUTE, fontWeight: 400 }}>· due {dayLabel(dateFromISO(a.dueDate))}</span>}
                     </span>
                     <span style={{ fontVariantNumeric: "tabular-nums", color: amountColor }}>{AUD(a.amount)}</span>
                   </div>
@@ -79,8 +80,9 @@ export default function PaySplitTab() {
           </div>
         )}
         <div style={{ fontSize: 11, color: MUTE, marginTop: 12, paddingTop: 10, borderTop: `1px solid ${LINE}`, lineHeight: 1.5 }}>
-          Credit card paydown is always first, fixed, ahead of everything below it — every expense on the card gets cleared before anything else moves. What&apos;s left after that
-          splits by the percentages set below, against real balances as they stood when this fortnight&apos;s pay first landed. A guide for where to move the money, not automatic.
+          Credit card paydown is always first, fixed, ahead of everything below it — every expense on the card gets cleared before anything else moves. Any due-date goals come next,
+          each funded by its own $/fortnight need. What&apos;s left after that splits by the percentages set below, against real balances as they stood when this fortnight&apos;s pay
+          first landed. A guide for where to move the money, not automatic.
         </div>
       </Panel>
 

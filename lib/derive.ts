@@ -2,7 +2,7 @@
 // in FinancialPlanTracker.jsx. Pure functions so the same math is reusable and testable
 // independent of React / Supabase.
 
-import { dayLabel, dateFromISO, isoFromDate, currentPeriod, financialYearStart, isFT, periodKeyOf, periodLabel, type Period } from "./period";
+import { dayLabel, dateFromISO, isoFromDate, currentPeriod, financialYearStart, isFT, periodKeyOf, periodLabel, fortnightsUntil, type Period } from "./period";
 import { netFromPackage, hecsCompulsoryRepayment, incomeTaxAU, litoAU, FN_PER_YEAR, FN_FROM_MO } from "./tax";
 import { OTHER_CATEGORY_KEY } from "./categories";
 export { hecsCompulsoryRepayment } from "./tax";
@@ -177,7 +177,10 @@ export function buildNetWorthProjection(
   let hecs = Number(balances.hecs) || 0;
   const goalBalances = new Map<string, number>(goals.map((g) => [g.id, Number(g.current_amount) || 0]));
   const otherBalances = new Map<string, number>(EXTRA_BALANCE_DESTINATIONS.map((d) => [d.id as string, Number(balances[d.id]) || 0]));
-  const allocationOrder = resolveAllocationOrder(profile.allocation_order, goals);
+  const dueDateGoals = goals.filter((g) => g.due_date);
+  const percentGoals = goals.filter((g) => !g.due_date);
+  const dueDateGoalIds = new Set(dueDateGoals.map((g) => g.id));
+  const allocationOrder = resolveAllocationOrder(profile.allocation_order, percentGoals).filter((t) => !dueDateGoalIds.has(t.id));
 
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per, i) => {
     const grownPackage = (isFT(per.key, profile.ft_start) ? basePackage : ptAnnualEquivalent) * scenario.multiplierAt(i);
@@ -188,13 +191,16 @@ export function buildNetWorthProjection(
     // Credit card paydown is the fixed first priority, against the full balance (not just
     // whatever's left after budgeted spend) — see fortnightBreakdown's doc comment for why.
     const toCC = Math.max(0, Math.min(incomeFn, cc));
-    const surplus = Math.max(0, incomeFn - toCC - D.expFN(per.year)) + extraPerFortnight;
+    const afterCC = Math.max(0, incomeFn - toCC - D.expFN(per.year)) + extraPerFortnight;
     cc = Math.max(0, cc - toCC);
 
-    const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (goalBalances.get(g.id) ?? 0))]));
+    const { toDueDateGoalsTotal, dueDateAmounts } = allocateDueDateGoals(afterCC, dueDateGoals, per.key, goalBalances);
+    const surplus = Math.max(0, afterCC - toDueDateGoalsTotal);
+
+    const goalRemaining = new Map(percentGoals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (goalBalances.get(g.id) ?? 0))]));
     const { toEmergency, toDeposit, goalAmounts, otherAmounts } = applyAllocationOrder(surplus, allocationOrder, Math.max(0, emergencyTarget - emergency), goalRemaining);
     emergency += toEmergency;
-    goals.forEach((g) => goalBalances.set(g.id, (goalBalances.get(g.id) ?? 0) + (goalAmounts.get(g.id) ?? 0)));
+    goals.forEach((g) => goalBalances.set(g.id, (goalBalances.get(g.id) ?? 0) + (dueDateAmounts.get(g.id) ?? goalAmounts.get(g.id) ?? 0)));
     EXTRA_BALANCE_DESTINATIONS.forEach((d) => otherBalances.set(d.id as string, (otherBalances.get(d.id as string) ?? 0) + (otherAmounts.get(d.id as string) ?? 0)));
     deposit += toDeposit;
     shares *= 1 + periodGrowth;
@@ -710,6 +716,37 @@ export function allocateTier(amount: number, items: AllocationDestination[]): { 
   return { allocations, leftover: Math.max(0, remaining) };
 }
 
+/** A goal with `due_date` set is funded by a fixed $/fortnight need instead of a percentage share
+ * — see the `Goal` type's doc comment. `asOfCurrentAmount` lets a running projection (which tracks
+ * its own goal balances period to period) override `goal.current_amount`; omit it for a one-off
+ * breakdown against the goal's real stored balance. */
+export function dueDateGoalNeed(goal: Goal, asOfISO: string, asOfCurrentAmount?: number): number {
+  if (!goal.due_date) return 0;
+  const current = asOfCurrentAmount ?? (Number(goal.current_amount) || 0);
+  const remaining = Math.max(0, Number(goal.target_amount) - current);
+  return remaining > 0 ? remaining / fortnightsUntil(asOfISO, goal.due_date) : 0;
+}
+
+/**
+ * Splits `afterCC` across every due-date goal's currently-needed per-fortnight contribution
+ * (`dueDateGoalNeed`), proportionally if there isn't enough surplus to cover every need in full.
+ * Due-date goals are funded here, right after the credit card and budgeted categories but *before*
+ * the percentage-based waterfall (`applyAllocationOrder`) — a hard deadline isn't something a
+ * percentage share can honour on its own, so it jumps the queue ahead of it.
+ */
+export function allocateDueDateGoals(
+  afterCC: number,
+  dueDateGoals: Goal[],
+  asOfISO: string,
+  goalBalances?: Map<string, number>
+): { toDueDateGoalsTotal: number; dueDateAmounts: Map<string, number> } {
+  const needs = dueDateGoals.map((g) => ({ id: g.id, need: dueDateGoalNeed(g, asOfISO, goalBalances?.get(g.id)) }));
+  const needTotal = needs.reduce((s, n) => s + n.need, 0);
+  const toDueDateGoalsTotal = Math.min(Math.max(0, afterCC), needTotal);
+  const dueDateAmounts = new Map(needs.map((n) => [n.id, needTotal > 0 ? (n.need / needTotal) * toDueDateGoalsTotal : 0]));
+  return { toDueDateGoalsTotal, dueDateAmounts };
+}
+
 export interface AllocationRunResult {
   toEmergency: number;
   toDeposit: number;
@@ -1215,6 +1252,8 @@ export interface GoalAllocation {
   label: string;
   amount: number; // contributed this period
   balance: number; // running balance after this period's contribution
+  /** Present only for a due-date goal — see the `Goal` type. */
+  dueDate?: string | null;
 }
 
 export interface FortnightSplitPoint {
@@ -1239,6 +1278,8 @@ export interface AllocationLineItem {
   id: string;
   label: string;
   amount: number;
+  /** Present only for a due-date goal — see the `Goal` type. */
+  dueDate?: string | null;
 }
 
 export interface FortnightBreakdown {
@@ -1272,6 +1313,10 @@ export interface FortnightBreakdown {
  * credit card: money already spent that way is already sitting in the `cc` balance being paid
  * down above, so reserving the *full* planned amount on top of that double-counts it and
  * understates how much is left for the rest of the waterfall.
+ *
+ * A goal with `due_date` set (see the `Goal` type) is funded right after the card, from a fixed
+ * $/fortnight need rather than the percentage-based waterfall everything else uses — `todayISO`
+ * is what that need is calculated against.
  */
 export function fortnightBreakdown(
   categoriesTotal: number,
@@ -1279,31 +1324,45 @@ export function fortnightBreakdown(
   goals: Goal[],
   netPay: number,
   emergencyTarget: number,
+  todayISO: string,
   allocationOrder?: AllocationOrder | null
 ): FortnightBreakdown {
   const cc = Number(balances.cc) || 0;
   const toCreditCard = Math.max(0, Math.min(netPay, cc));
-  const surplus = Math.max(0, netPay - toCreditCard - categoriesTotal);
+  const afterCC = Math.max(0, netPay - toCreditCard - categoriesTotal);
+
+  const dueDateGoals = goals.filter((g) => g.due_date);
+  const percentGoals = goals.filter((g) => !g.due_date);
+  const dueDateGoalIds = new Set(dueDateGoals.map((g) => g.id));
+  const { toDueDateGoalsTotal, dueDateAmounts } = allocateDueDateGoals(afterCC, dueDateGoals, todayISO);
+  const surplus = Math.max(0, afterCC - toDueDateGoalsTotal);
 
   const emergency = Number(balances.emergency) || 0;
-  const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (Number(g.current_amount) || 0))]));
-  const order = resolveAllocationOrder(allocationOrder, goals);
+  const goalRemaining = new Map(percentGoals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (Number(g.current_amount) || 0))]));
+  const order = resolveAllocationOrder(allocationOrder, percentGoals).filter((t) => !dueDateGoalIds.has(t.id));
   const { toEmergency, toDeposit, goalAmounts, otherAmounts } = applyAllocationOrder(surplus, order, Math.max(0, emergencyTarget - emergency), goalRemaining);
 
   const goalAllocations: GoalAllocation[] = sortGoalsByPriority(goals).map((g) => {
-    const amount = goalAmounts.get(g.id) ?? 0;
+    const amount = dueDateAmounts.get(g.id) ?? goalAmounts.get(g.id) ?? 0;
     const current = Number(g.current_amount) || 0;
-    return { id: g.id, label: g.label, amount, balance: Math.round(current + amount) };
+    return { id: g.id, label: g.label, amount, balance: Math.round(current + amount), dueDate: g.due_date };
   });
   const toGoalsTotal = goalAllocations.reduce((s, g) => s + g.amount, 0);
 
   const goalLabelById = new Map(goals.map((g) => [g.id, g.label]));
   const extraLabelById = new Map(EXTRA_BALANCE_DESTINATIONS.map((d) => [d.id as string, d.label]));
-  const orderedAllocations: AllocationLineItem[] = order.map((t) => ({
+  const dueDateLineItems: AllocationLineItem[] = dueDateGoals.map((g) => ({
+    id: g.id,
+    label: g.label,
+    amount: dueDateAmounts.get(g.id) ?? 0,
+    dueDate: g.due_date,
+  }));
+  const percentLineItems: AllocationLineItem[] = order.map((t) => ({
     id: t.id,
     label: t.id === EMERGENCY_ALLOCATION_ID ? "Emergency fund" : t.id === DEPOSIT_ALLOCATION_ID ? "Deposit" : (extraLabelById.get(t.id) ?? goalLabelById.get(t.id) ?? "Goal"),
     amount: t.id === EMERGENCY_ALLOCATION_ID ? toEmergency : t.id === DEPOSIT_ALLOCATION_ID ? toDeposit : (otherAmounts.get(t.id) ?? goalAmounts.get(t.id) ?? 0),
   }));
+  const orderedAllocations: AllocationLineItem[] = [...dueDateLineItems, ...percentLineItems];
 
   return { netPay, categoriesTotal, toCreditCard, toEmergency, toGoalsTotal, goalAllocations, toDeposit, orderedAllocations };
 }
@@ -1336,16 +1395,22 @@ export function buildFortnightSplit(
   const goalBalances = new Map<string, number>(goals.map((g) => [g.id, Number(g.current_amount) || 0]));
   const otherBalances = new Map<string, number>(EXTRA_BALANCE_DESTINATIONS.map((d) => [d.id as string, Number(balances[d.id]) || 0]));
   const orderedGoals = sortGoalsByPriority(goals);
-  const allocationOrder = resolveAllocationOrder(profile.allocation_order, goals);
+  const dueDateGoals = goals.filter((g) => g.due_date);
+  const percentGoals = goals.filter((g) => !g.due_date);
+  const dueDateGoalIds = new Set(dueDateGoals.map((g) => g.id));
+  const allocationOrder = resolveAllocationOrder(profile.allocation_order, percentGoals).filter((t) => !dueDateGoalIds.has(t.id));
 
   return periods.slice(startIdx, startIdx + horizonPeriods).map((per) => {
     const netPay = plannedIncomeFN(per, profile, D);
     const categoriesTotal = D.expFN(per.year);
     const toCreditCard = Math.max(0, Math.min(netPay, cc));
-    const surplus = Math.max(0, netPay - toCreditCard - categoriesTotal);
+    const afterCC = Math.max(0, netPay - toCreditCard - categoriesTotal);
     cc = Math.max(0, cc - toCreditCard);
 
-    const goalRemaining = new Map(goals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (goalBalances.get(g.id) ?? 0))]));
+    const { toDueDateGoalsTotal, dueDateAmounts } = allocateDueDateGoals(afterCC, dueDateGoals, per.key, goalBalances);
+    const surplus = Math.max(0, afterCC - toDueDateGoalsTotal);
+
+    const goalRemaining = new Map(percentGoals.map((g) => [g.id, Math.max(0, Number(g.target_amount) - (goalBalances.get(g.id) ?? 0))]));
     const { toEmergency, toDeposit, goalAmounts, otherAmounts } = applyAllocationOrder(surplus, allocationOrder, Math.max(0, emergencyTarget - emergency), goalRemaining);
     emergency += toEmergency;
 
@@ -1353,10 +1418,10 @@ export function buildFortnightSplit(
     // balance across periods (e.g. Savings' ETA projection) always finds it, rather than falling
     // back to "not found" on a period where this particular goal happened to get nothing.
     const goalAllocations: GoalAllocation[] = orderedGoals.map((g) => {
-      const amount = goalAmounts.get(g.id) ?? 0;
+      const amount = dueDateAmounts.get(g.id) ?? goalAmounts.get(g.id) ?? 0;
       const balance = (goalBalances.get(g.id) ?? 0) + amount;
       goalBalances.set(g.id, balance);
-      return { id: g.id, label: g.label, amount, balance: Math.round(balance) };
+      return { id: g.id, label: g.label, amount, balance: Math.round(balance), dueDate: g.due_date };
     });
     const toGoalsTotal = goalAllocations.reduce((s, g) => s + g.amount, 0);
 

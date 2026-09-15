@@ -1,6 +1,7 @@
 "use client";
 
 import { actualIncomeForPeriod, fortnightBreakdown, plannedIncomeFN, reconcileCategoryRows, type FortnightBreakdown } from "@/lib/derive";
+import { isoFromDate } from "@/lib/period";
 import { useAppData } from "@/components/AppDataProvider";
 
 export interface FortnightBreakdownResult {
@@ -70,6 +71,7 @@ export function useFortnightBreakdown(periodKey: string, opts: { fallbackToPlann
           breakdownGoals,
           netPay,
           Number(profile.emergency_target) || 0,
+          isoFromDate(new Date()),
           profile.allocation_order
         )
       : null;
