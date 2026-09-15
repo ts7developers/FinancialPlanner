@@ -1284,7 +1284,6 @@ export interface AllocationLineItem {
 
 export interface FortnightBreakdown {
   netPay: number;
-  categoriesTotal: number;
   toCreditCard: number;
   toEmergency: number;
   toGoalsTotal: number;
@@ -1297,29 +1296,19 @@ export interface FortnightBreakdown {
 }
 
 /**
- * Applies the same waterfall `buildFortnightSplit` walks forward period by period — credit card
- * paydown against its *full* balance first (fixed, ahead of everything else — for an account
- * where nearly all spending runs through the card, that balance already represents this
- * fortnight's real spend, so clearing it takes priority over reserving for budgeted categories
- * that haven't hit the card yet), then remaining budgeted spend, then the emergency fund, then
- * `goals` in priority order, then whatever's left to the deposit — to a single one-off amount
- * (e.g. a just-confirmed payslip's net, or a fortnight's combined actual income) against today's
- * real balances, rather than to the planned income for a series of projected periods. Used to show
- * "where this pay goes" right after importing a payslip.
+ * Where a single one-off amount of net pay (e.g. a just-confirmed payslip's net, or a fortnight's
+ * combined actual income) should go, against today's real balances — credit card paydown against
+ * its *full* balance first (fixed, ahead of everything else — for an account where nearly all
+ * spending runs through the card, that balance already represents this fortnight's real spend),
+ * then any due-date goals (a fixed $/fortnight need — see the `Goal` type — calculated against
+ * `todayISO`), then `goals` and the emergency fund/deposit by the configured percentage split.
+ * Used to show "where this pay goes" right after importing a payslip.
  *
- * `categoriesTotal` is caller-supplied rather than derived from `D`/`categories`/`year` here, so
- * it can reflect what's actually still unspent this fortnight (plan minus whatever's already
- * logged) rather than the full plan — important for anyone who pays for most expenses on the
- * credit card: money already spent that way is already sitting in the `cc` balance being paid
- * down above, so reserving the *full* planned amount on top of that double-counts it and
- * understates how much is left for the rest of the waterfall.
- *
- * A goal with `due_date` set (see the `Goal` type) is funded right after the card, from a fixed
- * $/fortnight need rather than the percentage-based waterfall everything else uses — `todayISO`
- * is what that need is calculated against.
+ * Budgeted categories aren't reserved here at all — how much you're still under or over plan is
+ * what the Reconcile variance report already tracks after the fact, and a known future bill
+ * (rego, insurance) belongs on a due-date goal instead of an automatic set-aside guess.
  */
 export function fortnightBreakdown(
-  categoriesTotal: number,
   balances: Balances,
   goals: Goal[],
   netPay: number,
@@ -1329,7 +1318,7 @@ export function fortnightBreakdown(
 ): FortnightBreakdown {
   const cc = Number(balances.cc) || 0;
   const toCreditCard = Math.max(0, Math.min(netPay, cc));
-  const afterCC = Math.max(0, netPay - toCreditCard - categoriesTotal);
+  const afterCC = Math.max(0, netPay - toCreditCard);
 
   const dueDateGoals = goals.filter((g) => g.due_date);
   const percentGoals = goals.filter((g) => !g.due_date);
@@ -1364,7 +1353,7 @@ export function fortnightBreakdown(
   }));
   const orderedAllocations: AllocationLineItem[] = [...dueDateLineItems, ...percentLineItems];
 
-  return { netPay, categoriesTotal, toCreditCard, toEmergency, toGoalsTotal, goalAllocations, toDeposit, orderedAllocations };
+  return { netPay, toCreditCard, toEmergency, toGoalsTotal, goalAllocations, toDeposit, orderedAllocations };
 }
 
 /**

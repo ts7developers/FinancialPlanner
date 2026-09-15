@@ -56,12 +56,6 @@ export default function PaySplitTab() {
                 <span style={{ fontVariantNumeric: "tabular-nums", color: UNFAV }}>{AUD(breakdown.toCreditCard)}</span>
               </div>
             )}
-            {breakdown.categoriesTotal > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: MUTE }}>Still to spend this fortnight (budget left)</span>
-                <span style={{ fontVariantNumeric: "tabular-nums" }}>{AUD(breakdown.categoriesTotal)}</span>
-              </div>
-            )}
             {breakdown.orderedAllocations
               .filter((a) => a.amount > 0)
               .map((a) => {
@@ -82,7 +76,7 @@ export default function PaySplitTab() {
         <div style={{ fontSize: 11, color: MUTE, marginTop: 12, paddingTop: 10, borderTop: `1px solid ${LINE}`, lineHeight: 1.5 }}>
           Credit card paydown is always first, fixed, ahead of everything below it — every expense on the card gets cleared before anything else moves. Any due-date goals come next,
           each funded by its own $/fortnight need. What&apos;s left after that splits by the percentages set below, against real balances as they stood when this fortnight&apos;s pay
-          first landed. A guide for where to move the money, not automatic.
+          first landed. Budgeted spending isn&apos;t held back — see Reconcile&apos;s variance report for how that&apos;s tracking. A guide for where to move the money, not automatic.
         </div>
       </Panel>
 

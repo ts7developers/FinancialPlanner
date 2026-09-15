@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip, Transfer, Holding, HoldingLot, SuperContribution, RecurringExpense, MiscIncome, Goal, Receipt } from "@/lib/types";
+import type { Profile, BudgetCategoryRow, Transaction, Reconciliation, Snapshot, Balances, Payslip, Transfer, Holding, HoldingLot, SuperContribution, RecurringExpense, MiscIncome, Goal, Receipt, CustomAccount } from "@/lib/types";
 
 export interface AppData {
   profile: Profile;
@@ -18,6 +18,7 @@ export interface AppData {
   miscIncome: MiscIncome[];
   goals: Goal[];
   receipts: Receipt[];
+  accounts: CustomAccount[];
 }
 
 /** Loads everything the authed app shell needs for a user in one round trip. */
@@ -40,6 +41,7 @@ export async function fetchAppData(userId: string): Promise<AppData> {
     miscIncomeRes,
     goalsRes,
     receiptsRes,
+    accountsRes,
   ] = await Promise.all([
     supabase.from("profiles").select("*").eq("user_id", userId).single(),
     supabase.from("budget_categories").select("*").eq("user_id", userId).order("sort"),
@@ -56,6 +58,7 @@ export async function fetchAppData(userId: string): Promise<AppData> {
     supabase.from("misc_income").select("*").eq("user_id", userId).order("date", { ascending: false }),
     supabase.from("goals").select("*").eq("user_id", userId).order("priority"),
     supabase.from("receipts").select("*").eq("user_id", userId).order("date", { ascending: false }),
+    supabase.from("accounts").select("*").eq("user_id", userId).order("created_at"),
   ]);
 
   if (profileRes.error) throw profileRes.error;
@@ -77,5 +80,6 @@ export async function fetchAppData(userId: string): Promise<AppData> {
     miscIncome: (miscIncomeRes.data ?? []) as MiscIncome[],
     goals: (goalsRes.data ?? []) as Goal[],
     receipts: (receiptsRes.data ?? []) as Receipt[],
+    accounts: (accountsRes.data ?? []) as CustomAccount[],
   };
 }

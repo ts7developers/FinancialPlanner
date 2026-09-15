@@ -193,6 +193,19 @@ export interface Goal {
   priority: number;
   created_at: string;
   due_date?: string | null;
+  /** Which real account this goal's money lives in (a built-in `ACCOUNTS` label from lib/theme.ts,
+   * or a custom one from `CustomAccount`) — purely a reference for where to move money, doesn't
+   * affect any balance or calculation. */
+  account?: string | null;
+}
+
+/** A user-named account beyond the fixed `ACCOUNTS` list (lib/theme.ts) — e.g. a dedicated bank
+ * sub-account for a specific goal. Just a label; it has no tracked balance of its own. */
+export interface CustomAccount {
+  id: string;
+  user_id: string;
+  label: string;
+  created_at: string;
 }
 
 /** A one-off income entry that isn't a payslip (tax refund, gift, reimbursement, side gig, etc). */

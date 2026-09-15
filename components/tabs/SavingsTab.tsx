@@ -25,7 +25,7 @@ import {
   dueDateGoalNeed,
 } from "@/lib/derive";
 import { AUD } from "@/lib/money";
-import { MUTE_ICON, ON_ACCENT_DARK, SURFACE_SUBTLE, WARN_BG, WARN_TEXT, CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, selStyle } from "@/lib/theme";
+import { MUTE_ICON, ON_ACCENT_DARK, SURFACE_SUBTLE, WARN_BG, WARN_TEXT, CARD, LINE, MUTE, GOLD, NAVY, FAV, UNFAV, ACCOUNTS, selStyle } from "@/lib/theme";
 import { Metric, Field, Progress } from "@/components/ui/atoms";
 import ChartSkeleton from "@/components/charts/ChartSkeleton";
 import type { NetWorthChartRow } from "@/components/charts/NetWorthChart";
@@ -37,10 +37,12 @@ const HORIZON_PERIODS = 78; // roughly 3 years of fortnights
 
 export default function SavingsTab() {
   const isMobile = useIsMobile();
-  const { profile, balances, periods, categories, superContributions, goals, updateGoal, deleteGoal, undoDeleteGoal, loggedByCat, reconciliations, snapshots, D } = useAppData();
+  const { profile, balances, periods, categories, superContributions, goals, updateGoal, deleteGoal, undoDeleteGoal, accounts, addAccount, deleteAccount, loggedByCat, reconciliations, snapshots, D } = useAppData();
   const toast = useToast();
   const [goalAmountInputs, setGoalAmountInputs] = useState<Record<string, string>>({});
   const [goalFlash, setGoalFlash] = useState("");
+  const [newAccountLabel, setNewAccountLabel] = useState("");
+  const [accountBusy, setAccountBusy] = useState(false);
   const [growthPct, setGrowthPct] = useState("7");
   const [extraFn, setExtraFn] = useState("0");
   const [hecsIndexPct, setHecsIndexPct] = useState("3");
@@ -152,6 +154,38 @@ export default function SavingsTab() {
       await updateGoal(id, { due_date: value || null });
     } catch (err) {
       flashGoalError(err);
+    }
+  };
+
+  const onUpdateGoalAccount = async (id: string, value: string) => {
+    try {
+      await updateGoal(id, { account: value || null });
+    } catch (err) {
+      flashGoalError(err);
+    }
+  };
+
+  const onAddAccount = async () => {
+    if (!newAccountLabel.trim()) return;
+    setAccountBusy(true);
+    try {
+      await addAccount(newAccountLabel);
+      setNewAccountLabel("");
+      setGoalFlash("");
+    } catch {
+      setGoalFlash("Could not add that account — run migration 0025_accounts.sql, then try again.");
+      setTimeout(() => setGoalFlash(""), 6000);
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
+  const onDeleteAccount = async (id: string) => {
+    try {
+      await deleteAccount(id);
+    } catch {
+      setGoalFlash("Could not remove that account — try again.");
+      setTimeout(() => setGoalFlash(""), 6000);
     }
   };
 
@@ -285,7 +319,7 @@ export default function SavingsTab() {
                           </>
                         )}
                       </span>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
                         <input
                           type="date"
                           value={g.due_date ?? ""}
@@ -293,6 +327,24 @@ export default function SavingsTab() {
                           title="Fund this goal by a due date instead of a Pay split percentage — e.g. rego or car insurance"
                           style={{ ...selStyle, width: 132, fontSize: 12 }}
                         />
+                        <select
+                          value={g.account ?? ""}
+                          onChange={(e) => onUpdateGoalAccount(g.id, e.target.value)}
+                          title="Which real account this goal's money lives in"
+                          style={{ ...selStyle, width: 110, fontSize: 12 }}
+                        >
+                          <option value="">Account…</option>
+                          {ACCOUNTS.map((a) => (
+                            <option key={a} value={a}>
+                              {a}
+                            </option>
+                          ))}
+                          {accounts.map((a) => (
+                            <option key={a.id} value={a.label}>
+                              {a.label}
+                            </option>
+                          ))}
+                        </select>
                         <input
                           type="number"
                           inputMode="decimal"
@@ -313,10 +365,50 @@ export default function SavingsTab() {
           </div>
         )}
         <div style={{ fontSize: 11, color: MUTE, marginTop: 4, lineHeight: 1.5 }}>
-          Each goal is its own virtual balance — update &ldquo;saved so far&rdquo; directly as you set money aside for it (e.g. in a
-          separate ANZ Plus sub-account). Give a goal a due date (rego, car insurance) to fund it by a fixed $/fortnight need instead of a{" "}
-          <Link href="/pay-split" style={{ color: NAVY, fontWeight: 600 }}>Pay split</Link> percentage — due-date goals are funded first, ahead of every percentage
-          destination. Clear the date to switch it back to a percentage share.
+          Each goal is its own virtual balance — update &ldquo;saved so far&rdquo; directly as you set money aside for it. Pick which real account
+          that money lives in (or add a custom one below), and give a goal a due date (rego, car insurance) to fund it by a fixed $/fortnight need
+          instead of a <Link href="/pay-split" style={{ color: NAVY, fontWeight: 600 }}>Pay split</Link> percentage — due-date goals are funded
+          first, ahead of every percentage destination. Clear the date to switch it back to a percentage share.
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${LINE}` }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: NAVY }}>Custom accounts</div>
+          {accounts.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {accounts.map((a) => (
+                <span
+                  key={a.id}
+                  style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: NAVY, background: SURFACE_SUBTLE, border: `1px solid ${LINE}`, borderRadius: 20, padding: "4px 6px 4px 10px" }}
+                >
+                  {a.label}
+                  <button onClick={() => onDeleteAccount(a.id)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
+                    <Trash2 size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="text"
+              placeholder="e.g. ANZ Plus — Rego savings"
+              value={newAccountLabel}
+              onChange={(e) => setNewAccountLabel(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && onAddAccount()}
+              style={{ ...selStyle, width: 220, textAlign: "left" }}
+            />
+            <button
+              onClick={onAddAccount}
+              disabled={accountBusy || !newAccountLabel.trim()}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: NAVY, border: `1px solid ${LINE}`, borderRadius: 8, padding: "9px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", height: 36 }}
+            >
+              + Add account
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: MUTE, lineHeight: 1.5 }}>
+            Beyond the built-in accounts (Everyday, ANZ Plus, Credit card, etc.), add a named one here — e.g. a dedicated sub-account for a
+            specific goal — then pick it above. Just a label for your own reference; it doesn&apos;t track its own balance.
+          </div>
         </div>
       </div>
 

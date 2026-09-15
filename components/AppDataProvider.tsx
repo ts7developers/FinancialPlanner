@@ -37,6 +37,7 @@ import type {
   MiscIncome,
   Goal,
   Receipt,
+  CustomAccount,
 } from "@/lib/types";
 import type { PayslipExtraction } from "@/lib/payslipSchema";
 
@@ -86,6 +87,7 @@ interface AppDataContextValue {
   miscIncome: MiscIncome[];
   goals: Goal[];
   receipts: Receipt[];
+  accounts: CustomAccount[];
   periods: Period[];
   D: DerivedFinancials;
   planPath: PlanPathPoint[];
@@ -154,10 +156,13 @@ interface AppDataContextValue {
   deleteMiscIncome: (id: string) => Promise<void>;
   /** A custom savings goal beyond the emergency fund and house deposit — see the `Goal` type. */
   addGoal: (label: string, targetAmount: number, priority?: number) => Promise<void>;
-  updateGoal: (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority" | "due_date">>) => Promise<void>;
+  updateGoal: (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority" | "due_date" | "account">>) => Promise<void>;
   /** Removes it from view immediately with a Supabase delete deferred behind an Undo window — see `undoDeleteGoal`. */
   deleteGoal: (id: string, onFailure?: () => void) => void;
   undoDeleteGoal: (id: string) => void;
+  /** A user-named account beyond the fixed `ACCOUNTS` list — see the `CustomAccount` type. */
+  addAccount: (label: string) => Promise<void>;
+  deleteAccount: (id: string) => Promise<void>;
   /** A tax-deductible item, optionally with a receipt file already uploaded to Storage (pass
    * `filePath`) and/or linked to an existing Expenses transaction (pass `transactionId`). */
   addReceipt: (
@@ -201,6 +206,7 @@ export function AppDataProvider({
   initialMiscIncome,
   initialGoals,
   initialReceipts,
+  initialAccounts,
   children,
 }: {
   initialProfile: Profile;
@@ -218,6 +224,7 @@ export function AppDataProvider({
   initialMiscIncome: MiscIncome[];
   initialGoals: Goal[];
   initialReceipts: Receipt[];
+  initialAccounts: CustomAccount[];
   children: React.ReactNode;
 }) {
   const supabase = useMemo(() => createClient(), []);
@@ -248,6 +255,7 @@ export function AppDataProvider({
   const [miscIncome, setMiscIncome] = useState(initialMiscIncome);
   const [goals, setGoals] = useState(initialGoals);
   const [receipts, setReceipts] = useState(initialReceipts ?? []);
+  const [accounts, setAccounts] = useState(initialAccounts ?? []);
 
   const periods = useMemo(() => buildPeriods(profile.pay_anchor), [profile.pay_anchor]);
   const D = useMemo(() => deriveFinancials(profile, categories), [profile, categories]);
@@ -558,7 +566,7 @@ export function AppDataProvider({
   );
 
   const updateGoal = useCallback(
-    async (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority" | "due_date">>) => {
+    async (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority" | "due_date" | "account">>) => {
       setGoals((gs) => gs.map((g) => (g.id === id ? { ...g, ...patch } : g)).sort((a, b) => a.priority - b.priority));
       const { error } = await supabase.from("goals").update(patch).eq("id", id);
       if (error) throw error;
@@ -595,6 +603,26 @@ export function AppDataProvider({
     delete pendingGoalDeletes.current[id];
     setGoals((gs) => [...gs, pending.goal].sort((a, b) => a.priority - b.priority));
   }, []);
+
+  const addAccount = useCallback(
+    async (label: string) => {
+      const trimmed = label.trim();
+      if (!trimmed) return;
+      const { data, error } = await supabase.from("accounts").insert({ user_id: profile.user_id, label: trimmed }).select().single();
+      if (error) throw error;
+      setAccounts((as) => [...as, data as CustomAccount]);
+    },
+    [supabase, profile.user_id]
+  );
+
+  const deleteAccount = useCallback(
+    async (id: string) => {
+      setAccounts((as) => as.filter((a) => a.id !== id));
+      const { error } = await supabase.from("accounts").delete().eq("id", id);
+      if (error) throw error;
+    },
+    [supabase]
+  );
 
   const receiptSort = (rs: Receipt[]) => rs.slice().sort((a, b) => b.date.localeCompare(a.date));
 
@@ -1035,6 +1063,7 @@ export function AppDataProvider({
     miscIncome,
     goals,
     receipts,
+    accounts,
     periods,
     D,
     planPath,
@@ -1072,6 +1101,8 @@ export function AppDataProvider({
     updateGoal,
     deleteGoal,
     undoDeleteGoal,
+    addAccount,
+    deleteAccount,
     addReceipt,
     updateReceipt,
     deleteReceipt,
