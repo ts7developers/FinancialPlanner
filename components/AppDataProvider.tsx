@@ -16,6 +16,7 @@ import {
   nextOccurrence,
   actualIncomeForPeriod,
   roundCents,
+  LIABILITY_ACCOUNTS,
   type DerivedFinancials,
   type PlanPathPoint,
 } from "@/lib/derive";
@@ -115,12 +116,8 @@ interface AppDataContextValue {
   updatePayslip: (id: string, patch: Partial<Payslip>) => void;
   /** Confirms with the (possibly user-edited) reviewed fields — persists them onto the payslip row and sums this fortnight's actual income across every confirmed payslip in it, so a second income source (e.g. a casual job) adds rather than overwrites. */
   confirmPayslip: (id: string, periodKey: string, fields: PayslipExtraction) => Promise<void>;
-  addTransfer: (
-    from: keyof Omit<Balances, "user_id">,
-    to: keyof Omit<Balances, "user_id">,
-    amount: number,
-    note?: string
-  ) => Promise<void>;
+  /** `from`/`to` are each either a built-in `Balances` key or a `CustomAccount.id`. */
+  addTransfer: (from: string, to: string, amount: number, note?: string) => Promise<void>;
   addOrUpdateHolding: (code: string, shares: number) => Promise<void>;
   deleteHolding: (id: string) => Promise<void>;
   /** Fetches delayed prices for every held code and revalues the "shares" balance to match. */
@@ -161,8 +158,9 @@ interface AppDataContextValue {
   deleteGoal: (id: string, onFailure?: () => void) => void;
   undoDeleteGoal: (id: string) => void;
   /** A user-named account beyond the fixed `ACCOUNTS` list — see the `CustomAccount` type. */
-  addAccount: (label: string) => Promise<void>;
+  addAccount: (label: string, initialBalance?: number) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
+  updateAccountBalance: (id: string, balance: number) => Promise<void>;
   /** A tax-deductible item, optionally with a receipt file already uploaded to Storage (pass
    * `filePath`) and/or linked to an existing Expenses transaction (pass `transactionId`). */
   addReceipt: (
@@ -256,6 +254,9 @@ export function AppDataProvider({
   const [goals, setGoals] = useState(initialGoals);
   const [receipts, setReceipts] = useState(initialReceipts ?? []);
   const [accounts, setAccounts] = useState(initialAccounts ?? []);
+  // Same rationale as `balancesRef` — kept current inside every accounts mutator so a transfer
+  // computed against a custom account's balance never builds on a stale render's value.
+  const accountsRef = useRef(accounts);
 
   const periods = useMemo(() => buildPeriods(profile.pay_anchor), [profile.pay_anchor]);
   const D = useMemo(() => deriveFinancials(profile, categories), [profile, categories]);
@@ -613,20 +614,36 @@ export function AppDataProvider({
   }, []);
 
   const addAccount = useCallback(
-    async (label: string) => {
+    async (label: string, initialBalance?: number) => {
       const trimmed = label.trim();
       if (!trimmed) return;
-      const { data, error } = await supabase.from("accounts").insert({ user_id: profile.user_id, label: trimmed }).select().single();
+      const { data, error } = await supabase
+        .from("accounts")
+        .insert({ user_id: profile.user_id, label: trimmed, balance: initialBalance || 0 })
+        .select()
+        .single();
       if (error) throw error;
-      setAccounts((as) => [...as, data as CustomAccount]);
+      accountsRef.current = [...accountsRef.current, data as CustomAccount];
+      setAccounts(accountsRef.current);
     },
     [supabase, profile.user_id]
   );
 
   const deleteAccount = useCallback(
     async (id: string) => {
-      setAccounts((as) => as.filter((a) => a.id !== id));
+      accountsRef.current = accountsRef.current.filter((a) => a.id !== id);
+      setAccounts(accountsRef.current);
       const { error } = await supabase.from("accounts").delete().eq("id", id);
+      if (error) throw error;
+    },
+    [supabase]
+  );
+
+  const updateAccountBalance = useCallback(
+    async (id: string, balance: number) => {
+      accountsRef.current = accountsRef.current.map((a) => (a.id === id ? { ...a, balance } : a));
+      setAccounts(accountsRef.current);
+      const { error } = await supabase.from("accounts").update({ balance }).eq("id", id);
       if (error) throw error;
     },
     [supabase]
@@ -700,7 +717,7 @@ export function AppDataProvider({
   }, []);
 
   const addTransfer = useCallback(
-    async (from: keyof Omit<Balances, "user_id">, to: keyof Omit<Balances, "user_id">, amount: number, note?: string) => {
+    async (from: string, to: string, amount: number, note?: string) => {
       if (from === to || !(amount > 0)) return;
       // Persist the transfer row first — if the caller retries after a failure, applying the
       // balance patch only once the row is safely saved avoids moving the money twice.
@@ -711,9 +728,34 @@ export function AppDataProvider({
         .single();
       if (error) throw error;
       setTransfers((ts) => [data as Transfer, ...ts]);
-      await updateBalances(applyTransfer(balancesRef.current, from, to, amount));
+
+      // Either side can be a built-in Balances field or a custom account — handle all four
+      // combinations, since applyTransfer only knows how to compute the built-in/built-in case.
+      const fromCustom = accountsRef.current.find((a) => a.id === from);
+      const toCustom = accountsRef.current.find((a) => a.id === to);
+      if (!fromCustom && !toCustom) {
+        const fromKey = from as keyof Omit<Balances, "user_id">;
+        const toKey = to as keyof Omit<Balances, "user_id">;
+        await updateBalances(applyTransfer(balancesRef.current, fromKey, toKey, amount));
+        return;
+      }
+      const ops: Promise<unknown>[] = [];
+      if (fromCustom) {
+        ops.push(updateAccountBalance(fromCustom.id, roundCents(fromCustom.balance - amount)));
+      } else {
+        const fromKey = from as keyof Omit<Balances, "user_id">;
+        ops.push(updateBalances({ [fromKey]: roundCents(balancesRef.current[fromKey] - amount) } as Partial<Omit<Balances, "user_id">>));
+      }
+      if (toCustom) {
+        ops.push(updateAccountBalance(toCustom.id, roundCents(toCustom.balance + amount)));
+      } else {
+        const toKey = to as keyof Omit<Balances, "user_id">;
+        const toDelta = LIABILITY_ACCOUNTS.has(toKey) ? -amount : amount;
+        ops.push(updateBalances({ [toKey]: roundCents(balancesRef.current[toKey] + toDelta) } as Partial<Omit<Balances, "user_id">>));
+      }
+      await Promise.all(ops);
     },
-    [supabase, profile.user_id, updateBalances]
+    [supabase, profile.user_id, updateBalances, updateAccountBalance]
   );
 
   const addOrUpdateHolding = useCallback(
@@ -1111,6 +1153,7 @@ export function AppDataProvider({
     undoDeleteGoal,
     addAccount,
     deleteAccount,
+    updateAccountBalance,
     addReceipt,
     updateReceipt,
     deleteReceipt,

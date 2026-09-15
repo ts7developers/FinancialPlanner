@@ -112,8 +112,10 @@ export interface Transfer {
   id: string;
   user_id: string;
   date: string; // ISO date
-  from_account: keyof Omit<Balances, "user_id">;
-  to_account: keyof Omit<Balances, "user_id">;
+  /** A built-in `Balances` key, or a `CustomAccount.id` — free text, not a strict union, since a
+   * transfer can move money to/from a custom account as easily as a tracked balance field. */
+  from_account: string;
+  to_account: string;
   amount: number;
   note: string | null;
   created_at: string;
@@ -193,18 +195,20 @@ export interface Goal {
   priority: number;
   created_at: string;
   due_date?: string | null;
-  /** Which real account this goal's money lives in (a built-in `ACCOUNTS` label from lib/theme.ts,
-   * or a custom one from `CustomAccount`) — purely a reference for where to move money, doesn't
-   * affect any balance or calculation. */
+  /** Which real account this goal's money lives in — a built-in `ACCOUNTS` label from lib/theme.ts,
+   * or a custom `CustomAccount.label` (matched by label, same non-normalized convention as
+   * `Transaction.account` — free text, not a foreign key). */
   account?: string | null;
 }
 
 /** A user-named account beyond the fixed `ACCOUNTS` list (lib/theme.ts) — e.g. a dedicated bank
- * sub-account for a specific goal. Just a label; it has no tracked balance of its own. */
+ * sub-account for a specific goal. Has its own real `balance`, same as a built-in account — shows
+ * up on Accounts alongside the built-in ones and is a valid transfer destination. */
 export interface CustomAccount {
   id: string;
   user_id: string;
   label: string;
+  balance: number;
   created_at: string;
 }
 

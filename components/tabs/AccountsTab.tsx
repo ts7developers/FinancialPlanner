@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Camera, ArrowRightLeft, RefreshCw, Trash2, Plus, TrendingUp, TrendingDown, Wallet } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { AUD, num } from "@/lib/money";
-import { netPosition, applyTransfer, computeHoldingPL } from "@/lib/derive";
+import { netPosition, applyTransfer, computeHoldingPL, LIABILITY_ACCOUNTS } from "@/lib/derive";
 import { dateFromISO, dayLabel } from "@/lib/period";
 import { MUTE_ICON, ON_ACCENT_DARK, ON_ACCENT_GOLD, SURFACE_DARK, SURFACE_DARK_2, SURFACE_SUBTLE, CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, UNFAV, inputStyle, selStyle, BALANCE_FIELDS } from "@/lib/theme";
 import { Stat, Field } from "@/components/ui/atoms";
@@ -21,6 +21,7 @@ export default function AccountsTab() {
     accounts,
     addAccount,
     deleteAccount,
+    updateAccountBalance,
     updateBalances,
     takeSnapshot,
     addTransfer,
@@ -35,8 +36,11 @@ export default function AccountsTab() {
   const [inputs, setInputs] = useState<Record<string, string>>(() =>
     Object.fromEntries(BALANCE_FIELDS.map(([k]) => [k, String(balances[k])]))
   );
+  // Same buffering pattern as `inputs`, keyed by custom account id.
+  const [customBalanceInputs, setCustomBalanceInputs] = useState<Record<string, string>>({});
   const [flashMsg, setFlashMsg] = useState("");
   const [newAccountLabel, setNewAccountLabel] = useState("");
+  const [newAccountBalance, setNewAccountBalance] = useState("");
   const [accountBusy, setAccountBusy] = useState(false);
   const [accountError, setAccountError] = useState("");
 
@@ -45,8 +49,9 @@ export default function AccountsTab() {
     setAccountBusy(true);
     setAccountError("");
     try {
-      await addAccount(newAccountLabel);
+      await addAccount(newAccountLabel, Number(newAccountBalance) || 0);
       setNewAccountLabel("");
+      setNewAccountBalance("");
       flash("Account added");
     } catch {
       setAccountError("Could not add that account — run migration 0025_accounts.sql, then try again.");
@@ -60,6 +65,15 @@ export default function AccountsTab() {
       await deleteAccount(id);
     } catch {
       setAccountError("Could not remove that account — try again.");
+    }
+  };
+
+  const onCommitAccountBalance = async (id: string, value: string) => {
+    try {
+      await updateAccountBalance(id, num(value));
+      flash();
+    } catch {
+      flash("Could not save that balance");
     }
   };
 
@@ -86,12 +100,18 @@ export default function AccountsTab() {
     }
   };
 
-  const [transferFrom, setTransferFrom] = useState<keyof Omit<Balances, "user_id">>("everyday");
-  const [transferTo, setTransferTo] = useState<keyof Omit<Balances, "user_id">>("cc");
+  const [transferFrom, setTransferFrom] = useState<string>("everyday");
+  const [transferTo, setTransferTo] = useState<string>("cc");
   const [transferAmount, setTransferAmount] = useState("");
   const [transferNote, setTransferNote] = useState("");
   const [transferBusy, setTransferBusy] = useState(false);
   const [transferError, setTransferError] = useState("");
+
+  // Every possible transfer endpoint: the fixed tracked balances, plus every custom account.
+  const transferOptions = [
+    ...BALANCE_FIELDS.map(([k, lbl]) => ({ value: k as string, label: lbl })),
+    ...accounts.map((a) => ({ value: a.id, label: a.label })),
+  ];
 
   const onTransfer = async () => {
     const amount = Number(transferAmount);
@@ -106,9 +126,21 @@ export default function AccountsTab() {
     setTransferBusy(true);
     setTransferError("");
     try {
-      const patch = applyTransfer(balances, transferFrom, transferTo, amount);
       await addTransfer(transferFrom, transferTo, amount, transferNote || undefined);
-      setInputs((ii) => ({ ...ii, ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, String(v)])) }));
+      // Only the built-in balance fields have a separate local editable buffer (`inputs`) to
+      // resync — a custom account's displayed balance reads straight from context state, which
+      // addTransfer already updated.
+      const fromKey = BALANCE_FIELDS.find(([k]) => k === transferFrom)?.[0];
+      const toKey = BALANCE_FIELDS.find(([k]) => k === transferTo)?.[0];
+      if (fromKey && toKey) {
+        const patch = applyTransfer(balances, fromKey, toKey, amount);
+        setInputs((ii) => ({ ...ii, ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, String(v)])) }));
+      } else if (fromKey) {
+        setInputs((ii) => ({ ...ii, [fromKey]: String(num(ii[fromKey]) - amount) }));
+      } else if (toKey) {
+        const toDelta = LIABILITY_ACCOUNTS.has(toKey) ? -amount : amount;
+        setInputs((ii) => ({ ...ii, [toKey]: String(num(ii[toKey]) + toDelta) }));
+      }
       setTransferAmount("");
       setTransferNote("");
       flash("Transferred");
@@ -195,7 +227,8 @@ export default function AccountsTab() {
   const anyPL = holdingPLs.some(({ pl }) => pl.unrealizedPL != null);
 
   const goalsBalanceTotal = goals.reduce((s, g) => s + (Number(g.current_amount) || 0), 0);
-  const { assets, liabilities, net } = netPosition(balances, goalsBalanceTotal);
+  const customAccountsTotal = accounts.reduce((s, a) => s + (Number(a.balance) || 0), 0);
+  const { assets, liabilities, net } = netPosition(balances, goalsBalanceTotal + customAccountsTotal);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -238,6 +271,22 @@ export default function AccountsTab() {
               </div>
             );
           })}
+          {accounts.map((a) => (
+            <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "6px 0", borderBottom: `1px solid ${LINE}` }}>
+              <span style={{ fontSize: 13, color: NAVY }}>{a.label}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, width: 140 }}>
+                <span style={{ color: MUTE, fontSize: 13 }}>$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={customBalanceInputs[a.id] ?? String(a.balance)}
+                  onChange={(e) => setCustomBalanceInputs((ci) => ({ ...ci, [a.id]: e.target.value }))}
+                  onBlur={(e) => onCommitAccountBalance(a.id, e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+          ))}
           {flashMsg && <div style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginTop: 8 }}>{flashMsg}</div>}
         </div>
         <div style={{ flex: "1 1 300px", display: "flex", flexDirection: "column", gap: 14 }}>
@@ -263,27 +312,13 @@ export default function AccountsTab() {
       </div>
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 4 }}>
-          <Wallet size={16} color={GOLD} /> Custom accounts
+          <Wallet size={16} color={GOLD} /> Add a custom account
         </div>
         <div style={{ fontSize: 12, color: MUTE, marginBottom: 12 }}>
-          Beyond the built-in accounts above, add a named one here — e.g. a dedicated sub-account for a specific goal — then pick it when
-          setting up a goal on <b style={{ color: NAVY }}>Savings</b>. Just a label for your own reference; it doesn&apos;t track its own balance.
+          Beyond the built-in accounts above, add a named one here — e.g. a dedicated sub-account for a specific goal. It gets a real,
+          tracked balance (edit it above, or move money to/from it below) and shows up as an option when picking a goal&apos;s account on{" "}
+          <b style={{ color: NAVY }}>Savings</b>.
         </div>
-        {accounts.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-            {accounts.map((a) => (
-              <span
-                key={a.id}
-                style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, color: NAVY, background: SURFACE_SUBTLE, border: `1px solid ${LINE}`, borderRadius: 20, padding: "5px 7px 5px 12px" }}
-              >
-                {a.label}
-                <button onClick={() => onDeleteAccount(a.id)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
-                  <Trash2 size={12} />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <input
             type="text"
@@ -291,8 +326,20 @@ export default function AccountsTab() {
             value={newAccountLabel}
             onChange={(e) => setNewAccountLabel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && onAddAccount()}
-            style={{ ...selStyle, width: 240, textAlign: "left" }}
+            style={{ ...selStyle, width: 220, textAlign: "left" }}
           />
+          <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+            <span style={{ color: MUTE, fontSize: 13 }}>$</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              placeholder="Starting balance"
+              value={newAccountBalance}
+              onChange={(e) => setNewAccountBalance(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && onAddAccount()}
+              style={{ ...selStyle, width: 130, textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+            />
+          </div>
           <button
             onClick={onAddAccount}
             disabled={accountBusy || !newAccountLabel.trim()}
@@ -302,6 +349,21 @@ export default function AccountsTab() {
           </button>
         </div>
         {accountError && <div style={{ fontSize: 12, color: UNFAV, marginTop: 8 }}>{accountError}</div>}
+        {accounts.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12, paddingTop: 12, borderTop: `1px solid ${LINE}` }}>
+            {accounts.map((a) => (
+              <span
+                key={a.id}
+                style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, color: NAVY, background: SURFACE_SUBTLE, border: `1px solid ${LINE}`, borderRadius: 20, padding: "5px 7px 5px 12px" }}
+              >
+                {a.label}
+                <button onClick={() => onDeleteAccount(a.id)} title="Remove this account" style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
+                  <Trash2 size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
         <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 4 }}>Move money</div>
@@ -310,19 +372,19 @@ export default function AccountsTab() {
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
           <Field label="From">
-            <select value={transferFrom} onChange={(e) => setTransferFrom(e.target.value as keyof Omit<Balances, "user_id">)} style={{ ...selStyle, width: 170 }}>
-              {BALANCE_FIELDS.map(([k, lbl]) => (
-                <option key={k} value={k}>
-                  {lbl}
+            <select value={transferFrom} onChange={(e) => setTransferFrom(e.target.value)} style={{ ...selStyle, width: 170 }}>
+              {transferOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
                 </option>
               ))}
             </select>
           </Field>
           <Field label="To">
-            <select value={transferTo} onChange={(e) => setTransferTo(e.target.value as keyof Omit<Balances, "user_id">)} style={{ ...selStyle, width: 170 }}>
-              {BALANCE_FIELDS.map(([k, lbl]) => (
-                <option key={k} value={k}>
-                  {lbl}
+            <select value={transferTo} onChange={(e) => setTransferTo(e.target.value)} style={{ ...selStyle, width: 170 }}>
+              {transferOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
                 </option>
               ))}
             </select>
@@ -363,8 +425,8 @@ export default function AccountsTab() {
             {transfers.slice(0, 5).map((t) => (
               <div key={t.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "4px 0", fontVariantNumeric: "tabular-nums" }}>
                 <span style={{ color: MUTE }}>
-                  {(BALANCE_FIELDS.find(([k]) => k === t.from_account)?.[1] || t.from_account)} →{" "}
-                  {(BALANCE_FIELDS.find(([k]) => k === t.to_account)?.[1] || t.to_account)}
+                  {transferOptions.find((o) => o.value === t.from_account)?.label ?? t.from_account} →{" "}
+                  {transferOptions.find((o) => o.value === t.to_account)?.label ?? t.to_account}
                   {t.note ? ` · ${t.note}` : ""}
                 </span>
                 <span>{AUD(t.amount, 2)}</span>
