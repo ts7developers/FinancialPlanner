@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Camera, ArrowRightLeft, RefreshCw, Trash2, Plus, TrendingUp, TrendingDown } from "lucide-react";
+import { Camera, ArrowRightLeft, RefreshCw, Trash2, Plus, TrendingUp, TrendingDown, Wallet } from "lucide-react";
 import { useAppData } from "@/components/AppDataProvider";
 import { AUD, num } from "@/lib/money";
 import { netPosition, applyTransfer, computeHoldingPL } from "@/lib/derive";
 import { dateFromISO, dayLabel } from "@/lib/period";
-import { MUTE_ICON, ON_ACCENT_DARK, ON_ACCENT_GOLD, SURFACE_DARK, SURFACE_DARK_2, CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, UNFAV, inputStyle, selStyle, BALANCE_FIELDS } from "@/lib/theme";
+import { MUTE_ICON, ON_ACCENT_DARK, ON_ACCENT_GOLD, SURFACE_DARK, SURFACE_DARK_2, SURFACE_SUBTLE, CARD, LINE, MUTE, GOLD, INK, NAVY, FAV, UNFAV, inputStyle, selStyle, BALANCE_FIELDS } from "@/lib/theme";
 import { Stat, Field } from "@/components/ui/atoms";
 import type { Balances } from "@/lib/types";
 
@@ -18,6 +18,9 @@ export default function AccountsTab() {
     holdings,
     holdingLots,
     goals,
+    accounts,
+    addAccount,
+    deleteAccount,
     updateBalances,
     takeSnapshot,
     addTransfer,
@@ -33,6 +36,32 @@ export default function AccountsTab() {
     Object.fromEntries(BALANCE_FIELDS.map(([k]) => [k, String(balances[k])]))
   );
   const [flashMsg, setFlashMsg] = useState("");
+  const [newAccountLabel, setNewAccountLabel] = useState("");
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [accountError, setAccountError] = useState("");
+
+  const onAddAccount = async () => {
+    if (!newAccountLabel.trim()) return;
+    setAccountBusy(true);
+    setAccountError("");
+    try {
+      await addAccount(newAccountLabel);
+      setNewAccountLabel("");
+      flash("Account added");
+    } catch {
+      setAccountError("Could not add that account — run migration 0025_accounts.sql, then try again.");
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
+  const onDeleteAccount = async (id: string) => {
+    try {
+      await deleteAccount(id);
+    } catch {
+      setAccountError("Could not remove that account — try again.");
+    }
+  };
 
   const flash = (m = "Saved") => {
     setFlashMsg(m);
@@ -231,6 +260,48 @@ export default function AccountsTab() {
             <b style={{ color: NAVY }}>Savings</b> — edit balances here and they&apos;ll flow through automatically.
           </div>
         </div>
+      </div>
+      <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 4 }}>
+          <Wallet size={16} color={GOLD} /> Custom accounts
+        </div>
+        <div style={{ fontSize: 12, color: MUTE, marginBottom: 12 }}>
+          Beyond the built-in accounts above, add a named one here — e.g. a dedicated sub-account for a specific goal — then pick it when
+          setting up a goal on <b style={{ color: NAVY }}>Savings</b>. Just a label for your own reference; it doesn&apos;t track its own balance.
+        </div>
+        {accounts.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+            {accounts.map((a) => (
+              <span
+                key={a.id}
+                style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, color: NAVY, background: SURFACE_SUBTLE, border: `1px solid ${LINE}`, borderRadius: 20, padding: "5px 7px 5px 12px" }}
+              >
+                {a.label}
+                <button onClick={() => onDeleteAccount(a.id)} style={{ background: "none", border: "none", cursor: "pointer", color: MUTE_ICON, display: "flex" }}>
+                  <Trash2 size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            type="text"
+            placeholder="e.g. ANZ Plus — Rego savings"
+            value={newAccountLabel}
+            onChange={(e) => setNewAccountLabel(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && onAddAccount()}
+            style={{ ...selStyle, width: 240, textAlign: "left" }}
+          />
+          <button
+            onClick={onAddAccount}
+            disabled={accountBusy || !newAccountLabel.trim()}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: GOLD, color: ON_ACCENT_DARK, border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: accountBusy ? "default" : "pointer", opacity: accountBusy || !newAccountLabel.trim() ? 0.6 : 1, fontFamily: "var(--font-space-grotesk), sans-serif", height: 36 }}
+          >
+            <Plus size={14} /> Add account
+          </button>
+        </div>
+        {accountError && <div style={{ fontSize: 12, color: UNFAV, marginTop: 8 }}>{accountError}</div>}
       </div>
       <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
         <div style={{ fontFamily: "var(--font-space-grotesk), sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 4 }}>Move money</div>

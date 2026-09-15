@@ -155,7 +155,7 @@ interface AppDataContextValue {
   addMiscIncome: (date: string, description: string, amount: number, account?: keyof Omit<Balances, "user_id">) => Promise<void>;
   deleteMiscIncome: (id: string) => Promise<void>;
   /** A custom savings goal beyond the emergency fund and house deposit — see the `Goal` type. */
-  addGoal: (label: string, targetAmount: number, priority?: number) => Promise<void>;
+  addGoal: (label: string, targetAmount: number, opts?: { priority?: number; dueDate?: string | null; account?: string | null; currentAmount?: number }) => Promise<void>;
   updateGoal: (id: string, patch: Partial<Pick<Goal, "label" | "target_amount" | "current_amount" | "priority" | "due_date" | "account">>) => Promise<void>;
   /** Removes it from view immediately with a Supabase delete deferred behind an Undo window — see `undoDeleteGoal`. */
   deleteGoal: (id: string, onFailure?: () => void) => void;
@@ -550,13 +550,21 @@ export function AppDataProvider({
   );
 
   const addGoal = useCallback(
-    async (label: string, targetAmount: number, priority?: number) => {
+    async (label: string, targetAmount: number, opts?: { priority?: number; dueDate?: string | null; account?: string | null; currentAmount?: number }) => {
       const trimmed = label.trim();
       if (!trimmed || !(targetAmount > 0)) return;
-      const nextPriority = priority ?? (goals.length > 0 ? Math.max(...goals.map((g) => g.priority)) + 1 : 0);
+      const nextPriority = opts?.priority ?? (goals.length > 0 ? Math.max(...goals.map((g) => g.priority)) + 1 : 0);
       const { data, error } = await supabase
         .from("goals")
-        .insert({ user_id: profile.user_id, label: trimmed, target_amount: targetAmount, priority: nextPriority })
+        .insert({
+          user_id: profile.user_id,
+          label: trimmed,
+          target_amount: targetAmount,
+          current_amount: opts?.currentAmount || 0,
+          priority: nextPriority,
+          due_date: opts?.dueDate || null,
+          account: opts?.account || null,
+        })
         .select()
         .single();
       if (error) throw error;
