@@ -32,11 +32,15 @@ export function useFortnightBreakdown(periodKey: string, opts: { fallbackToPlann
   const remainingCategoriesTotal = per
     ? reconcileCategoryRows(categories, D, per.year, loggedByCat[periodKey], rec?.actual_overrides ?? {}).reduce((s, r) => s + Math.max(0, r.plan - (r.actual ?? 0)), 0)
     : 0;
-  // Use the cc/emergency/goal balances frozen when this fortnight's first income was confirmed
-  // (see AppDataProvider's confirmPayslip/addMiscIncome) rather than today's live balances, so the
-  // plan doesn't reshuffle itself once the user starts actually moving money per its recommendation.
+  // Use the emergency/goal balances frozen when this fortnight's first income was confirmed (see
+  // AppDataProvider's confirmPayslip/addMiscIncome) rather than today's live balances, so the plan
+  // doesn't reshuffle itself once the user starts actually moving money per its recommendation.
+  // The credit card balance is deliberately NOT frozen the same way: unlike emergency/goals
+  // (which only move when the user acts on this recommendation), the card balance keeps growing
+  // from ongoing spending throughout the fortnight — freezing it would recommend paying off an
+  // increasingly stale, too-small amount instead of what's actually owed right now.
   const baseline = rec?.breakdown_baseline;
-  const breakdownBalances = baseline ? { ...balances, cc: baseline.cc, emergency: baseline.emergency } : balances;
+  const breakdownBalances = baseline ? { ...balances, emergency: baseline.emergency } : balances;
   const breakdownGoals = baseline
     ? goals.map((g) => {
         const snap = baseline.goals.find((x) => x.id === g.id);
